@@ -42,7 +42,7 @@ interface ResolveMotionStateOptions {
 }
 
 const IDLE_HOLD_SPEED = WALK_SPEED_THRESHOLD * 0.5;
-const AIRBORNE_VERTICAL_SPEED_EPS = 0.35;
+const AIRBORNE_VERTICAL_SPEED_EPS = 1.2;
 
 function isLocomotionState(state: MotionState): boolean {
   return state === "walk" || state === "running";

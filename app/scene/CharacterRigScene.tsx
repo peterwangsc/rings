@@ -62,6 +62,8 @@ const AMBIENT_LIGHT_DAY_INTENSITY = 0.75;
 const AMBIENT_LIGHT_NIGHT_INTENSITY = 0.2;
 const NIGHT_FOG_NEAR = 1000;
 const NIGHT_FOG_FAR = 1100;
+const FPS_UPDATE_INTERVAL_SECONDS = 0.35;
+const FPS_SMOOTHING_FACTOR = 0.45;
 
 type SkyMaterialWithSunPosition = ShaderMaterial & {
   uniforms: {
@@ -352,6 +354,46 @@ function AnimatedSun() {
   );
 }
 
+function FrameRateProbe({
+  onUpdate,
+}: {
+  onUpdate: (fps: number) => void;
+}) {
+  const elapsedRef = useRef(0);
+  const frameCountRef = useRef(0);
+  const smoothedFpsRef = useRef<number | null>(null);
+
+  useFrame((_, delta) => {
+    if (delta <= 0) {
+      return;
+    }
+
+    elapsedRef.current += delta;
+    frameCountRef.current += 1;
+
+    if (elapsedRef.current < FPS_UPDATE_INTERVAL_SECONDS) {
+      return;
+    }
+
+    const sampledFps = frameCountRef.current / elapsedRef.current;
+    const previousSmoothedFps = smoothedFpsRef.current;
+    const smoothedFps =
+      previousSmoothedFps === null
+        ? sampledFps
+        : MathUtils.lerp(
+            previousSmoothedFps,
+            sampledFps,
+            FPS_SMOOTHING_FACTOR,
+          );
+    smoothedFpsRef.current = smoothedFps;
+    onUpdate(smoothedFps);
+    elapsedRef.current = 0;
+    frameCountRef.current = 0;
+  });
+
+  return null;
+}
+
 const CAMERA_MODE_CYCLE: readonly CameraMode[] = [
   "third_person",
   "first_person",
@@ -362,6 +404,7 @@ export function CharacterRigScene() {
   const [cameraMode, setCameraMode] = useState<CameraMode>("third_person");
   const [isWalkDefault, setIsWalkDefault] = useState(false);
   const [isPointerLocked, setIsPointerLocked] = useState(false);
+  const [fps, setFps] = useState<number | null>(null);
 
   const handleToggleCameraMode = useCallback(() => {
     setCameraMode((currentMode) => {
@@ -376,6 +419,10 @@ export function CharacterRigScene() {
   }, []);
   const handlePointerLockChange = useCallback((isLocked: boolean) => {
     setIsPointerLocked(isLocked);
+  }, []);
+  const handleFpsUpdate = useCallback((nextFps: number) => {
+    const roundedFps = Math.round(nextFps);
+    setFps((currentFps) => (currentFps === roundedFps ? currentFps : roundedFps));
   }, []);
 
   return (
@@ -393,6 +440,7 @@ export function CharacterRigScene() {
         className="h-full w-full touch-none"
       >
         <AnimatedSun />
+        <FrameRateProbe onUpdate={handleFpsUpdate} />
         <fog attach="fog" args={[HORIZON_COLOR, SKY_FOG_NEAR, SKY_FOG_FAR]} />
         <Clouds
           material={MeshBasicMaterial}
@@ -471,6 +519,10 @@ export function CharacterRigScene() {
           </Suspense>
         </Physics>
       </Canvas>
+      <div className="pointer-events-none absolute right-4 top-4 z-20 rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
+        <p className="font-semibold tracking-wide text-white">FPS</p>
+        <p>{fps ?? "--"}</p>
+      </div>
       {!isPointerLocked ? (
         <div className="pointer-events-none absolute left-4 top-4 z-20 max-w-xs rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
           <p className="mb-1 font-semibold tracking-wide text-white">
