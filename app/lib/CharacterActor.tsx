@@ -71,7 +71,10 @@ export function CharacterActor({
     const idleClip = findClipByName(character.animations, CLIP_IDLE);
     const walkClip = findClipByName(character.animations, CLIP_WALK);
     const runningClip = findClipByName(character.animations, CLIP_RUNNING);
-    const jumpActionClip = findClipByName(character.animations, CLIP_JUMP_RUN);
+    const jumpActionClip = findClipByName(
+      character.animations,
+      CLIP_STANDING_JUMP,
+    );
     const jumpRunningClip = findClipByName(character.animations, CLIP_JUMP_RUN);
     const happyClip = findClipByName(character.animations, CLIP_HAPPY);
     const sadClip = findClipByName(character.animations, CLIP_SAD);

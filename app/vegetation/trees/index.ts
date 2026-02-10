@@ -1,4 +1,5 @@
 export { TreeField } from "./TreeField";
+export { SingleTree } from "./SingleTree";
 export { TREE_SYSTEM_CONFIG } from "./treeConfig";
 export type {
   RockFormationLike,

@@ -2,7 +2,7 @@ import type * as THREE from "three";
 
 export type NumericRange = readonly [number, number];
 
-export type TreeSpeciesShape = "round" | "conical" | "windswept";
+export type TreeSpeciesShape = "round" | "conical" | "windswept" | "columnar";
 
 export type TreeSpeciesPreset = {
   id: string;

@@ -139,12 +139,11 @@ export function CharacterRigController({
   }, [cameraMode]);
 
   useEffect(() => {
+    const domElement = gl.domElement;
     camera.up.set(0, 1, 0);
-    isPointerLockedRef.current = document.pointerLockElement === gl.domElement;
+    isPointerLockedRef.current = document.pointerLockElement === domElement;
     onPointerLockChange?.(isPointerLockedRef.current);
     const supportsPointerEvents = "PointerEvent" in window;
-    const previousTouchAction = gl.domElement.style.touchAction;
-    gl.domElement.style.touchAction = "none";
 
     const clearActiveTouchPointer = (pointerId?: number) => {
       if (
@@ -158,9 +157,9 @@ export function CharacterRigController({
       if (
         supportsPointerEvents &&
         resolvedPointerId !== null &&
-        gl.domElement.hasPointerCapture(resolvedPointerId)
+        domElement.hasPointerCapture(resolvedPointerId)
       ) {
-        gl.domElement.releasePointerCapture(resolvedPointerId);
+        domElement.releasePointerCapture(resolvedPointerId);
       }
       activeTouchPointerIdRef.current = null;
       activeTouchPositionRef.current = null;
@@ -234,7 +233,7 @@ export function CharacterRigController({
     };
 
     const handlePointerLockChange = () => {
-      isPointerLockedRef.current = document.pointerLockElement === gl.domElement;
+      isPointerLockedRef.current = document.pointerLockElement === domElement;
       onPointerLockChange?.(isPointerLockedRef.current);
       if (!isPointerLockedRef.current) {
         resetInputState();
@@ -262,10 +261,10 @@ export function CharacterRigController({
 
     const requestPointerLock = () => {
       if (
-        document.pointerLockElement !== gl.domElement &&
-        typeof gl.domElement.requestPointerLock === "function"
+        document.pointerLockElement !== domElement &&
+        typeof domElement.requestPointerLock === "function"
       ) {
-        gl.domElement.requestPointerLock();
+        domElement.requestPointerLock();
       }
     };
 
@@ -278,7 +277,7 @@ export function CharacterRigController({
             x: event.clientX,
             y: event.clientY,
           };
-          gl.domElement.setPointerCapture(event.pointerId);
+          domElement.setPointerCapture(event.pointerId);
         }
         return;
       }
@@ -383,27 +382,27 @@ export function CharacterRigController({
     };
 
     if (supportsPointerEvents) {
-      gl.domElement.addEventListener("pointerdown", handleCanvasPointerDown);
-      gl.domElement.addEventListener("pointermove", handleCanvasPointerMove);
-      gl.domElement.addEventListener("pointerup", handleCanvasTouchPointerEnd);
-      gl.domElement.addEventListener(
+      domElement.addEventListener("pointerdown", handleCanvasPointerDown);
+      domElement.addEventListener("pointermove", handleCanvasPointerMove);
+      domElement.addEventListener("pointerup", handleCanvasTouchPointerEnd);
+      domElement.addEventListener(
         "pointercancel",
         handleCanvasTouchPointerEnd,
       );
-      gl.domElement.addEventListener(
+      domElement.addEventListener(
         "lostpointercapture",
         handleCanvasLostPointerCapture,
       );
     } else {
-      gl.domElement.addEventListener("click", requestPointerLock);
-      gl.domElement.addEventListener("touchstart", handleCanvasTouchStart, {
+      domElement.addEventListener("click", requestPointerLock);
+      domElement.addEventListener("touchstart", handleCanvasTouchStart, {
         passive: false,
       });
-      gl.domElement.addEventListener("touchmove", handleCanvasTouchMove, {
+      domElement.addEventListener("touchmove", handleCanvasTouchMove, {
         passive: false,
       });
-      gl.domElement.addEventListener("touchend", handleCanvasTouchEndOrCancel);
-      gl.domElement.addEventListener(
+      domElement.addEventListener("touchend", handleCanvasTouchEndOrCancel);
+      domElement.addEventListener(
         "touchcancel",
         handleCanvasTouchEndOrCancel,
       );
@@ -416,26 +415,26 @@ export function CharacterRigController({
 
     return () => {
       if (supportsPointerEvents) {
-        gl.domElement.removeEventListener("pointerdown", handleCanvasPointerDown);
-        gl.domElement.removeEventListener("pointermove", handleCanvasPointerMove);
-        gl.domElement.removeEventListener(
+        domElement.removeEventListener("pointerdown", handleCanvasPointerDown);
+        domElement.removeEventListener("pointermove", handleCanvasPointerMove);
+        domElement.removeEventListener(
           "pointerup",
           handleCanvasTouchPointerEnd,
         );
-        gl.domElement.removeEventListener(
+        domElement.removeEventListener(
           "pointercancel",
           handleCanvasTouchPointerEnd,
         );
-        gl.domElement.removeEventListener(
+        domElement.removeEventListener(
           "lostpointercapture",
           handleCanvasLostPointerCapture,
         );
       } else {
-        gl.domElement.removeEventListener("click", requestPointerLock);
-        gl.domElement.removeEventListener("touchstart", handleCanvasTouchStart);
-        gl.domElement.removeEventListener("touchmove", handleCanvasTouchMove);
-        gl.domElement.removeEventListener("touchend", handleCanvasTouchEndOrCancel);
-        gl.domElement.removeEventListener(
+        domElement.removeEventListener("click", requestPointerLock);
+        domElement.removeEventListener("touchstart", handleCanvasTouchStart);
+        domElement.removeEventListener("touchmove", handleCanvasTouchMove);
+        domElement.removeEventListener("touchend", handleCanvasTouchEndOrCancel);
+        domElement.removeEventListener(
           "touchcancel",
           handleCanvasTouchEndOrCancel,
         );
@@ -445,7 +444,6 @@ export function CharacterRigController({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", resetInputState);
-      gl.domElement.style.touchAction = previousTouchAction;
       isPointerLockedRef.current = false;
       onPointerLockChange?.(false);
       resetInputState();

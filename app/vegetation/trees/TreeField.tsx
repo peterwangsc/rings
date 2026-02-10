@@ -73,7 +73,6 @@ export function TreeField({ terrainSampler, rockFormations, camera }: TreeFieldP
 
   useEffect(() => {
     return () => {
-      batches.dispose();
       materials.dispose();
       for (const archetype of archetypes) {
         for (const lod of archetype.lods) {
@@ -82,15 +81,15 @@ export function TreeField({ terrainSampler, rockFormations, camera }: TreeFieldP
         }
       }
     };
-  }, [archetypes, batches, materials]);
+  }, [archetypes, materials]);
 
   return (
-      <group>
+    <group>
       {batches.branchBatches.map((batch, index) => (
-        <primitive key={`tree-branch-lod-${index}`} object={batch} dispose={null} />
+        <primitive key={`tree-branch-lod-${index}`} object={batch} />
       ))}
       {batches.canopyBatches.map((batch, index) => (
-        <primitive key={`tree-canopy-lod-${index}`} object={batch} dispose={null} />
+        <primitive key={`tree-canopy-lod-${index}`} object={batch} />
       ))}
     </group>
   );

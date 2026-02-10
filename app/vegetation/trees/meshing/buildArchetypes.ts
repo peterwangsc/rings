@@ -55,6 +55,7 @@ function buildArchetype(
       baseRadius: canopyBaseRadius,
       minRadius: canopyBaseRadius * 0.65,
       seed: archetypeSeed + lodLevel * 73,
+      branchSpread: species.branchSpread,
       windSkew: species.windSkew,
     });
 

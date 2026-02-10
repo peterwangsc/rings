@@ -87,7 +87,7 @@ function buildSingleBatch(params: BuildSingleBatchParams) {
   batch.perObjectFrustumCulled = true;
 
   const geometryIds = geometries.map((geometry) => batch.addGeometry(geometry));
-  const instanceIds: number[] = [];
+  const instanceIds = new Array<number>(params.placements.length).fill(-1);
 
   const matrix = new THREE.Matrix4();
   const quaternion = new THREE.Quaternion();
@@ -133,7 +133,7 @@ function buildSingleBatch(params: BuildSingleBatchParams) {
     }
 
     batch.setColorAt(instanceId, baseColor);
-    instanceIds.push(instanceId);
+    instanceIds[placementIndex] = instanceId;
   }
 
   batch.computeBoundingSphere();

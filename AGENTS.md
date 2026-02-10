@@ -35,7 +35,8 @@ No test framework is configured.
 ```
 page.tsx → CharacterRigScene → Canvas (R3F)
   ├── Physics (Rapier world)
-  ├── WorldGeometry (ground plane, rock formations with colliders)
+  ├── WorldGeometry (terrain, grass, rocks, campfire, and forest tree placement)
+  │     └── SingleTree (handcrafted conifer-style trunk + layered canopy)
   └── CharacterRigController (input, physics loop, camera)
         └── CharacterActor (model loading, animation mixer)
 ```
@@ -150,7 +151,23 @@ The mood of the scene — sky color, fog, sun direction, ambient tone.
 
 The hemisphere light is the main tool for overall color mood — its sky tint washes the tops of everything, its ground tint washes the undersides. The directional light adds shape through shadows. Fog distance dramatically affects how intimate or vast the world feels.
 
-### 5. Rock surfaces — the shader palette
+### 5. Tree silhouettes — handcrafted conifer stack
+
+Trees are currently built from a single handcrafted conifer profile (trunk + layered cone canopies) and instanced across the terrain with deterministic placement.
+
+**Primary files:** `app/vegetation/trees/SingleTree.tsx`, `app/scene/WorldGeometry.tsx`
+
+| What you're shaping | Where | What it does |
+|---|---|---|
+| Canopy profile | `BASE_CANOPY_LAYERS` in `SingleTree.tsx` | Defines each canopy layer's height, radius, vertical placement, and color |
+| Canopy twist | `CANOPY_MAX_TWIST_RADIANS` in `SingleTree.tsx` | Rotates higher canopy layers further around trunk for spiral structure |
+| Tree height variance | `heightScale` prop on `SingleTree` | Scales trunk + canopy proportions while preserving silhouette relationship |
+| Trunk thickness scaling | `trunkRadiusScale` in `SingleTree.tsx` | Keeps trunk believable as tree height changes |
+| Forest density | `LANDSCAPE_TREE_TARGET_COUNT` in `WorldGeometry.tsx` | Number of trees placed in the world |
+| Forest coverage | `LANDSCAPE_TREE_FIELD_RADIUS`, `LANDSCAPE_TREE_CLEARING_RADIUS` in `WorldGeometry.tsx` | Outer tree band and central player clearing |
+| Spacing and collision avoidance | `LANDSCAPE_TREE_MIN_SPACING`, `LANDSCAPE_TREE_ROCK_CLEARANCE` in `WorldGeometry.tsx` | Prevents trees from clumping or intersecting rocks |
+
+### 6. Rock surfaces — the shader palette
 
 The rocks use a custom shader that layers multiple visual effects. Each effect has its own set of knobs.
 
@@ -200,7 +217,7 @@ The rocks use a custom shader that layers multiple visual effects. Each effect h
 
 The glow colors are defined inline in the shader: cyan abyss glow `(0.10, 0.84, 0.96)` and orange ember glow `(0.94, 0.30, 0.16)`. To change these colors, search for `abyssGlow` and `emberGlow` in the emissive section of the shader.
 
-### 6. Rock silhouettes — the procedural shape
+### 7. Rock silhouettes — the procedural shape
 
 Each rock is generated from a sphere that gets sculpted by layered noise.
 
@@ -217,7 +234,7 @@ Each rock is generated from a sphere that gets sculpted by layered noise.
 | Crown softening | `ROCK_CROWN_SOFTEN_STRENGTH` | How rounded the tops become |
 | Base flatness | `ROCK_FOOTING_Y_MIN`, `ROCK_FOOTING_Y_MAX` | How the bottom flattens out to sit on the ground |
 
-### 7. World layout
+### 8. World layout
 
 Where things are placed, how big they are, and the ground colors.
 
@@ -308,7 +325,8 @@ When changing camera, movement, coordinate-space, or animation coupling behavior
 |---|---|
 | Movement, camera, timing, layout, colors | `app/utils/constants.ts` |
 | Lighting, shadows, fog, canvas setup | `app/scene/CharacterRigScene.tsx` |
-| Ground plane, grass, rock placement | `app/scene/WorldGeometry.tsx` |
+| Ground plane, grass, rock placement, campfire, forest tree placement | `app/scene/WorldGeometry.tsx` |
+| Handcrafted conifer tree mesh | `app/vegetation/trees/SingleTree.tsx` |
 | Rock surface shader effects | `app/utils/shaders.ts` |
 | Rock procedural shape | `app/utils/rockGeometry.ts` |
 | Character model, animation playback | `app/lib/CharacterActor.tsx` |

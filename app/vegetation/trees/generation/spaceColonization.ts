@@ -22,16 +22,32 @@ function sampleAttractorPoint(
   trunkHeight: number,
   canopyHeight: number,
   canopyRadius: number,
+  branchSpread: number,
   windSkew: number,
   rng: () => number,
 ) {
   const theta = rng() * Math.PI * 2;
   const u = rng();
   const v = rng();
+  const lateralScale = THREE.MathUtils.clamp(branchSpread, 0.18, 1.25);
 
   if (shape === "conical") {
-    const yNorm = Math.pow(u, 0.78);
-    const radial = (1 - yNorm) * canopyRadius * Math.sqrt(v);
+    const yNorm = Math.pow(u, 0.72);
+    const radial = (1 - yNorm) * canopyRadius * lateralScale * Math.sqrt(v);
+    return new THREE.Vector3(
+      Math.cos(theta) * radial,
+      trunkHeight + yNorm * canopyHeight,
+      Math.sin(theta) * radial,
+    );
+  }
+
+  if (shape === "columnar") {
+    const yNorm = Math.pow(u, 0.62);
+    const crownBand = THREE.MathUtils.smoothstep(yNorm, 0.22, 0.76);
+    const topTaper = 1 - THREE.MathUtils.smoothstep(yNorm, 0.84, 1);
+    const radialProfile =
+      THREE.MathUtils.lerp(0.22, 0.68, crownBand) * (0.32 + topTaper * 0.68);
+    const radial = canopyRadius * lateralScale * radialProfile * Math.sqrt(v);
     return new THREE.Vector3(
       Math.cos(theta) * radial,
       trunkHeight + yNorm * canopyHeight,
@@ -41,7 +57,7 @@ function sampleAttractorPoint(
 
   const radiusScale = Math.cbrt(v);
   const phi = Math.acos(1 - 2 * u);
-  const sphereRadius = canopyRadius * radiusScale;
+  const sphereRadius = canopyRadius * lateralScale * radiusScale;
   const sphereX = Math.sin(phi) * Math.cos(theta) * sphereRadius;
   const sphereY = Math.cos(phi) * sphereRadius;
   const sphereZ = Math.sin(phi) * Math.sin(theta) * sphereRadius;
@@ -90,19 +106,21 @@ export function generateSpaceColonizationSkeleton(
   };
 
   const rootId = addNode(new THREE.Vector3(0, 0, 0), null);
-  const trunkDirection = new THREE.Vector3(species.windSkew * 0.2, 1, -species.lean * 0.15).normalize();
+  const trunkDirection = new THREE.Vector3(species.windSkew * 0.08, 1, -species.windSkew * 0.05)
+    .normalize();
   const trunkSegments = Math.max(4, Math.floor(trunkHeight / config.growth.stepSize));
 
   let currentId = rootId;
   for (let i = 0; i < trunkSegments; i++) {
     const parent = nodes[currentId];
     const bendStrength = THREE.MathUtils.lerp(0.15, 0.95, i / Math.max(trunkSegments - 1, 1));
+    const bendAmount = species.lean * THREE.MathUtils.lerp(0.22, 0.95, bendStrength);
     const bendDirection = new THREE.Vector3(
-      (rng() - 0.5) * species.lean,
+      (rng() - 0.5) * bendAmount,
       1,
-      (rng() - 0.5) * species.lean,
+      (rng() - 0.5) * bendAmount,
     )
-      .addScaledVector(trunkDirection, bendStrength * species.lean)
+      .addScaledVector(trunkDirection, bendStrength * species.lean * 0.45)
       .normalize();
 
     const childPosition = parent.position
@@ -119,6 +137,7 @@ export function generateSpaceColonizationSkeleton(
         trunkHeight,
         canopyHeight,
         canopyRadius,
+        species.branchSpread,
         species.windSkew,
         rng,
       ),
@@ -181,10 +200,14 @@ export function generateSpaceColonizationSkeleton(
 
       const depthNormalized = node.depth / Math.max(nodes.length, 1);
       const apical = (1 - depthNormalized) * config.growth.apicalDominance;
+      const lateralScale = THREE.MathUtils.clamp(species.branchSpread, 0.22, 1.2);
+      const trunkRigidity = THREE.MathUtils.clamp(1 - species.lean * 6, 0.2, 1);
 
+      direction.x *= lateralScale;
+      direction.z *= lateralScale;
       direction
         .multiplyScalar(1 - config.growth.lateralBias)
-        .addScaledVector(WORLD_UP, config.growth.trunkLiftBias + apical)
+        .addScaledVector(WORLD_UP, (config.growth.trunkLiftBias + apical) * trunkRigidity)
         .add(new THREE.Vector3(species.windSkew * 0.03, 0, 0))
         .normalize();
 

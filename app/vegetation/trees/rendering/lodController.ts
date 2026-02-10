@@ -77,6 +77,15 @@ function resolveLod(
   }
 
   if (distance < lodConfig.lod2Distance - hysteresis) {
+    if (distance < lodConfig.lod0Distance - hysteresis) {
+      return 0;
+    }
+    if (distance < lodConfig.lod1Distance - hysteresis) {
+      return 1;
+    }
+    return 2;
+  }
+  if (distance < lodConfig.hiddenDistance - hysteresis) {
     return 2;
   }
   return 3;
@@ -106,8 +115,12 @@ export function updateTreeLods(params: TreeLodUpdateParams) {
       const branchInstanceId = params.branchInstanceIds[treeIndex][lodLevel];
       const canopyInstanceId = params.canopyInstanceIds[treeIndex][lodLevel];
 
-      params.branchBatches[lodLevel].setVisibleAt(branchInstanceId, visible);
-      params.canopyBatches[lodLevel].setVisibleAt(canopyInstanceId, visible);
+      if (branchInstanceId >= 0) {
+        params.branchBatches[lodLevel].setVisibleAt(branchInstanceId, visible);
+      }
+      if (canopyInstanceId >= 0) {
+        params.canopyBatches[lodLevel].setVisibleAt(canopyInstanceId, visible);
+      }
     }
 
     params.state.levels[treeIndex] = nextLevel;

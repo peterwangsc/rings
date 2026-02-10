@@ -28,6 +28,7 @@ export function createTreeMaterials(config: TreeSystemConfig): TreeMaterialSet {
       metalness: 0.01,
       vertexColors: true,
       flatShading: true,
+      side: THREE.DoubleSide,
     });
   }) as TreeMaterialSet["canopyMaterials"];
 
