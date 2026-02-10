@@ -24,7 +24,9 @@ import {
   MathUtils,
   Mesh,
   MeshBasicMaterial,
+  Object3D,
   Points,
+  Raycaster,
   ShaderMaterial,
   Sprite,
   SpriteMaterial,
@@ -60,6 +62,7 @@ const SUN_FLARE_ALIGNMENT_END = 0.995;
 const SUN_FLARE_EDGE_FADE_START = 0.45;
 const SUN_FLARE_EDGE_FADE_END = 1.1;
 const SUN_SHADOW_ENABLE_THRESHOLD = 0.12;
+const SUN_FLARE_OCCLUSION_DISTANCE_EPSILON = 0.12;
 const NIGHT_SKY_COLOR = "#071634";
 const SKY_FADE_START = 0.15;
 const SKY_FADE_END = 0.65;
@@ -91,6 +94,17 @@ type SkyMaterialWithSunPosition = ShaderMaterial & {
   };
 };
 
+function shouldIgnoreSunOcclusion(object: Object3D | null) {
+  let current: Object3D | null = object;
+  while (current) {
+    if (current.userData.ignoreSunOcclusion) {
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
 function AnimatedSun() {
   const skyRef = useRef<SkyImpl>(null);
   const lightRef = useRef<DirectionalLight>(null);
@@ -108,6 +122,8 @@ function AnimatedSun() {
   const sunDirVectorRef = useRef(new Vector3());
   const cameraForwardVectorRef = useRef(new Vector3());
   const flarePositionRef = useRef(new Vector3());
+  const sunOcclusionRaycasterRef = useRef(new Raycaster());
+  const sunOcclusionDirectionRef = useRef(new Vector3());
   const daySkyColor = useMemo(() => new Color(HORIZON_COLOR), []);
   const nightSkyColor = useMemo(() => new Color(NIGHT_SKY_COLOR), []);
   const blendedSkyColor = useMemo(() => new Color(HORIZON_COLOR), []);
@@ -369,7 +385,36 @@ function AnimatedSun() {
       const flareIntensity =
         frontAlignment * edgeFade * sunLightFactor * (1 - nightFactor);
       const sunInFront = sunNdc.z > -1 && sunNdc.z < 1;
-      const flareVisible = sunInFront && flareIntensity > 0.001;
+      const flareCandidateVisible = sunInFront && flareIntensity > 0.001;
+      let hasLineOfSightToSun = true;
+      if (flareCandidateVisible) {
+        const toSun = sunOcclusionDirectionRef.current
+          .copy(sunWorldPosition)
+          .sub(camera.position);
+        const sunDistance = toSun.length();
+        if (sunDistance > SUN_FLARE_OCCLUSION_DISTANCE_EPSILON) {
+          toSun.multiplyScalar(1 / sunDistance);
+          const occlusionRaycaster = sunOcclusionRaycasterRef.current;
+          occlusionRaycaster.set(camera.position, toSun);
+          occlusionRaycaster.near = 0;
+          occlusionRaycaster.far =
+            sunDistance - SUN_FLARE_OCCLUSION_DISTANCE_EPSILON;
+          const intersections = occlusionRaycaster.intersectObjects(
+            state.scene.children,
+            true,
+          );
+          hasLineOfSightToSun = !intersections.some((intersection) => {
+            if (
+              intersection.distance <= SUN_FLARE_OCCLUSION_DISTANCE_EPSILON ||
+              shouldIgnoreSunOcclusion(intersection.object)
+            ) {
+              return false;
+            }
+            return (intersection.object as Mesh).isMesh === true;
+          });
+        }
+      }
+      const flareVisible = flareCandidateVisible && hasLineOfSightToSun;
 
       for (let index = 0; index < SUN_FLARE_ELEMENTS.length; index++) {
         const flareSprite = sunFlareRefs.current[index];
@@ -420,6 +465,7 @@ function AnimatedSun() {
       />
       <Sky
         ref={skyRef}
+        userData={{ ignoreSunOcclusion: true }}
         sunPosition={[8, 14, 6]}
         turbidity={0.8}
         rayleigh={0.2}
@@ -552,6 +598,7 @@ export function CharacterRigScene() {
           material={MeshBasicMaterial}
           frustumCulled={false}
           renderOrder={0}
+          userData={{ ignoreSunOcclusion: true }}
         >
           <Cloud
             position={[-10, 25, -20]}
