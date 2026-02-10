@@ -53,6 +53,9 @@ import {
   THIRD_PERSON_CAMERA_MIN_DISTANCE,
   THIRD_PERSON_ORBIT_ORIGIN_HEIGHT_OFFSET,
   THIRD_PERSON_PIVOT_HEIGHT_OFFSET,
+  VERTICAL_STILL_ENTER_SPEED_EPS,
+  VERTICAL_STILL_EXIT_SPEED_EPS,
+  VERTICAL_STILL_GROUNDED_RECOVERY_SECONDS,
   WORLD_UP,
 } from "../utils/constants";
 import {
@@ -85,6 +88,9 @@ export function CharacterRigController({
   const inputStateRef = useRef<CharacterInputState>({ ...DEFAULT_INPUT_STATE });
   const jumpIntentTimerRef = useRef(0);
   const ungroundedTimerRef = useRef(0);
+  const verticalStillTimerRef = useRef(0);
+  const isInVerticalStillBandRef = useRef(false);
+  const groundedRecoveryLatchRef = useRef(false);
   const isPointerLockedRef = useRef(false);
   const activeTouchPointerIdRef = useRef<number | null>(null);
   const activeTouchPositionRef = useRef<{ x: number; y: number } | null>(null);
@@ -462,6 +468,8 @@ export function CharacterRigController({
 
     const input = inputStateRef.current;
     const translation = body.translation();
+    const currentVelocity = body.linvel();
+    const verticalSpeedAbs = Math.abs(currentVelocity.y);
     const groundingRay = new rapier.Ray(
       { x: translation.x, y: translation.y, z: translation.z },
       { x: 0, y: -1, z: 0 },
@@ -482,9 +490,37 @@ export function CharacterRigController({
       ungroundedTimerRef.current,
       dt,
     );
-    const isGroundedStable = isGroundedWithinGracePeriod(
-      ungroundedTimerRef.current,
-    );
+    if (isGroundHit) {
+      verticalStillTimerRef.current = 0;
+      isInVerticalStillBandRef.current = false;
+      groundedRecoveryLatchRef.current = false;
+    } else if (isInVerticalStillBandRef.current) {
+      if (verticalSpeedAbs > VERTICAL_STILL_EXIT_SPEED_EPS) {
+        verticalStillTimerRef.current = 0;
+        isInVerticalStillBandRef.current = false;
+        groundedRecoveryLatchRef.current = false;
+      } else {
+        verticalStillTimerRef.current = Math.min(
+          VERTICAL_STILL_GROUNDED_RECOVERY_SECONDS,
+          verticalStillTimerRef.current + dt,
+        );
+        if (
+          verticalStillTimerRef.current >=
+          VERTICAL_STILL_GROUNDED_RECOVERY_SECONDS
+        ) {
+          groundedRecoveryLatchRef.current = true;
+        }
+      }
+    } else if (verticalSpeedAbs < VERTICAL_STILL_ENTER_SPEED_EPS) {
+      isInVerticalStillBandRef.current = true;
+      verticalStillTimerRef.current = dt;
+    } else {
+      verticalStillTimerRef.current = 0;
+    }
+
+    const isGroundedStable =
+      isGroundedWithinGracePeriod(ungroundedTimerRef.current) ||
+      groundedRecoveryLatchRef.current;
     const canConsumeJumpIntent = isGroundedStable;
 
     const moveForward = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
@@ -504,7 +540,6 @@ export function CharacterRigController({
         .normalize();
     }
 
-    const currentVelocity = body.linvel();
     const targetSpeed = isWalkGait ? PLAYER_WALK_SPEED : PLAYER_RUN_SPEED;
     const targetVelocityX = moveDirectionRef.current.x * targetSpeed;
     const targetVelocityZ = moveDirectionRef.current.z * targetSpeed;
@@ -528,6 +563,9 @@ export function CharacterRigController({
       nextVelocityY = PLAYER_JUMP_VELOCITY;
       jumpIntentTimerRef.current = 0;
       ungroundedTimerRef.current = GROUNDED_GRACE_SECONDS;
+      verticalStillTimerRef.current = 0;
+      isInVerticalStillBandRef.current = false;
+      groundedRecoveryLatchRef.current = false;
     }
 
     const shouldInterruptActiveEmote =
