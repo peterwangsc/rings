@@ -75,6 +75,7 @@ export function CharacterRigController({
   onToggleCameraMode,
   isWalkDefault,
   onToggleDefaultGait,
+  onPointerLockChange,
 }: CharacterRigControllerProps) {
   const { camera, gl } = useThree();
   const { rapier, world } = useRapier();
@@ -138,6 +139,7 @@ export function CharacterRigController({
   useEffect(() => {
     camera.up.set(0, 1, 0);
     isPointerLockedRef.current = document.pointerLockElement === gl.domElement;
+    onPointerLockChange?.(isPointerLockedRef.current);
 
     const resetInputState = () => {
       inputStateRef.current = { ...DEFAULT_INPUT_STATE };
@@ -207,6 +209,7 @@ export function CharacterRigController({
 
     const handlePointerLockChange = () => {
       isPointerLockedRef.current = document.pointerLockElement === gl.domElement;
+      onPointerLockChange?.(isPointerLockedRef.current);
       if (!isPointerLockedRef.current) {
         resetInputState();
       }
@@ -248,9 +251,10 @@ export function CharacterRigController({
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", resetInputState);
       isPointerLockedRef.current = false;
+      onPointerLockChange?.(false);
       resetInputState();
     };
-  }, [camera, gl, onToggleCameraMode, onToggleDefaultGait]);
+  }, [camera, gl, onPointerLockChange, onToggleCameraMode, onToggleDefaultGait]);
 
   useFrame((_, deltaSeconds) => {
     const body = bodyRef.current;

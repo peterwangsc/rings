@@ -14,4 +14,5 @@ export interface CharacterRigControllerProps {
   readonly onToggleCameraMode: () => void;
   readonly isWalkDefault: boolean;
   readonly onToggleDefaultGait: () => void;
+  readonly onPointerLockChange?: (isLocked: boolean) => void;
 }
