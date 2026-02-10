@@ -221,7 +221,7 @@ Each rock is generated from a sphere that gets sculpted by layered noise.
 
 Where things are placed, how big they are, and the ground colors.
 
-**Files:** `app/utils/constants.ts` for ground/rocks/grass layout, `app/vegetation/trees/treeConfig.ts` for procedural tree system knobs.
+**File:** `app/utils/constants.ts`
 
 | What you're shaping | Constant | What it does |
 |---|---|---|
@@ -232,7 +232,6 @@ Where things are placed, how big they are, and the ground colors.
 | Grass patch color | `GRASS_PATCH_COLOR` | Overlay circle color — slightly darker for variation |
 | Rock base color | `ROCK_MATERIAL_COLOR` | Base tint before shader effects layer on top |
 | Ground size | `GROUND_HALF_EXTENT` | Half-width of the ground plane in meters |
-| Tree generation, species mix, LOD distances | `TREE_SYSTEM_CONFIG` | Central tree settings for placement, growth, meshing, and rendering thresholds |
 
 ---
 
@@ -255,7 +254,7 @@ Where things are placed, how big they are, and the ground colors.
 ### For adding new visual elements
 
 1. State what the element is and where it should appear.
-2. Follow existing patterns: new world objects go in `WorldGeometry.tsx` with a `RigidBody` wrapper. New shader effects extend the existing `onBeforeCompile` pipeline in `shaders.ts`. New global constants go in `constants.ts`, while tree-system constants belong in `app/vegetation/trees/treeConfig.ts`.
+2. Follow existing patterns: new world objects go in `WorldGeometry.tsx` with a `RigidBody` wrapper. New shader effects extend the existing `onBeforeCompile` pipeline in `shaders.ts`. New constants go in `constants.ts`.
 3. Keep shader work inside the `MeshStandardMaterial` customization pattern — don't replace it with a raw `ShaderMaterial` unless the standard pipeline can't do what you need.
 
 ### Implementation order when building a new feature
@@ -310,8 +309,6 @@ When changing camera, movement, coordinate-space, or animation coupling behavior
 | Movement, camera, timing, layout, colors | `app/utils/constants.ts` |
 | Lighting, shadows, fog, canvas setup | `app/scene/CharacterRigScene.tsx` |
 | Ground plane, grass, rock placement | `app/scene/WorldGeometry.tsx` |
-| Tree config + species tuning | `app/vegetation/trees/treeConfig.ts` |
-| Tree generation + meshing + LOD rendering | `app/vegetation/trees/` |
 | Rock surface shader effects | `app/utils/shaders.ts` |
 | Rock procedural shape | `app/utils/rockGeometry.ts` |
 | Character model, animation playback | `app/lib/CharacterActor.tsx` |

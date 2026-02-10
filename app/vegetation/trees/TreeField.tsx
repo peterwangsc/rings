@@ -85,12 +85,12 @@ export function TreeField({ terrainSampler, rockFormations, camera }: TreeFieldP
   }, [archetypes, batches, materials]);
 
   return (
-    <group>
+      <group>
       {batches.branchBatches.map((batch, index) => (
-        <primitive key={`tree-branch-lod-${index}`} object={batch} />
+        <primitive key={`tree-branch-lod-${index}`} object={batch} dispose={null} />
       ))}
       {batches.canopyBatches.map((batch, index) => (
-        <primitive key={`tree-canopy-lod-${index}`} object={batch} />
+        <primitive key={`tree-canopy-lod-${index}`} object={batch} dispose={null} />
       ))}
     </group>
   );

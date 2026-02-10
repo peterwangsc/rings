@@ -11,53 +11,25 @@ export function createTreeMaterials(config: TreeSystemConfig): TreeMaterialSet {
   const fallbackTrunk = config.species[0]?.trunkColor ?? "#5E4432";
   const fallbackCanopy = config.species[0]?.canopyColor ?? "#4E9A4B";
 
-  const branchMaterials: TreeMaterialSet["branchMaterials"] = [
-    new THREE.MeshStandardMaterial({
+  const branchMaterials = [0, 1, 2].map((lod) => {
+    return new THREE.MeshStandardMaterial({
       color: fallbackTrunk,
-      roughness: 0.98,
+      roughness: THREE.MathUtils.lerp(0.98, 1, lod / 2),
       metalness: 0.01,
       vertexColors: true,
       flatShading: true,
-    }),
-    new THREE.MeshStandardMaterial({
-      color: fallbackTrunk,
-      roughness: 0.99,
-      metalness: 0.01,
-      vertexColors: true,
-      flatShading: true,
-    }),
-    new THREE.MeshStandardMaterial({
-      color: fallbackTrunk,
-      roughness: 1,
-      metalness: 0.01,
-      vertexColors: true,
-      flatShading: true,
-    }),
-  ];
+    });
+  }) as TreeMaterialSet["branchMaterials"];
 
-  const canopyMaterials: TreeMaterialSet["canopyMaterials"] = [
-    new THREE.MeshStandardMaterial({
+  const canopyMaterials = [0, 1, 2].map((lod) => {
+    return new THREE.MeshStandardMaterial({
       color: fallbackCanopy,
-      roughness: 0.9,
+      roughness: THREE.MathUtils.lerp(0.9, 0.96, lod / 2),
       metalness: 0.01,
       vertexColors: true,
       flatShading: true,
-    }),
-    new THREE.MeshStandardMaterial({
-      color: fallbackCanopy,
-      roughness: 0.93,
-      metalness: 0.01,
-      vertexColors: true,
-      flatShading: true,
-    }),
-    new THREE.MeshStandardMaterial({
-      color: fallbackCanopy,
-      roughness: 0.96,
-      metalness: 0.01,
-      vertexColors: true,
-      flatShading: true,
-    }),
-  ];
+    });
+  }) as TreeMaterialSet["canopyMaterials"];
 
   return {
     branchMaterials,

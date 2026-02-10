@@ -42,7 +42,7 @@ function buildArchetype(
 
   const canopyBaseRadius = rangeLerp(species.canopyPuffRadius, rng());
 
-  const createLod = (lodLevel: 0 | 1 | 2) => {
+  const lods = [0, 1, 2].map((lodLevel) => {
     const branchGeometry = createBranchGeometry(skeleton, {
       radialSegments: config.meshing.lodBranchRadialSegments[lodLevel],
       minRadius: config.radius.minKeptRadius * 0.8,
@@ -59,9 +59,7 @@ function buildArchetype(
     });
 
     return { branchGeometry, canopyGeometry };
-  };
-
-  const lods: TreeArchetype["lods"] = [createLod(0), createLod(1), createLod(2)];
+  }) as TreeArchetype["lods"];
 
   const archetype: TreeArchetype = {
     id: `${species.id}-${variantIndex}`,

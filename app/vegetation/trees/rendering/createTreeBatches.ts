@@ -10,6 +10,18 @@ export type CreatedTreeBatches = {
   dispose: () => void;
 };
 
+type BatchedMeshWithInternals = THREE.BatchedMesh & {
+  _matricesTexture?: THREE.Texture | null;
+};
+
+function disposeBatchSafely(batch: THREE.BatchedMesh) {
+  const internalBatch = batch as BatchedMeshWithInternals;
+  if (!internalBatch || internalBatch._matricesTexture == null) {
+    return;
+  }
+  internalBatch.dispose();
+}
+
 function hash(seed: number) {
   const value = Math.sin(seed * 12.9898) * 43758.5453123;
   return value - Math.floor(value);
@@ -75,7 +87,7 @@ function buildSingleBatch(params: BuildSingleBatchParams) {
   batch.perObjectFrustumCulled = true;
 
   const geometryIds = geometries.map((geometry) => batch.addGeometry(geometry));
-  const instanceIds = new Array<number>(params.placements.length);
+  const instanceIds: number[] = [];
 
   const matrix = new THREE.Matrix4();
   const quaternion = new THREE.Quaternion();
@@ -87,7 +99,7 @@ function buildSingleBatch(params: BuildSingleBatchParams) {
     const key = archetypeKey(placement.speciesId, placement.variantIndex);
     const archetypeIndex = archetypeIndexByKey.get(key);
     if (archetypeIndex === undefined) {
-      throw new Error(`Missing tree archetype for placement key: ${key}`);
+      continue;
     }
 
     const geometryId = geometryIds[archetypeIndex];
@@ -121,7 +133,7 @@ function buildSingleBatch(params: BuildSingleBatchParams) {
     }
 
     batch.setColorAt(instanceId, baseColor);
-    instanceIds[placementIndex] = instanceId;
+    instanceIds.push(instanceId);
   }
 
   batch.computeBoundingSphere();
@@ -134,78 +146,38 @@ export function createTreeBatches(
   config: TreeSystemConfig,
   materials: TreeMaterialSet,
 ): CreatedTreeBatches {
-  const branchRecords: readonly [
-    { batch: THREE.BatchedMesh; instanceIds: number[] },
-    { batch: THREE.BatchedMesh; instanceIds: number[] },
-    { batch: THREE.BatchedMesh; instanceIds: number[] },
-  ] = [
+  const branchRecords = [0, 1, 2].map((lodLevel) =>
     buildSingleBatch({
-      lodLevel: 0,
+      lodLevel: lodLevel as 0 | 1 | 2,
       part: "branch",
       archetypes,
       placements,
-      material: materials.branchMaterials[0],
+      material: materials.branchMaterials[lodLevel],
       config,
     }),
-    buildSingleBatch({
-      lodLevel: 1,
-      part: "branch",
-      archetypes,
-      placements,
-      material: materials.branchMaterials[1],
-      config,
-    }),
-    buildSingleBatch({
-      lodLevel: 2,
-      part: "branch",
-      archetypes,
-      placements,
-      material: materials.branchMaterials[2],
-      config,
-    }),
+  ) as readonly [
+    { batch: THREE.BatchedMesh; instanceIds: number[] },
+    { batch: THREE.BatchedMesh; instanceIds: number[] },
+    { batch: THREE.BatchedMesh; instanceIds: number[] },
   ];
 
-  const canopyRecords: readonly [
-    { batch: THREE.BatchedMesh; instanceIds: number[] },
-    { batch: THREE.BatchedMesh; instanceIds: number[] },
-    { batch: THREE.BatchedMesh; instanceIds: number[] },
-  ] = [
+  const canopyRecords = [0, 1, 2].map((lodLevel) =>
     buildSingleBatch({
-      lodLevel: 0,
+      lodLevel: lodLevel as 0 | 1 | 2,
       part: "canopy",
       archetypes,
       placements,
-      material: materials.canopyMaterials[0],
+      material: materials.canopyMaterials[lodLevel],
       config,
     }),
-    buildSingleBatch({
-      lodLevel: 1,
-      part: "canopy",
-      archetypes,
-      placements,
-      material: materials.canopyMaterials[1],
-      config,
-    }),
-    buildSingleBatch({
-      lodLevel: 2,
-      part: "canopy",
-      archetypes,
-      placements,
-      material: materials.canopyMaterials[2],
-      config,
-    }),
+  ) as readonly [
+    { batch: THREE.BatchedMesh; instanceIds: number[] },
+    { batch: THREE.BatchedMesh; instanceIds: number[] },
+    { batch: THREE.BatchedMesh; instanceIds: number[] },
   ];
 
-  const branchBatches: CreatedTreeBatches["branchBatches"] = [
-    branchRecords[0].batch,
-    branchRecords[1].batch,
-    branchRecords[2].batch,
-  ];
-  const canopyBatches: CreatedTreeBatches["canopyBatches"] = [
-    canopyRecords[0].batch,
-    canopyRecords[1].batch,
-    canopyRecords[2].batch,
-  ];
+  const branchBatches = branchRecords.map((record) => record.batch) as CreatedTreeBatches["branchBatches"];
+  const canopyBatches = canopyRecords.map((record) => record.batch) as CreatedTreeBatches["canopyBatches"];
 
   const branchInstanceIds = placements.map((_, treeIndex) =>
     branchRecords.map((record) => record.instanceIds[treeIndex]),
@@ -221,10 +193,10 @@ export function createTreeBatches(
     canopyInstanceIds,
     dispose: () => {
       for (const batch of branchBatches) {
-        batch.dispose();
+        disposeBatchSafely(batch);
       }
       for (const batch of canopyBatches) {
-        batch.dispose();
+        disposeBatchSafely(batch);
       }
     },
   };

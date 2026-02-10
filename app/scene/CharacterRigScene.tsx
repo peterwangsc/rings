@@ -24,13 +24,10 @@ import {
   MathUtils,
   Mesh,
   MeshBasicMaterial,
-  Object3D,
   Points,
-  Raycaster,
   ShaderMaterial,
   Sprite,
   SpriteMaterial,
-  Vector3,
 } from "three";
 import type { Sky as SkyImpl } from "three-stdlib";
 import type { CameraMode } from "../camera/cameraTypes";
@@ -55,14 +52,7 @@ const MOON_HALO_BASE_SIZE = 11;
 const MOON_HALO_PULSE_SIZE = 13.5;
 const MOON_HALO_MAX_OPACITY = 0.36;
 const SUN_LIGHT_DAY_INTENSITY = 1.35;
-const SUN_FLARE_DISTANCE = 4.5;
-const SUN_FLARE_MAX_OPACITY = 0.75;
-const SUN_FLARE_ALIGNMENT_START = 0.72;
-const SUN_FLARE_ALIGNMENT_END = 0.995;
-const SUN_FLARE_EDGE_FADE_START = 0.45;
-const SUN_FLARE_EDGE_FADE_END = 1.1;
 const SUN_SHADOW_ENABLE_THRESHOLD = 0.12;
-const SUN_FLARE_OCCLUSION_DISTANCE_EPSILON = 0.12;
 const NIGHT_SKY_COLOR = "#071634";
 const SKY_FADE_START = 0.15;
 const SKY_FADE_END = 0.65;
@@ -72,13 +62,6 @@ const AMBIENT_LIGHT_DAY_INTENSITY = 0.75;
 const AMBIENT_LIGHT_NIGHT_INTENSITY = 0.2;
 const NIGHT_FOG_NEAR = 1000;
 const NIGHT_FOG_FAR = 1100;
-const SUN_FLARE_ELEMENTS = [
-  { offset: 0, scale: 1.5, opacity: 1, color: "#FFF5CE" },
-  { offset: 0.35, scale: 0.45, opacity: 0.52, color: "#FFD78A" },
-  { offset: 0.75, scale: 0.8, opacity: 0.36, color: "#FFE6B2" },
-  { offset: 1.18, scale: 0.3, opacity: 0.5, color: "#FFC16D" },
-  { offset: 1.62, scale: 0.62, opacity: 0.24, color: "#FFF0D4" },
-] as const;
 
 type SkyMaterialWithSunPosition = ShaderMaterial & {
   uniforms: {
@@ -94,88 +77,19 @@ type SkyMaterialWithSunPosition = ShaderMaterial & {
   };
 };
 
-function shouldIgnoreSunOcclusion(object: Object3D | null) {
-  let current: Object3D | null = object;
-  while (current) {
-    if (current.userData.ignoreSunOcclusion) {
-      return true;
-    }
-    current = current.parent;
-  }
-  return false;
-}
-
 function AnimatedSun() {
   const skyRef = useRef<SkyImpl>(null);
   const lightRef = useRef<DirectionalLight>(null);
   const moonRef = useRef<Mesh>(null);
   const moonHaloRef = useRef<Sprite>(null);
   const moonLightRef = useRef<DirectionalLight>(null);
-  const sunFlareRefs = useRef<Array<Sprite | null>>([]);
   const starsRef = useRef<Points>(null);
   const hemisphereRef = useRef<HemisphereLight>(null);
   const ambientRef = useRef<AmbientLight>(null);
   const angleRef = useRef(Math.PI * 0.25); // start mid-morning
-  const sunWorldVectorRef = useRef(new Vector3());
-  const sunNdcVectorRef = useRef(new Vector3());
-  const unprojectVectorRef = useRef(new Vector3());
-  const sunDirVectorRef = useRef(new Vector3());
-  const cameraForwardVectorRef = useRef(new Vector3());
-  const flarePositionRef = useRef(new Vector3());
-  const sunOcclusionRaycasterRef = useRef(new Raycaster());
-  const sunOcclusionDirectionRef = useRef(new Vector3());
   const daySkyColor = useMemo(() => new Color(HORIZON_COLOR), []);
   const nightSkyColor = useMemo(() => new Color(NIGHT_SKY_COLOR), []);
   const blendedSkyColor = useMemo(() => new Color(HORIZON_COLOR), []);
-  const sunFlareTexture = useMemo(() => {
-    if (typeof document === "undefined") {
-      return null;
-    }
-
-    const textureSize = 256;
-    const canvas = document.createElement("canvas");
-    canvas.width = textureSize;
-    canvas.height = textureSize;
-
-    const context = canvas.getContext("2d");
-    if (!context) {
-      return null;
-    }
-
-    const center = textureSize * 0.5;
-    const mainGradient = context.createRadialGradient(
-      center,
-      center,
-      0,
-      center,
-      center,
-      center,
-    );
-    mainGradient.addColorStop(0, "rgba(255, 255, 255, 1)");
-    mainGradient.addColorStop(0.16, "rgba(255, 244, 204, 0.9)");
-    mainGradient.addColorStop(0.42, "rgba(255, 210, 128, 0.28)");
-    mainGradient.addColorStop(1, "rgba(255, 194, 102, 0)");
-    context.fillStyle = mainGradient;
-    context.fillRect(0, 0, textureSize, textureSize);
-
-    context.strokeStyle = "rgba(255, 235, 190, 0.42)";
-    context.lineWidth = textureSize * 0.028;
-    context.beginPath();
-    context.arc(center, center, textureSize * 0.24, 0, Math.PI * 2);
-    context.stroke();
-
-    context.strokeStyle = "rgba(255, 205, 120, 0.2)";
-    context.lineWidth = textureSize * 0.016;
-    context.beginPath();
-    context.arc(center, center, textureSize * 0.36, 0, Math.PI * 2);
-    context.stroke();
-
-    const texture = new CanvasTexture(canvas);
-    texture.minFilter = LinearFilter;
-    texture.magFilter = LinearFilter;
-    texture.needsUpdate = true;
-    return texture;
-  }, []);
   const moonGlowTexture = useMemo(() => {
     if (typeof document === "undefined") {
       return null;
@@ -217,10 +131,9 @@ function AnimatedSun() {
 
   useEffect(() => {
     return () => {
-      sunFlareTexture?.dispose();
       moonGlowTexture?.dispose();
     };
-  }, [moonGlowTexture, sunFlareTexture]);
+  }, [moonGlowTexture]);
 
   useEffect(() => {
     if (skyRef.current) {
@@ -362,93 +275,6 @@ function AnimatedSun() {
         nightFactor,
       );
     }
-
-    if (sunFlareRefs.current.length > 0) {
-      const camera = state.camera;
-      const sunWorldPosition = sunWorldVectorRef.current.set(sx, sy, sz);
-      const sunNdc = sunNdcVectorRef.current.copy(sunWorldPosition).project(camera);
-      camera.getWorldDirection(cameraForwardVectorRef.current);
-      sunDirVectorRef.current.copy(sunWorldPosition).sub(camera.position).normalize();
-
-      const frontAlignment = MathUtils.smoothstep(
-        cameraForwardVectorRef.current.dot(sunDirVectorRef.current),
-        SUN_FLARE_ALIGNMENT_START,
-        SUN_FLARE_ALIGNMENT_END,
-      );
-      const edgeFade =
-        1 -
-        MathUtils.smoothstep(
-          Math.hypot(sunNdc.x, sunNdc.y),
-          SUN_FLARE_EDGE_FADE_START,
-          SUN_FLARE_EDGE_FADE_END,
-        );
-      const flareIntensity =
-        frontAlignment * edgeFade * sunLightFactor * (1 - nightFactor);
-      const sunInFront = sunNdc.z > -1 && sunNdc.z < 1;
-      const flareCandidateVisible = sunInFront && flareIntensity > 0.001;
-      let hasLineOfSightToSun = true;
-      if (flareCandidateVisible) {
-        const toSun = sunOcclusionDirectionRef.current
-          .copy(sunWorldPosition)
-          .sub(camera.position);
-        const sunDistance = toSun.length();
-        if (sunDistance > SUN_FLARE_OCCLUSION_DISTANCE_EPSILON) {
-          toSun.multiplyScalar(1 / sunDistance);
-          const occlusionRaycaster = sunOcclusionRaycasterRef.current;
-          occlusionRaycaster.set(camera.position, toSun);
-          occlusionRaycaster.near = 0;
-          occlusionRaycaster.far =
-            sunDistance - SUN_FLARE_OCCLUSION_DISTANCE_EPSILON;
-          const intersections = occlusionRaycaster.intersectObjects(
-            state.scene.children,
-            true,
-          );
-          hasLineOfSightToSun = !intersections.some((intersection) => {
-            if (
-              intersection.distance <= SUN_FLARE_OCCLUSION_DISTANCE_EPSILON ||
-              shouldIgnoreSunOcclusion(intersection.object)
-            ) {
-              return false;
-            }
-            return (intersection.object as Mesh).isMesh === true;
-          });
-        }
-      }
-      const flareVisible = flareCandidateVisible && hasLineOfSightToSun;
-
-      for (let index = 0; index < SUN_FLARE_ELEMENTS.length; index++) {
-        const flareSprite = sunFlareRefs.current[index];
-        if (!flareSprite) {
-          continue;
-        }
-
-        flareSprite.visible = flareVisible;
-        if (!flareVisible) {
-          continue;
-        }
-
-        const flare = SUN_FLARE_ELEMENTS[index];
-        const ndcX = sunNdc.x * (1 - flare.offset);
-        const ndcY = sunNdc.y * (1 - flare.offset);
-        unprojectVectorRef.current.set(ndcX, ndcY, 0.2).unproject(camera);
-        sunDirVectorRef.current
-          .copy(unprojectVectorRef.current)
-          .sub(camera.position)
-          .normalize();
-        flarePositionRef.current
-          .copy(camera.position)
-          .addScaledVector(sunDirVectorRef.current, SUN_FLARE_DISTANCE);
-        flareSprite.position.copy(flarePositionRef.current);
-
-        const flareScale = flare.scale * MathUtils.lerp(0.9, 1.12, frontAlignment);
-        flareSprite.scale.set(flareScale, flareScale, 1);
-        const flareMaterial = flareSprite.material;
-        if (!Array.isArray(flareMaterial)) {
-          (flareMaterial as SpriteMaterial).opacity =
-            flare.opacity * SUN_FLARE_MAX_OPACITY * flareIntensity;
-        }
-      }
-    }
   });
 
   return (
@@ -465,7 +291,6 @@ function AnimatedSun() {
       />
       <Sky
         ref={skyRef}
-        userData={{ ignoreSunOcclusion: true }}
         sunPosition={[8, 14, 6]}
         turbidity={0.8}
         rayleigh={0.2}
@@ -511,31 +336,6 @@ function AnimatedSun() {
             depthWrite={false}
           />
         </sprite>
-      ) : null}
-      {sunFlareTexture ? (
-        <group renderOrder={30}>
-          {SUN_FLARE_ELEMENTS.map((flare, index) => (
-            <sprite
-              key={`sun-flare-${index}`}
-              ref={(sprite) => {
-                sunFlareRefs.current[index] = sprite;
-              }}
-              visible={false}
-              scale={[flare.scale, flare.scale, 1]}
-            >
-              <spriteMaterial
-                map={sunFlareTexture}
-                color={flare.color}
-                transparent
-                opacity={0}
-                blending={AdditiveBlending}
-                depthWrite={false}
-                depthTest={false}
-                toneMapped={false}
-              />
-            </sprite>
-          ))}
-        </group>
       ) : null}
       <directionalLight
         ref={moonLightRef}
@@ -598,51 +398,47 @@ export function CharacterRigScene() {
           material={MeshBasicMaterial}
           frustumCulled={false}
           renderOrder={0}
-          userData={{ ignoreSunOcclusion: true }}
         >
           <Cloud
             position={[-10, 25, -20]}
             speed={0.2}
             opacity={0.6}
-            width={12}
-            depth={3}
+            bounds={[12, 3, 1]}
             segments={8}
           />
           <Cloud
             position={[15, 30, -30]}
             speed={0.15}
             opacity={0.5}
-            width={16}
-            depth={4}
+            bounds={[16, 4, 1]}
             segments={10}
           />
           <Cloud
             position={[0, 28, -40]}
             speed={0.1}
             opacity={0.4}
-            width={20}
-            depth={5}
+            bounds={[20, 5, 1]}
             segments={12}
           />
           <Cloud
             position={[-20, 32, -10]}
             speed={0.25}
             opacity={0.5}
-            width={10}
-            depth={3}
+            bounds={[10, 3, 1]}
             segments={6}
           />
           <Cloud
             position={[25, 27, -15]}
             speed={0.18}
             opacity={0.45}
-            width={14}
-            depth={4}
+            bounds={[14, 4, 1]}
             segments={9}
           />
         </Clouds>
         <Physics gravity={[0, WORLD_GRAVITY_Y, 0]}>
-          <WorldGeometry />
+          <Suspense fallback={null}>
+            <WorldGeometry />
+          </Suspense>
           <Suspense fallback={null}>
             <CharacterRigController
               cameraMode={cameraMode}
@@ -656,7 +452,9 @@ export function CharacterRigScene() {
       </Canvas>
       {!isPointerLocked ? (
         <div className="pointer-events-none absolute left-4 top-4 z-20 max-w-xs rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
-          <p className="mb-1 font-semibold tracking-wide text-white">Controls</p>
+          <p className="mb-1 font-semibold tracking-wide text-white">
+            Controls
+          </p>
           <p>Click to lock mouse</p>
           <p>Touch and drag to look around</p>
           <p>W A S D move, Space jump, Shift alternate gait</p>

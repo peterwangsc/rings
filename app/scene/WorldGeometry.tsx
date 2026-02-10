@@ -1,4 +1,4 @@
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useLoader } from "@react-three/fiber";
 import { CuboidCollider, MeshCollider, RigidBody } from "@react-three/rapier";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
@@ -40,8 +40,25 @@ import {
   TERRAIN_HEIGHT_AMPLITUDE,
   TERRAIN_MICRO_NOISE_SCALE,
   TERRAIN_RIDGE_STRENGTH,
+  TREE_CANOPY_BASE_HEIGHT,
+  TREE_CANOPY_BASE_RADIUS,
+  TREE_CANOPY_DARK_COLOR,
+  TREE_CANOPY_HEIGHT_VARIANCE,
+  TREE_CANOPY_LIGHT_COLOR,
+  TREE_CANOPY_RADIUS_VARIANCE,
+  TREE_CANOPY_VERTICAL_OFFSET,
+  TREE_BRANCH_LEVELS,
+  TREE_CLEARING_RADIUS,
+  TREE_COUNT,
+  TREE_FIELD_RADIUS,
+  TREE_MAX_SLOPE,
+  TREE_MIN_SPACING,
+  TREE_TRUNK_BASE_HEIGHT,
+  TREE_TRUNK_BASE_RADIUS,
+  TREE_TRUNK_COLOR,
+  TREE_TRUNK_HEIGHT_VARIANCE,
+  TREE_TRUNK_RADIUS_VARIANCE,
 } from "../utils/constants";
-import { TreeField } from "../vegetation/trees";
 import { createProceduralRockGeometry } from "../utils/rockGeometry";
 import { createRockMaterial } from "../utils/shaders";
 import { Campfire } from "./Campfire";
@@ -52,6 +69,17 @@ const GRASS_SHADER_CACHE_KEY = "grass-blades-v1";
 const TAU = Math.PI * 2;
 const GRASS_BASE_Y = 0.03;
 const TERRAIN_SLOPE_SAMPLE_DELTA = 0.45;
+const TREE_ROCK_CLEARANCE = 1.2;
+const TREE_BRANCH_CHILD_MIN = 2;
+const TREE_BRANCH_CHILD_VARIANCE = 2;
+const TREE_BRANCH_LENGTH_MIN = 0.57;
+const TREE_BRANCH_LENGTH_MAX = 0.76;
+const TREE_BRANCH_RADIUS_MIN = 0.56;
+const TREE_BRANCH_RADIUS_MAX = 0.74;
+const TREE_FOLIAGE_CLUSTER_MIN = 3;
+const TREE_FOLIAGE_CLUSTER_VARIANCE = 3;
+const TREE_MIN_BRANCH_RADIUS = 0.016;
+const TREE_MIN_BRANCH_LENGTH = 0.11;
 
 type GrassShaderUniforms = {
   uTime: THREE.IUniform<number>;
@@ -145,9 +173,25 @@ export function WorldGeometry() {
     useRef<THREE.InstancedMesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>>(
       null,
     );
+  const treeTrunkRef =
+    useRef<THREE.InstancedMesh<THREE.CylinderGeometry, THREE.MeshStandardMaterial>>(
+      null,
+    );
+  const treeBranchRef =
+    useRef<THREE.InstancedMesh<THREE.CylinderGeometry, THREE.MeshStandardMaterial>>(
+      null,
+    );
+  const treeFoliageRef =
+    useRef<THREE.InstancedMesh<THREE.IcosahedronGeometry, THREE.MeshStandardMaterial>>(
+      null,
+    );
 
+  const loadedRockNoiseTexture = useLoader(
+    THREE.TextureLoader,
+    SIMPLEX_NOISE_TEXTURE_PATH,
+  );
   const rockNoiseTexture = useMemo(() => {
-    const texture = new THREE.TextureLoader().load(SIMPLEX_NOISE_TEXTURE_PATH);
+    const texture = loadedRockNoiseTexture.clone();
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     texture.colorSpace = THREE.NoColorSpace;
@@ -156,7 +200,7 @@ export function WorldGeometry() {
     texture.anisotropy = SIMPLEX_NOISE_TEXTURE_ANISOTROPY;
     texture.needsUpdate = true;
     return texture;
-  }, []);
+  }, [loadedRockNoiseTexture]);
 
   const terrainGeometry = useMemo(() => {
     const geometry = new THREE.PlaneGeometry(
@@ -361,13 +405,321 @@ export function WorldGeometry() {
     };
   }, []);
 
-  const terrainSampler = useMemo(
-    () => ({
-      sampleHeight: sampleTerrainHeight,
-      sampleSlope: sampleTerrainSlope,
-    }),
-    [],
-  );
+  const treeField = useMemo(() => {
+    const trunkGeometry = new THREE.CylinderGeometry(1, 1, 1, 8, 1);
+    trunkGeometry.translate(0, 0.5, 0);
+    const branchGeometry = new THREE.CylinderGeometry(1, 1, 1, 7, 1);
+    branchGeometry.translate(0, 0.5, 0);
+    const foliageGeometry = new THREE.IcosahedronGeometry(1, 1);
+
+    const trunkMatrices: THREE.Matrix4[] = [];
+    const branchMatrices: THREE.Matrix4[] = [];
+    const foliageMatrices: THREE.Matrix4[] = [];
+    const trunkColors: THREE.Color[] = [];
+    const branchColors: THREE.Color[] = [];
+    const foliageColors: THREE.Color[] = [];
+    const treePositions: THREE.Vector2[] = [];
+
+    const matrixPosition = new THREE.Vector3();
+    const matrixScale = new THREE.Vector3();
+    const segmentOrigin = new THREE.Vector3();
+    const segmentDirection = new THREE.Vector3();
+    const branchEnd = new THREE.Vector3();
+    const tangent = new THREE.Vector3();
+    const bitangent = new THREE.Vector3();
+    const offset = new THREE.Vector3();
+    const childOrigin = new THREE.Vector3();
+    const childDirection = new THREE.Vector3();
+    const branchSeedDirection = new THREE.Vector3();
+    const localUp = new THREE.Vector3(0, 1, 0);
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const matrixEuler = new THREE.Euler(0, 0, 0, "YXZ");
+    const quaternion = new THREE.Quaternion();
+
+    const baseTrunkColor = new THREE.Color(TREE_TRUNK_COLOR);
+    const darkCanopyColor = new THREE.Color(TREE_CANOPY_DARK_COLOR);
+    const lightCanopyColor = new THREE.Color(TREE_CANOPY_LIGHT_COLOR);
+    const branchColor = new THREE.Color();
+    const foliageColor = new THREE.Color();
+    const branchMatrix = new THREE.Matrix4();
+    const foliageMatrix = new THREE.Matrix4();
+
+    const pushSegment = (
+      origin: THREE.Vector3,
+      direction: THREE.Vector3,
+      length: number,
+      radius: number,
+      targetMatrices: THREE.Matrix4[],
+      targetColors: THREE.Color[],
+      color: THREE.Color,
+    ) => {
+      quaternion.setFromUnitVectors(localUp, direction);
+      matrixScale.set(radius, length, radius);
+      branchMatrix.compose(origin, quaternion, matrixScale);
+      targetMatrices.push(branchMatrix.clone());
+      targetColors.push(color.clone());
+    };
+
+    const pushFoliageCluster = (
+      center: THREE.Vector3,
+      branchDirection: THREE.Vector3,
+      baseRadius: number,
+      clusterSeed: number,
+      canopyTint: THREE.Color,
+    ) => {
+      const clusterCount =
+        TREE_FOLIAGE_CLUSTER_MIN +
+        Math.floor(hash1D(clusterSeed * 2.31 + 4.6) * TREE_FOLIAGE_CLUSTER_VARIANCE);
+      for (let clusterIndex = 0; clusterIndex < clusterCount; clusterIndex++) {
+        const seed = clusterSeed * 1.91 + clusterIndex * 7.13;
+        const azimuth = hash1D(seed + 1.2) * TAU;
+        const elevation = hash1D(seed + 2.4) * 0.78 - 0.15;
+        const radial = baseRadius * THREE.MathUtils.lerp(0.18, 0.75, hash1D(seed + 3.9));
+        const blobRadius = baseRadius * THREE.MathUtils.lerp(0.36, 0.95, hash1D(seed + 5.1));
+
+        if (Math.abs(branchDirection.y) < 0.98) {
+          tangent.set(-branchDirection.z, 0, branchDirection.x).normalize();
+        } else {
+          tangent.set(1, 0, 0);
+        }
+        bitangent.copy(branchDirection).cross(tangent).normalize();
+        offset
+          .copy(branchDirection)
+          .multiplyScalar(elevation * baseRadius * 0.6)
+          .addScaledVector(tangent, Math.cos(azimuth) * radial)
+          .addScaledVector(bitangent, Math.sin(azimuth) * radial);
+        matrixPosition.copy(center).add(offset);
+
+        matrixEuler.set(
+          hash1D(seed + 6.1) * TAU,
+          hash1D(seed + 7.8) * TAU,
+          hash1D(seed + 9.3) * TAU,
+        );
+        quaternion.setFromEuler(matrixEuler);
+        matrixScale.set(
+          blobRadius * THREE.MathUtils.lerp(0.86, 1.22, hash1D(seed + 10.1)),
+          blobRadius * THREE.MathUtils.lerp(0.74, 1.35, hash1D(seed + 11.4)),
+          blobRadius * THREE.MathUtils.lerp(0.86, 1.22, hash1D(seed + 12.9)),
+        );
+        foliageMatrix.compose(matrixPosition, quaternion, matrixScale);
+        foliageMatrices.push(foliageMatrix.clone());
+
+        foliageColor
+          .copy(canopyTint)
+          .offsetHSL(
+            (hash1D(seed + 13.8) - 0.5) * 0.015,
+            (hash1D(seed + 14.9) - 0.5) * 0.08,
+            (hash1D(seed + 15.2) - 0.5) * 0.12,
+          );
+        foliageColors.push(foliageColor.clone());
+      }
+    };
+
+    const growBranches = (
+      origin: THREE.Vector3,
+      direction: THREE.Vector3,
+      length: number,
+      radius: number,
+      depth: number,
+      baseSeed: number,
+      trunkTint: THREE.Color,
+      canopyTint: THREE.Color,
+      foliageBaseRadius: number,
+    ) => {
+      if (length < TREE_MIN_BRANCH_LENGTH || radius < TREE_MIN_BRANCH_RADIUS) {
+        pushFoliageCluster(origin, direction, foliageBaseRadius * 0.62, baseSeed + 19.7, canopyTint);
+        return;
+      }
+
+      branchColor.copy(trunkTint).offsetHSL(0, 0, -0.03 - (TREE_BRANCH_LEVELS - depth) * 0.01);
+      pushSegment(origin, direction, length, radius, branchMatrices, branchColors, branchColor);
+
+      branchEnd.copy(direction).multiplyScalar(length).add(origin);
+      if (depth <= 0) {
+        pushFoliageCluster(branchEnd, direction, foliageBaseRadius, baseSeed + 23.1, canopyTint);
+        return;
+      }
+
+      const childCount =
+        TREE_BRANCH_CHILD_MIN +
+        Math.floor(hash1D(baseSeed * 2.2 + depth * 1.9) * TREE_BRANCH_CHILD_VARIANCE);
+      for (let childIndex = 0; childIndex < childCount; childIndex++) {
+        const childSeed = baseSeed * 1.73 + childIndex * 13.7 + depth * 7.9;
+        const azimuth = hash1D(childSeed + 1.5) * TAU;
+        const spread = THREE.MathUtils.lerp(0.34, 0.88, hash1D(childSeed + 2.8));
+        const forwardBias = THREE.MathUtils.lerp(0.42, 0.72, hash1D(childSeed + 3.9));
+
+        if (Math.abs(direction.y) < 0.98) {
+          tangent.set(-direction.z, 0, direction.x).normalize();
+        } else {
+          tangent.set(1, 0, 0);
+        }
+        bitangent.copy(direction).cross(tangent).normalize();
+
+        childDirection
+          .copy(direction)
+          .multiplyScalar(forwardBias)
+          .addScaledVector(tangent, Math.cos(azimuth) * spread)
+          .addScaledVector(bitangent, Math.sin(azimuth) * spread)
+          .normalize();
+
+        const lift = THREE.MathUtils.lerp(0.05, 0.32, hash1D(childSeed + 4.7));
+        childDirection.y = THREE.MathUtils.clamp(childDirection.y + lift, -0.15, 0.95);
+        childDirection.normalize();
+
+        const childLength =
+          length *
+          THREE.MathUtils.lerp(
+            TREE_BRANCH_LENGTH_MIN,
+            TREE_BRANCH_LENGTH_MAX,
+            hash1D(childSeed + 5.3),
+          );
+        const childRadius =
+          radius *
+          THREE.MathUtils.lerp(
+            TREE_BRANCH_RADIUS_MIN,
+            TREE_BRANCH_RADIUS_MAX,
+            hash1D(childSeed + 6.4),
+          );
+
+        childOrigin
+          .copy(branchEnd)
+          .addScaledVector(direction, -length * THREE.MathUtils.lerp(0.02, 0.14, hash1D(childSeed + 7.6)));
+        growBranches(
+          childOrigin,
+          childDirection,
+          childLength,
+          childRadius,
+          depth - 1,
+          childSeed,
+          trunkTint,
+          canopyTint,
+          foliageBaseRadius * THREE.MathUtils.lerp(0.78, 0.94, hash1D(childSeed + 8.2)),
+        );
+      }
+
+      if (depth <= 1 && hash1D(baseSeed + 12.7) > 0.35) {
+        pushFoliageCluster(branchEnd, direction, foliageBaseRadius * 0.68, baseSeed + 29.4, canopyTint);
+      }
+    };
+
+    const maxAttempts = TREE_COUNT * 42;
+    for (let attempt = 0; attempt < maxAttempts && trunkMatrices.length < TREE_COUNT; attempt++) {
+      const sampleRadius = hash1D(attempt * 23.7 + 1.1);
+      const sampleAngle = hash1D(attempt * 29.2 + 3.5);
+      const radius = TREE_FIELD_RADIUS * Math.sqrt(sampleRadius);
+      const angle = sampleAngle * TAU;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+
+      if (Math.hypot(x, z) < TREE_CLEARING_RADIUS) {
+        continue;
+      }
+      if (isNearRock(x, z, TREE_ROCK_CLEARANCE)) {
+        continue;
+      }
+
+      const terrainSlope = sampleTerrainSlope(x, z);
+      if (terrainSlope > TREE_MAX_SLOPE) {
+        continue;
+      }
+
+      const treeDensity = valueNoise2D((x - 16.3) * 0.06, (z + 9.8) * 0.06);
+      const treeThreshold = 0.42 + hash1D(attempt * 2.9 + 7.1) * 0.22;
+      if (treeDensity < treeThreshold) {
+        continue;
+      }
+
+      const tooCloseToTree = treePositions.some((treePosition) => {
+        const dx = treePosition.x - x;
+        const dz = treePosition.y - z;
+        return dx * dx + dz * dz < TREE_MIN_SPACING * TREE_MIN_SPACING;
+      });
+      if (tooCloseToTree) {
+        continue;
+      }
+
+      treePositions.push(new THREE.Vector2(x, z));
+
+      const treeSeed = attempt * 5.31 + x * 0.71 + z * 1.13;
+      const terrainY = sampleTerrainHeight(x, z);
+      const trunkHeight =
+        TREE_TRUNK_BASE_HEIGHT + hash1D(treeSeed * 1.4 + 2.2) * TREE_TRUNK_HEIGHT_VARIANCE;
+      const trunkRadius =
+        TREE_TRUNK_BASE_RADIUS + hash1D(treeSeed * 2.1 + 9.6) * TREE_TRUNK_RADIUS_VARIANCE;
+      const canopyHeight =
+        TREE_CANOPY_BASE_HEIGHT + hash1D(treeSeed * 2.8 + 11.1) * TREE_CANOPY_HEIGHT_VARIANCE;
+      const canopyRadius =
+        TREE_CANOPY_BASE_RADIUS + hash1D(treeSeed * 3.3 + 13.2) * TREE_CANOPY_RADIUS_VARIANCE;
+
+      const yaw = hash1D(treeSeed * 3.9 + 4.4) * TAU;
+      const leanX = (hash1D(treeSeed * 4.2 + 7.5) - 0.5) * 0.12;
+      const leanZ = (hash1D(treeSeed * 4.7 + 5.8) - 0.5) * 0.12;
+      branchSeedDirection.set(Math.sin(yaw), 0, -Math.cos(yaw));
+      segmentDirection
+        .copy(branchSeedDirection)
+        .multiplyScalar(Math.hypot(leanX, leanZ) * 0.4)
+        .add(worldUp)
+        .normalize();
+
+      segmentOrigin.set(x, terrainY, z);
+
+      const canopyBlend = THREE.MathUtils.clamp(
+        treeDensity * 0.7 + hash1D(attempt * 7.3 + 3.1) * 0.3,
+        0,
+        1,
+      );
+      const trunkTint = baseTrunkColor
+        .clone()
+        .offsetHSL(0, 0, (hash1D(treeSeed * 5.1 + 2.7) - 0.5) * 0.12);
+      const canopyTint = darkCanopyColor
+        .clone()
+        .lerp(lightCanopyColor, canopyBlend)
+        .offsetHSL((hash1D(treeSeed * 6.4 + 8.8) - 0.5) * 0.03, 0, 0);
+
+      pushSegment(
+        segmentOrigin,
+        segmentDirection,
+        trunkHeight,
+        trunkRadius,
+        trunkMatrices,
+        trunkColors,
+        trunkTint,
+      );
+
+      childOrigin
+        .copy(segmentOrigin)
+        .addScaledVector(segmentDirection, trunkHeight * (1 - TREE_CANOPY_VERTICAL_OFFSET));
+      const startBranchLength = canopyHeight * THREE.MathUtils.lerp(0.36, 0.52, hash1D(treeSeed + 21.3));
+      const startBranchRadius = trunkRadius * THREE.MathUtils.lerp(0.48, 0.62, hash1D(treeSeed + 23.5));
+      growBranches(
+        childOrigin,
+        segmentDirection,
+        startBranchLength,
+        startBranchRadius,
+        TREE_BRANCH_LEVELS,
+        treeSeed + 31.7,
+        trunkTint,
+        canopyTint,
+        canopyRadius * 0.52,
+      );
+    }
+
+    return {
+      trunkGeometry,
+      branchGeometry,
+      foliageGeometry,
+      trunkMatrices,
+      branchMatrices,
+      foliageMatrices,
+      trunkColors,
+      branchColors,
+      foliageColors,
+      trunkCount: trunkMatrices.length,
+      branchCount: branchMatrices.length,
+      foliageCount: foliageMatrices.length,
+    };
+  }, []);
 
   const { material: grassMaterial } = useMemo(() => {
     const timeUniform: THREE.IUniform<number> = { value: 0 };
@@ -490,6 +842,40 @@ diffuseColor.rgb *= gradient * tint;
     return { material, uniforms };
   }, []);
 
+  const treeTrunkMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: TREE_TRUNK_COLOR,
+        roughness: 0.98,
+        metalness: 0.02,
+        vertexColors: true,
+      }),
+    [],
+  );
+
+  const treeBranchMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: "#6E5138",
+        roughness: 0.97,
+        metalness: 0.02,
+        vertexColors: true,
+      }),
+    [],
+  );
+
+  const treeFoliageMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: TREE_CANOPY_LIGHT_COLOR,
+        roughness: 0.92,
+        metalness: 0.01,
+        flatShading: true,
+        vertexColors: true,
+      }),
+    [],
+  );
+
   useFrame((state) => {
     const grassMesh = grassRef.current;
     if (!grassMesh) {
@@ -520,12 +906,52 @@ diffuseColor.rgb *= gradient * tint;
   }, [grassField]);
 
   useEffect(() => {
+    const trunkMesh = treeTrunkRef.current;
+    const branchMesh = treeBranchRef.current;
+    const foliageMesh = treeFoliageRef.current;
+    if (!trunkMesh || !branchMesh || !foliageMesh) {
+      return;
+    }
+
+    for (let i = 0; i < treeField.trunkCount; i++) {
+      trunkMesh.setMatrixAt(i, treeField.trunkMatrices[i]);
+      trunkMesh.setColorAt(i, treeField.trunkColors[i]);
+    }
+    for (let i = 0; i < treeField.branchCount; i++) {
+      branchMesh.setMatrixAt(i, treeField.branchMatrices[i]);
+      branchMesh.setColorAt(i, treeField.branchColors[i]);
+    }
+    for (let i = 0; i < treeField.foliageCount; i++) {
+      foliageMesh.setMatrixAt(i, treeField.foliageMatrices[i]);
+      foliageMesh.setColorAt(i, treeField.foliageColors[i]);
+    }
+    trunkMesh.instanceMatrix.needsUpdate = true;
+    branchMesh.instanceMatrix.needsUpdate = true;
+    foliageMesh.instanceMatrix.needsUpdate = true;
+    if (trunkMesh.instanceColor) {
+      trunkMesh.instanceColor.needsUpdate = true;
+    }
+    if (branchMesh.instanceColor) {
+      branchMesh.instanceColor.needsUpdate = true;
+    }
+    if (foliageMesh.instanceColor) {
+      foliageMesh.instanceColor.needsUpdate = true;
+    }
+  }, [treeField]);
+
+  useEffect(() => {
     return () => {
       terrainMaterial.dispose();
       terrainGeometry.dispose();
       rockMaterial.dispose();
       grassMaterial.dispose();
+      treeTrunkMaterial.dispose();
+      treeBranchMaterial.dispose();
+      treeFoliageMaterial.dispose();
       grassField.bladeGeometry.dispose();
+      treeField.trunkGeometry.dispose();
+      treeField.branchGeometry.dispose();
+      treeField.foliageGeometry.dispose();
       rockNoiseTexture.dispose();
       rockGeometries.forEach((geometry) => geometry.dispose());
     };
@@ -537,6 +963,12 @@ diffuseColor.rgb *= gradient * tint;
     rockNoiseTexture,
     terrainGeometry,
     terrainMaterial,
+    treeBranchMaterial,
+    treeField.branchGeometry,
+    treeField.foliageGeometry,
+    treeFoliageMaterial,
+    treeField.trunkGeometry,
+    treeTrunkMaterial,
   ]);
 
   return (
@@ -553,7 +985,29 @@ diffuseColor.rgb *= gradient * tint;
         frustumCulled={false}
       />
 
-      <TreeField terrainSampler={terrainSampler} rockFormations={ROCK_FORMATIONS} />
+      <instancedMesh
+        ref={treeTrunkRef}
+        args={[treeField.trunkGeometry, treeTrunkMaterial, treeField.trunkCount]}
+        castShadow
+        receiveShadow
+        frustumCulled={false}
+      />
+
+      <instancedMesh
+        ref={treeBranchRef}
+        args={[treeField.branchGeometry, treeBranchMaterial, treeField.branchCount]}
+        castShadow
+        receiveShadow
+        frustumCulled={false}
+      />
+
+      <instancedMesh
+        ref={treeFoliageRef}
+        args={[treeField.foliageGeometry, treeFoliageMaterial, treeField.foliageCount]}
+        castShadow
+        receiveShadow
+        frustumCulled={false}
+      />
 
       <Campfire position={campfirePlacement} />
 
