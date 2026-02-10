@@ -288,7 +288,6 @@ function AnimatedSun() {
         saturation={0}
         fade
         speed={0.08}
-        frustumCulled={false}
       />
       <Sky
         ref={skyRef}
