@@ -33,6 +33,7 @@ import type { Sky as SkyImpl } from "three-stdlib";
 import type { CameraMode } from "../camera/cameraTypes";
 import { CharacterRigController } from "../controller/CharacterRigController";
 import {
+  FPS_TOGGLE_KEY,
   HORIZON_COLOR,
   SKY_FOG_FAR,
   SKY_FOG_NEAR,
@@ -404,6 +405,7 @@ export function CharacterRigScene() {
   const [cameraMode, setCameraMode] = useState<CameraMode>("third_person");
   const [isWalkDefault, setIsWalkDefault] = useState(false);
   const [isPointerLocked, setIsPointerLocked] = useState(false);
+  const [isFpsVisible, setIsFpsVisible] = useState(false);
   const [fps, setFps] = useState<number | null>(null);
 
   const handleToggleCameraMode = useCallback(() => {
@@ -424,6 +426,22 @@ export function CharacterRigScene() {
     const roundedFps = Math.round(nextFps);
     setFps((currentFps) => (currentFps === roundedFps ? currentFps : roundedFps));
   }, []);
+  const handleToggleFpsOverlay = useCallback(() => {
+    setIsFpsVisible((isVisible) => !isVisible);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code === FPS_TOGGLE_KEY && !event.repeat) {
+        handleToggleFpsOverlay();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [handleToggleFpsOverlay]);
 
   return (
     <div className="relative h-full w-full">
@@ -440,7 +458,7 @@ export function CharacterRigScene() {
         className="h-full w-full touch-none"
       >
         <AnimatedSun />
-        <FrameRateProbe onUpdate={handleFpsUpdate} />
+        {isFpsVisible ? <FrameRateProbe onUpdate={handleFpsUpdate} /> : null}
         <fog attach="fog" args={[HORIZON_COLOR, SKY_FOG_NEAR, SKY_FOG_FAR]} />
         <Clouds
           material={MeshBasicMaterial}
@@ -519,10 +537,12 @@ export function CharacterRigScene() {
           </Suspense>
         </Physics>
       </Canvas>
-      <div className="pointer-events-none absolute right-4 top-4 z-20 rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
-        <p className="font-semibold tracking-wide text-white">FPS</p>
-        <p>{fps ?? "--"}</p>
-      </div>
+      {isFpsVisible ? (
+        <div className="pointer-events-none absolute right-4 top-4 z-20 rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
+          <p className="font-semibold tracking-wide text-white">FPS</p>
+          <p>{fps ?? "--"}</p>
+        </div>
+      ) : null}
       {!isPointerLocked ? (
         <div className="pointer-events-none absolute left-4 top-4 z-20 max-w-xs rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
           <p className="mb-1 font-semibold tracking-wide text-white">
@@ -532,7 +552,7 @@ export function CharacterRigScene() {
           <p>Touch and drag to look around</p>
           <p>W A S D move, Space jump, Shift alternate gait</p>
           <p>CapsLock toggles default gait</p>
-          <p>V camera mode, H happy, J sad, Esc unlock</p>
+          <p>V camera mode, F toggle FPS, H happy, J sad, Esc unlock</p>
         </div>
       ) : null}
     </div>

@@ -30,6 +30,7 @@ export const DEFAULT_INPUT_STATE: CharacterInputState = {
 };
 
 export const CAMERA_MODE_TOGGLE_KEY = "KeyV";
+export const FPS_TOGGLE_KEY = "KeyF";
 export const HAPPY_EMOTE_KEY = "KeyH";
 export const SAD_EMOTE_KEY = "KeyJ";
 
