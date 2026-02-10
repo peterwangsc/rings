@@ -86,6 +86,8 @@ export function CharacterRigController({
   const jumpIntentTimerRef = useRef(0);
   const ungroundedTimerRef = useRef(0);
   const isPointerLockedRef = useRef(false);
+  const activeTouchPointerIdRef = useRef<number | null>(null);
+  const activeTouchPositionRef = useRef<{ x: number; y: number } | null>(null);
   const cameraYawRef = useRef(0);
   const cameraPitchRef = useRef(0);
   const characterYawRef = useRef(0);
@@ -140,12 +142,36 @@ export function CharacterRigController({
     camera.up.set(0, 1, 0);
     isPointerLockedRef.current = document.pointerLockElement === gl.domElement;
     onPointerLockChange?.(isPointerLockedRef.current);
+    const supportsPointerEvents = "PointerEvent" in window;
+    const previousTouchAction = gl.domElement.style.touchAction;
+    gl.domElement.style.touchAction = "none";
+
+    const clearActiveTouchPointer = (pointerId?: number) => {
+      if (
+        pointerId !== undefined &&
+        activeTouchPointerIdRef.current !== null &&
+        activeTouchPointerIdRef.current !== pointerId
+      ) {
+        return;
+      }
+      const resolvedPointerId = pointerId ?? activeTouchPointerIdRef.current;
+      if (
+        supportsPointerEvents &&
+        resolvedPointerId !== null &&
+        gl.domElement.hasPointerCapture(resolvedPointerId)
+      ) {
+        gl.domElement.releasePointerCapture(resolvedPointerId);
+      }
+      activeTouchPointerIdRef.current = null;
+      activeTouchPositionRef.current = null;
+    };
 
     const resetInputState = () => {
       inputStateRef.current = { ...DEFAULT_INPUT_STATE };
       jumpIntentTimerRef.current = 0;
       emoteRequestRef.current = null;
       activeEmoteRef.current = null;
+      clearActiveTouchPointer();
     };
 
     const setInputState = (code: string, isPressed: boolean) => {
@@ -215,28 +241,173 @@ export function CharacterRigController({
       }
     };
 
-    const handleMouseMove = (event: MouseEvent) => {
-      if (!isPointerLockedRef.current) {
-        return;
-      }
-
+    const applyLookDelta = (movementX: number, movementY: number) => {
       const nextAngles = updateLookAngles(
         cameraYawRef.current,
         cameraPitchRef.current,
-        event.movementX,
-        event.movementY,
+        movementX,
+        movementY,
       );
       cameraYawRef.current = nextAngles.yaw;
       cameraPitchRef.current = nextAngles.pitch;
     };
 
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!isPointerLockedRef.current) {
+        return;
+      }
+
+      applyLookDelta(event.movementX, event.movementY);
+    };
+
     const requestPointerLock = () => {
-      if (document.pointerLockElement !== gl.domElement) {
+      if (
+        document.pointerLockElement !== gl.domElement &&
+        typeof gl.domElement.requestPointerLock === "function"
+      ) {
         gl.domElement.requestPointerLock();
       }
     };
 
-    gl.domElement.addEventListener("click", requestPointerLock);
+    const handleCanvasPointerDown = (event: PointerEvent) => {
+      if (event.pointerType === "touch") {
+        event.preventDefault();
+        if (activeTouchPointerIdRef.current === null) {
+          activeTouchPointerIdRef.current = event.pointerId;
+          activeTouchPositionRef.current = {
+            x: event.clientX,
+            y: event.clientY,
+          };
+          gl.domElement.setPointerCapture(event.pointerId);
+        }
+        return;
+      }
+      if (event.button !== 0) {
+        return;
+      }
+      requestPointerLock();
+    };
+
+    const handleCanvasPointerMove = (event: PointerEvent) => {
+      if (
+        event.pointerType !== "touch" ||
+        activeTouchPointerIdRef.current !== event.pointerId ||
+        activeTouchPositionRef.current === null
+      ) {
+        return;
+      }
+
+      const movementX = event.clientX - activeTouchPositionRef.current.x;
+      const movementY = event.clientY - activeTouchPositionRef.current.y;
+      activeTouchPositionRef.current.x = event.clientX;
+      activeTouchPositionRef.current.y = event.clientY;
+
+      if (movementX === 0 && movementY === 0) {
+        return;
+      }
+
+      event.preventDefault();
+      applyLookDelta(movementX, movementY);
+    };
+
+    const handleCanvasTouchPointerEnd = (event: PointerEvent) => {
+      clearActiveTouchPointer(event.pointerId);
+    };
+
+    const handleCanvasLostPointerCapture = (event: PointerEvent) => {
+      clearActiveTouchPointer(event.pointerId);
+    };
+
+    const findTouchByIdentifier = (touchList: TouchList, identifier: number) => {
+      for (let index = 0; index < touchList.length; index += 1) {
+        const touch = touchList.item(index);
+        if (touch?.identifier === identifier) {
+          return touch;
+        }
+      }
+      return null;
+    };
+
+    const handleCanvasTouchStart = (event: TouchEvent) => {
+      if (activeTouchPointerIdRef.current !== null) {
+        return;
+      }
+      const touch = event.changedTouches.item(0);
+      if (!touch) {
+        return;
+      }
+      activeTouchPointerIdRef.current = touch.identifier;
+      activeTouchPositionRef.current = { x: touch.clientX, y: touch.clientY };
+      event.preventDefault();
+    };
+
+    const handleCanvasTouchMove = (event: TouchEvent) => {
+      if (
+        activeTouchPointerIdRef.current === null ||
+        activeTouchPositionRef.current === null
+      ) {
+        return;
+      }
+      const touch =
+        findTouchByIdentifier(event.touches, activeTouchPointerIdRef.current) ??
+        findTouchByIdentifier(
+          event.changedTouches,
+          activeTouchPointerIdRef.current,
+        );
+      if (!touch) {
+        return;
+      }
+      const movementX = touch.clientX - activeTouchPositionRef.current.x;
+      const movementY = touch.clientY - activeTouchPositionRef.current.y;
+      activeTouchPositionRef.current.x = touch.clientX;
+      activeTouchPositionRef.current.y = touch.clientY;
+      if (movementX === 0 && movementY === 0) {
+        return;
+      }
+      event.preventDefault();
+      applyLookDelta(movementX, movementY);
+    };
+
+    const handleCanvasTouchEndOrCancel = (event: TouchEvent) => {
+      if (activeTouchPointerIdRef.current === null) {
+        return;
+      }
+      const touch = findTouchByIdentifier(
+        event.changedTouches,
+        activeTouchPointerIdRef.current,
+      );
+      if (!touch) {
+        return;
+      }
+      clearActiveTouchPointer();
+    };
+
+    if (supportsPointerEvents) {
+      gl.domElement.addEventListener("pointerdown", handleCanvasPointerDown);
+      gl.domElement.addEventListener("pointermove", handleCanvasPointerMove);
+      gl.domElement.addEventListener("pointerup", handleCanvasTouchPointerEnd);
+      gl.domElement.addEventListener(
+        "pointercancel",
+        handleCanvasTouchPointerEnd,
+      );
+      gl.domElement.addEventListener(
+        "lostpointercapture",
+        handleCanvasLostPointerCapture,
+      );
+    } else {
+      gl.domElement.addEventListener("click", requestPointerLock);
+      gl.domElement.addEventListener("touchstart", handleCanvasTouchStart, {
+        passive: false,
+      });
+      gl.domElement.addEventListener("touchmove", handleCanvasTouchMove, {
+        passive: false,
+      });
+      gl.domElement.addEventListener("touchend", handleCanvasTouchEndOrCancel);
+      gl.domElement.addEventListener(
+        "touchcancel",
+        handleCanvasTouchEndOrCancel,
+      );
+    }
     document.addEventListener("pointerlockchange", handlePointerLockChange);
     document.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("keydown", handleKeyDown);
@@ -244,12 +415,37 @@ export function CharacterRigController({
     window.addEventListener("blur", resetInputState);
 
     return () => {
-      gl.domElement.removeEventListener("click", requestPointerLock);
+      if (supportsPointerEvents) {
+        gl.domElement.removeEventListener("pointerdown", handleCanvasPointerDown);
+        gl.domElement.removeEventListener("pointermove", handleCanvasPointerMove);
+        gl.domElement.removeEventListener(
+          "pointerup",
+          handleCanvasTouchPointerEnd,
+        );
+        gl.domElement.removeEventListener(
+          "pointercancel",
+          handleCanvasTouchPointerEnd,
+        );
+        gl.domElement.removeEventListener(
+          "lostpointercapture",
+          handleCanvasLostPointerCapture,
+        );
+      } else {
+        gl.domElement.removeEventListener("click", requestPointerLock);
+        gl.domElement.removeEventListener("touchstart", handleCanvasTouchStart);
+        gl.domElement.removeEventListener("touchmove", handleCanvasTouchMove);
+        gl.domElement.removeEventListener("touchend", handleCanvasTouchEndOrCancel);
+        gl.domElement.removeEventListener(
+          "touchcancel",
+          handleCanvasTouchEndOrCancel,
+        );
+      }
       document.removeEventListener("pointerlockchange", handlePointerLockChange);
       document.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", resetInputState);
+      gl.domElement.style.touchAction = previousTouchAction;
       isPointerLockedRef.current = false;
       onPointerLockChange?.(false);
       resetInputState();
