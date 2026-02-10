@@ -611,6 +611,7 @@ export function CharacterRigScene() {
         <div className="pointer-events-none absolute left-4 top-4 z-20 max-w-xs rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
           <p className="mb-1 font-semibold tracking-wide text-white">Controls</p>
           <p>Click to lock mouse</p>
+          <p>Touch and drag to look around</p>
           <p>W A S D move, Space jump, Shift alternate gait</p>
           <p>CapsLock toggles default gait</p>
           <p>V camera mode, H happy, J sad, Esc unlock</p>
