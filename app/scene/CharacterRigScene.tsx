@@ -878,8 +878,6 @@ export function CharacterRigScene() {
         <Physics gravity={[0, WORLD_GRAVITY_Y, 0]}>
           <Suspense fallback={null}>
             <WorldGeometry playerPositionRef={playerWorldPositionRef} />
-          </Suspense>
-          <Suspense fallback={null}>
             <CharacterRigController
               cameraMode={cameraMode}
               onToggleCameraMode={handleToggleCameraMode}
