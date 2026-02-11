@@ -1,4 +1,5 @@
 import type { CameraMode } from "../camera/cameraTypes";
+import type { MutableRefObject } from "react";
 
 export interface CharacterInputState {
   forward: boolean;
@@ -9,6 +10,11 @@ export interface CharacterInputState {
   jump: boolean;
 }
 
+export interface MobileMoveInput {
+  x: number;
+  y: number;
+}
+
 export interface CharacterRigControllerProps {
   readonly cameraMode: CameraMode;
   readonly onToggleCameraMode: () => void;
@@ -16,4 +22,6 @@ export interface CharacterRigControllerProps {
   readonly onToggleDefaultGait: () => void;
   readonly onPointerLockChange?: (isLocked: boolean) => void;
   readonly onPlayerPositionUpdate?: (x: number, y: number, z: number) => void;
+  readonly mobileMoveInputRef?: MutableRefObject<MobileMoveInput>;
+  readonly mobileJumpPressedRef?: MutableRefObject<boolean>;
 }

@@ -80,6 +80,8 @@ export function CharacterRigController({
   onToggleDefaultGait,
   onPointerLockChange,
   onPlayerPositionUpdate,
+  mobileMoveInputRef,
+  mobileJumpPressedRef,
 }: CharacterRigControllerProps) {
   const { camera, gl } = useThree();
   const { rapier, world } = useRapier();
@@ -99,6 +101,7 @@ export function CharacterRigController({
   const cameraPitchRef = useRef(0);
   const characterYawRef = useRef(0);
   const smoothedPlanarSpeedRef = useRef(0);
+  const mobileJumpWasPressedRef = useRef(false);
   const emoteRequestRef = useRef<EmoteState | null>(null);
   const activeEmoteRef = useRef<EmoteState | null>(null);
   const motionStateRef = useRef<MotionState>("idle");
@@ -177,6 +180,7 @@ export function CharacterRigController({
       jumpIntentTimerRef.current = 0;
       emoteRequestRef.current = null;
       activeEmoteRef.current = null;
+      mobileJumpWasPressedRef.current = false;
       clearActiveTouchPointer();
     };
 
@@ -468,6 +472,13 @@ export function CharacterRigController({
     jumpIntentTimerRef.current = Math.max(0, jumpIntentTimerRef.current - dt);
 
     const input = inputStateRef.current;
+    const mobileMoveInput = mobileMoveInputRef?.current;
+    const mobileJumpPressed = mobileJumpPressedRef?.current ?? false;
+    if (mobileJumpPressed && !mobileJumpWasPressedRef.current) {
+      jumpIntentTimerRef.current = JUMP_INPUT_BUFFER_SECONDS;
+    }
+    mobileJumpWasPressedRef.current = mobileJumpPressed;
+
     const translation = body.translation();
     const currentVelocity = body.linvel();
     const verticalSpeedAbs = Math.abs(currentVelocity.y);
@@ -524,8 +535,18 @@ export function CharacterRigController({
       groundedRecoveryLatchRef.current;
     const canConsumeJumpIntent = isGroundedStable;
 
-    const moveForwardInput = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
-    const moveRightInput = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    const keyboardForwardInput = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
+    const keyboardRightInput = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    const moveForwardInput = THREE.MathUtils.clamp(
+      keyboardForwardInput - (mobileMoveInput?.y ?? 0),
+      -1,
+      1,
+    );
+    const moveRightInput = THREE.MathUtils.clamp(
+      keyboardRightInput + (mobileMoveInput?.x ?? 0),
+      -1,
+      1,
+    );
     const isWalkGait = isWalkDefault ? !input.sprint : input.sprint;
 
     getForwardFromYaw(cameraYawRef.current, forwardRef.current);

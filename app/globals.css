@@ -3,6 +3,12 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --jump-overlay-ink: #f2fbff;
+  --jump-overlay-scrim: rgba(3, 10, 22, 0.72);
+  --jump-overlay-line: rgba(196, 240, 255, 0.35);
+  --jump-overlay-glass-1: rgba(6, 15, 33, 0.88);
+  --jump-overlay-glass-2: rgba(5, 13, 28, 0.92);
+  --jump-overlay-shadow: rgba(1, 4, 14, 0.55);
 }
 
 @theme inline {
@@ -22,5 +28,262 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), "Segoe UI", sans-serif;
+}
+
+@keyframes jump-gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes jump-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(121, 243, 255, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 16px rgba(121, 243, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(121, 243, 255, 0);
+  }
+}
+
+.jump-scrim {
+  background: var(--jump-overlay-scrim);
+  backdrop-filter: saturate(72%);
+  -webkit-backdrop-filter: saturate(72%);
+}
+
+.jump-splash {
+  background:
+    radial-gradient(
+      circle at 22% 14%,
+      rgba(116, 237, 255, 0.18),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at 78% 78%,
+      rgba(143, 224, 214, 0.12),
+      transparent 36%
+    ),
+    linear-gradient(
+      140deg,
+      rgba(3, 9, 24, 0.82) 0%,
+      rgba(5, 15, 36, 0.72) 55%,
+      rgba(4, 14, 29, 0.76) 100%
+    );
+}
+
+.jump-splash-panel {
+  background: linear-gradient(
+    145deg,
+    var(--jump-overlay-glass-1) 0%,
+    rgba(8, 22, 44, 0.9) 48%,
+    var(--jump-overlay-glass-2) 100%
+  );
+  border: 1px solid rgba(196, 240, 255, 0.44);
+  box-shadow:
+    0 34px 72px -42px var(--jump-overlay-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(94, 172, 214, 0.16);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+}
+
+.jump-logo {
+  font-family: var(--font-jump-display), var(--font-geist-sans), sans-serif;
+  color: transparent;
+  background-image: linear-gradient(
+    92deg,
+    #f7feff 0%,
+    #8ef4ff 22%,
+    #f6f6ff 50%,
+    #a6ffd4 70%,
+    #f6fdff 100%
+  );
+  background-size: 220% 220%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: jump-gradient-shift 10s linear infinite;
+  filter: drop-shadow(0 16px 24px rgba(4, 16, 28, 0.65));
+}
+
+.jump-logo-glow {
+  color: rgba(178, 251, 255, 0.34);
+  filter: blur(12px);
+}
+
+.jump-cta-pulse {
+  animation: jump-pulse 2.6s ease-out infinite;
+}
+
+.jump-keycap {
+  border: 1px solid rgba(208, 241, 255, 0.44);
+  background: linear-gradient(
+    180deg,
+    rgba(228, 248, 255, 0.34) 0%,
+    rgba(123, 203, 228, 0.2) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.48),
+    0 8px 14px -10px rgba(12, 46, 82, 0.82);
+}
+
+.jump-control-card {
+  border: 1px solid rgba(196, 240, 255, 0.26);
+  background: rgba(6, 18, 39, 0.64);
+}
+
+.jump-overlay-copy {
+  color: var(--jump-overlay-ink);
+}
+
+.mobile-game-controls {
+  display: none;
+}
+
+.mobile-joystick {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  border-radius: 999px;
+}
+
+.mobile-joystick__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(191, 242, 255, 0.52);
+  background:
+    radial-gradient(circle at 32% 28%, rgba(196, 246, 255, 0.28), rgba(5, 20, 44, 0.58)),
+    rgba(4, 16, 36, 0.58);
+  backdrop-filter: blur(8px) saturate(130%);
+  -webkit-backdrop-filter: blur(8px) saturate(130%);
+  box-shadow:
+    0 16px 36px -22px rgba(0, 0, 0, 0.82),
+    inset 0 0 0 1px rgba(235, 253, 255, 0.2);
+}
+
+.mobile-joystick__thumb {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 62px;
+  height: 62px;
+  border-radius: 999px;
+  border: 1px solid rgba(201, 246, 255, 0.88);
+  background:
+    radial-gradient(circle at 30% 25%, rgba(252, 255, 255, 0.9), rgba(109, 220, 255, 0.62)),
+    rgba(134, 218, 255, 0.82);
+  transform: translate3d(0, 0, 0);
+  margin-left: -31px;
+  margin-top: -31px;
+  box-shadow:
+    0 10px 22px -14px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  transition: transform 0.08s linear, filter 0.12s ease;
+}
+
+.mobile-joystick__thumb--active {
+  filter: brightness(1.08) saturate(1.08);
+}
+
+.mobile-jump-button {
+  min-width: 112px;
+  height: 112px;
+  border-radius: 999px;
+  border: 1px solid rgba(204, 244, 255, 0.74);
+  background:
+    radial-gradient(circle at 28% 24%, rgba(246, 254, 255, 0.92), rgba(92, 199, 240, 0.56)),
+    rgba(39, 128, 184, 0.68);
+  box-shadow:
+    0 18px 34px -22px rgba(0, 0, 0, 0.82),
+    inset 0 2px 0 rgba(255, 255, 255, 0.62),
+    inset 0 -8px 14px -8px rgba(10, 56, 84, 0.58);
+  color: #f5fdff;
+  transition:
+    transform 0.08s ease,
+    filter 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.mobile-jump-button--active {
+  transform: translateY(1px) scale(0.98);
+  filter: brightness(0.95);
+  box-shadow:
+    0 10px 22px -18px rgba(0, 0, 0, 0.82),
+    inset 0 1px 0 rgba(255, 255, 255, 0.52),
+    inset 0 -12px 16px -8px rgba(10, 56, 84, 0.68);
+}
+
+.mobile-jump-button__label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.mobile-portrait-lock {
+  display: none;
+  pointer-events: auto;
+}
+
+.mobile-portrait-lock__scrim {
+  background: rgba(2, 8, 20, 0.86);
+  backdrop-filter: blur(7px) saturate(80%);
+  -webkit-backdrop-filter: blur(7px) saturate(80%);
+}
+
+.mobile-portrait-lock__panel {
+  border: 1px solid rgba(193, 240, 255, 0.38);
+  background: linear-gradient(
+    145deg,
+    rgba(6, 16, 34, 0.94) 0%,
+    rgba(6, 13, 28, 0.97) 100%
+  );
+  box-shadow:
+    0 30px 64px -42px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.mobile-portrait-lock__device-frame {
+  position: relative;
+  width: 82px;
+  height: 122px;
+  border-radius: 18px;
+  border: 2px solid rgba(191, 242, 255, 0.85);
+  transform: rotate(90deg);
+  box-shadow:
+    inset 0 0 0 2px rgba(151, 223, 255, 0.16),
+    0 0 18px rgba(109, 214, 255, 0.32);
+}
+
+.mobile-portrait-lock__device-notch {
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  width: 24px;
+  height: 4px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  background: rgba(191, 242, 255, 0.85);
+}
+
+@media (max-width: 430px) and (orientation: portrait) {
+  .mobile-portrait-lock {
+    display: flex;
+  }
+}
+
+@media (pointer: coarse) and (hover: none) and (orientation: landscape) {
+  .mobile-game-controls {
+    display: flex;
+  }
 }

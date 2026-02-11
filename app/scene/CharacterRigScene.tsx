@@ -6,6 +6,7 @@ import { Sky, Clouds, Cloud, Stars } from "@react-three/drei";
 import {
   Suspense,
   type MutableRefObject,
+  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -35,6 +36,7 @@ import {
 import type { Sky as SkyImpl } from "three-stdlib";
 import type { CameraMode } from "../camera/cameraTypes";
 import { CharacterRigController } from "../controller/CharacterRigController";
+import type { MobileMoveInput } from "../controller/controllerTypes";
 import {
   FPS_TOGGLE_KEY,
   HORIZON_COLOR,
@@ -70,6 +72,18 @@ const NIGHT_FOG_NEAR = 1000;
 const NIGHT_FOG_FAR = 1100;
 const FPS_UPDATE_INTERVAL_SECONDS = 0.35;
 const FPS_SMOOTHING_FACTOR = 0.45;
+const MOBILE_JOYSTICK_RADIUS_PX = 44;
+const MOBILE_JOYSTICK_DEADZONE = 0.08;
+const SPLASH_CONTROLS: ReadonlyArray<{ keys: string; action: string }> = [
+  { keys: "W A S D", action: "Move" },
+  { keys: "Space", action: "Jump" },
+  { keys: "Shift (hold)", action: "Alternate gait" },
+  { keys: "CapsLock", action: "Toggle default gait" },
+  { keys: "V", action: "Toggle camera mode" },
+  { keys: "H / J", action: "Happy and sad emotes" },
+  { keys: "F", action: "Toggle FPS overlay" },
+  { keys: "Esc", action: "Unlock pointer" },
+];
 
 type SkyMaterialWithSunPosition = ShaderMaterial & {
   uniforms: {
@@ -84,6 +98,227 @@ type SkyMaterialWithSunPosition = ShaderMaterial & {
     };
   };
 };
+
+function MobileControlsOverlay({
+  moveInputRef,
+  jumpPressedRef,
+}: {
+  moveInputRef: MutableRefObject<MobileMoveInput>;
+  jumpPressedRef: MutableRefObject<boolean>;
+}) {
+  const joystickPointerIdRef = useRef<number | null>(null);
+  const jumpPointerIdRef = useRef<number | null>(null);
+  const [joystickOffset, setJoystickOffset] = useState({ x: 0, y: 0 });
+  const [isJoystickActive, setIsJoystickActive] = useState(false);
+  const [isJumpActive, setIsJumpActive] = useState(false);
+
+  const setMoveInput = useCallback(
+    (x: number, y: number) => {
+      moveInputRef.current.x = x;
+      moveInputRef.current.y = y;
+    },
+    [moveInputRef],
+  );
+
+  const updateJoystickFromPointer = useCallback(
+    (clientX: number, clientY: number, element: HTMLDivElement) => {
+      const bounds = element.getBoundingClientRect();
+      const centerX = bounds.left + bounds.width * 0.5;
+      const centerY = bounds.top + bounds.height * 0.5;
+      const deltaX = clientX - centerX;
+      const deltaY = clientY - centerY;
+      const distance = Math.hypot(deltaX, deltaY);
+      const clampedDistance = Math.min(distance, MOBILE_JOYSTICK_RADIUS_PX);
+      const distanceScale = distance > 0 ? clampedDistance / distance : 0;
+      const clampedX = deltaX * distanceScale;
+      const clampedY = deltaY * distanceScale;
+      const normalizedX = clampedX / MOBILE_JOYSTICK_RADIUS_PX;
+      const normalizedY = clampedY / MOBILE_JOYSTICK_RADIUS_PX;
+      const normalizedMagnitude = Math.hypot(normalizedX, normalizedY);
+
+      setJoystickOffset({ x: clampedX, y: clampedY });
+
+      if (normalizedMagnitude < MOBILE_JOYSTICK_DEADZONE) {
+        setMoveInput(0, 0);
+        return;
+      }
+
+      const deadzoneAdjustedMagnitude =
+        (normalizedMagnitude - MOBILE_JOYSTICK_DEADZONE) /
+        (1 - MOBILE_JOYSTICK_DEADZONE);
+      const directionalScale =
+        normalizedMagnitude > 0
+          ? deadzoneAdjustedMagnitude / normalizedMagnitude
+          : 0;
+      setMoveInput(
+        normalizedX * directionalScale,
+        normalizedY * directionalScale,
+      );
+    },
+    [setMoveInput],
+  );
+
+  const releaseJoystick = useCallback(
+    (element: HTMLDivElement, pointerId: number) => {
+      if (element.hasPointerCapture(pointerId)) {
+        element.releasePointerCapture(pointerId);
+      }
+      joystickPointerIdRef.current = null;
+      setMoveInput(0, 0);
+      setJoystickOffset({ x: 0, y: 0 });
+      setIsJoystickActive(false);
+    },
+    [setMoveInput],
+  );
+
+  const releaseJumpButton = useCallback(
+    (element: HTMLButtonElement, pointerId: number) => {
+      if (element.hasPointerCapture(pointerId)) {
+        element.releasePointerCapture(pointerId);
+      }
+      jumpPointerIdRef.current = null;
+      jumpPressedRef.current = false;
+      setIsJumpActive(false);
+    },
+    [jumpPressedRef],
+  );
+
+  const handleJoystickPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (joystickPointerIdRef.current !== null) {
+        return;
+      }
+      joystickPointerIdRef.current = event.pointerId;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setIsJoystickActive(true);
+      updateJoystickFromPointer(
+        event.clientX,
+        event.clientY,
+        event.currentTarget,
+      );
+      event.preventDefault();
+    },
+    [updateJoystickFromPointer],
+  );
+
+  const handleJoystickPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (joystickPointerIdRef.current !== event.pointerId) {
+        return;
+      }
+      updateJoystickFromPointer(
+        event.clientX,
+        event.clientY,
+        event.currentTarget,
+      );
+      event.preventDefault();
+    },
+    [updateJoystickFromPointer],
+  );
+
+  const handleJoystickPointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (joystickPointerIdRef.current !== event.pointerId) {
+        return;
+      }
+      releaseJoystick(event.currentTarget, event.pointerId);
+      event.preventDefault();
+    },
+    [releaseJoystick],
+  );
+
+  const handleJoystickLostPointerCapture = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (joystickPointerIdRef.current !== event.pointerId) {
+        return;
+      }
+      joystickPointerIdRef.current = null;
+      setMoveInput(0, 0);
+      setJoystickOffset({ x: 0, y: 0 });
+      setIsJoystickActive(false);
+    },
+    [setMoveInput],
+  );
+
+  const handleJumpPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (jumpPointerIdRef.current !== null) {
+        return;
+      }
+      jumpPointerIdRef.current = event.pointerId;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      jumpPressedRef.current = true;
+      setIsJumpActive(true);
+      event.preventDefault();
+    },
+    [jumpPressedRef],
+  );
+
+  const handleJumpPointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (jumpPointerIdRef.current !== event.pointerId) {
+        return;
+      }
+      releaseJumpButton(event.currentTarget, event.pointerId);
+      event.preventDefault();
+    },
+    [releaseJumpButton],
+  );
+
+  const handleJumpLostPointerCapture = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (jumpPointerIdRef.current !== event.pointerId) {
+        return;
+      }
+      jumpPointerIdRef.current = null;
+      jumpPressedRef.current = false;
+      setIsJumpActive(false);
+    },
+    [jumpPressedRef],
+  );
+
+  useEffect(() => {
+    return () => {
+      setMoveInput(0, 0);
+      jumpPressedRef.current = false;
+      joystickPointerIdRef.current = null;
+      jumpPointerIdRef.current = null;
+    };
+  }, [jumpPressedRef, setMoveInput]);
+
+  return (
+    <div className="mobile-game-controls pointer-events-none absolute inset-x-0 bottom-0 z-40 items-end justify-between px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-6">
+      <div
+        role="presentation"
+        className="mobile-joystick pointer-events-auto touch-none select-none"
+        onPointerDown={handleJoystickPointerDown}
+        onPointerMove={handleJoystickPointerMove}
+        onPointerUp={handleJoystickPointerUp}
+        onPointerCancel={handleJoystickPointerUp}
+        onLostPointerCapture={handleJoystickLostPointerCapture}
+      >
+        <div className="mobile-joystick__ring" />
+        <div
+          className={`mobile-joystick__thumb ${isJoystickActive ? "mobile-joystick__thumb--active" : ""}`}
+          style={{
+            transform: `translate3d(${joystickOffset.x}px, ${joystickOffset.y}px, 0)`,
+          }}
+        />
+      </div>
+      <button
+        type="button"
+        aria-label="Jump"
+        className={`mobile-jump-button pointer-events-auto touch-none select-none ${isJumpActive ? "mobile-jump-button--active" : ""}`}
+        onPointerDown={handleJumpPointerDown}
+        onPointerUp={handleJumpPointerUp}
+        onPointerCancel={handleJumpPointerUp}
+        onLostPointerCapture={handleJumpLostPointerCapture}
+      >
+        <span className="mobile-jump-button__label">Jump</span>
+      </button>
+    </div>
+  );
+}
 
 function AnimatedSun({
   followPositionRef,
@@ -252,9 +487,7 @@ function AnimatedSun({
     state.scene.background = blendedSkyColor;
 
     if (lightRef.current) {
-      lightRef.current.position
-        .copy(followPosition)
-        .add(sunOffset);
+      lightRef.current.position.copy(followPosition).add(sunOffset);
       lightRef.current.target.position.copy(followPosition);
       lightRef.current.target.updateMatrixWorld();
       lightRef.current.intensity = SUN_LIGHT_DAY_INTENSITY * sunLightFactor;
@@ -395,11 +628,7 @@ function AnimatedSun({
   );
 }
 
-function FrameRateProbe({
-  onUpdate,
-}: {
-  onUpdate: (fps: number) => void;
-}) {
+function FrameRateProbe({ onUpdate }: { onUpdate: (fps: number) => void }) {
   const elapsedRef = useRef(0);
   const frameCountRef = useRef(0);
   const smoothedFpsRef = useRef<number | null>(null);
@@ -421,11 +650,7 @@ function FrameRateProbe({
     const smoothedFps =
       previousSmoothedFps === null
         ? sampledFps
-        : MathUtils.lerp(
-            previousSmoothedFps,
-            sampledFps,
-            FPS_SMOOTHING_FACTOR,
-          );
+        : MathUtils.lerp(previousSmoothedFps, sampledFps, FPS_SMOOTHING_FACTOR);
     smoothedFpsRef.current = smoothedFps;
     onUpdate(smoothedFps);
     elapsedRef.current = 0;
@@ -445,8 +670,11 @@ export function CharacterRigScene() {
   const [isWalkDefault, setIsWalkDefault] = useState(false);
   const [isPointerLocked, setIsPointerLocked] = useState(false);
   const [isFpsVisible, setIsFpsVisible] = useState(false);
+  const [isSplashDismissedByTouch, setIsSplashDismissedByTouch] = useState(false);
   const [fps, setFps] = useState<number | null>(null);
   const playerWorldPositionRef = useRef(new Vector3());
+  const mobileMoveInputRef = useRef<MobileMoveInput>({ x: 0, y: 0 });
+  const mobileJumpPressedRef = useRef(false);
 
   const handleToggleCameraMode = useCallback(() => {
     setCameraMode((currentMode) => {
@@ -464,7 +692,9 @@ export function CharacterRigScene() {
   }, []);
   const handleFpsUpdate = useCallback((nextFps: number) => {
     const roundedFps = Math.round(nextFps);
-    setFps((currentFps) => (currentFps === roundedFps ? currentFps : roundedFps));
+    setFps((currentFps) =>
+      currentFps === roundedFps ? currentFps : roundedFps,
+    );
   }, []);
   const handleToggleFpsOverlay = useCallback(() => {
     setIsFpsVisible((isVisible) => !isVisible);
@@ -488,6 +718,19 @@ export function CharacterRigScene() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [handleToggleFpsOverlay]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.pointerType === "touch") {
+        setIsSplashDismissedByTouch(true);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, []);
 
   return (
     <div className="relative h-full w-full">
@@ -580,6 +823,8 @@ export function CharacterRigScene() {
               onToggleDefaultGait={handleToggleDefaultGait}
               onPointerLockChange={handlePointerLockChange}
               onPlayerPositionUpdate={handlePlayerPositionUpdate}
+              mobileMoveInputRef={mobileMoveInputRef}
+              mobileJumpPressedRef={mobileJumpPressedRef}
             />
           </Suspense>
         </Physics>
@@ -590,18 +835,82 @@ export function CharacterRigScene() {
           <p>{fps ?? "--"}</p>
         </div>
       ) : null}
-      {!isPointerLocked ? (
-        <div className="pointer-events-none absolute left-4 top-4 z-20 max-w-xs rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
-          <p className="mb-1 font-semibold tracking-wide text-white">
-            Controls
-          </p>
-          <p>Click to lock mouse</p>
-          <p>Touch and drag to look around</p>
-          <p>W A S D move, Space jump, Shift alternate gait</p>
-          <p>CapsLock toggles default gait</p>
-          <p>V toggle first-person / third-person, F toggle FPS, H happy, J sad, Esc unlock</p>
+      {!isPointerLocked && !isSplashDismissedByTouch ? (
+        <div className="pointer-events-none absolute inset-0 z-30 hidden overflow-hidden jump-overlay-copy xl:block">
+          <div className="jump-scrim absolute inset-0" />
+          <div className="jump-splash absolute inset-0" />
+          <div className="relative flex h-full w-full items-center justify-center p-4 sm:p-8">
+            <div className="jump-splash-panel w-full max-w-5xl rounded-3xl p-6 sm:p-8 lg:p-10">
+              <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+                <div className="max-w-2xl">
+                  <p className="text-xs font-medium uppercase tracking-[0.28em] text-cyan-100/90 sm:text-sm">
+                    Character Rig Sandbox
+                  </p>
+                  <div className="relative mt-2">
+                    <p className="jump-logo-glow absolute left-[0.03em] top-[0.06em] text-5xl uppercase tracking-[0.1em] sm:text-7xl lg:text-8xl">
+                      Jump Man
+                    </p>
+                    <h1 className="jump-logo relative text-5xl uppercase tracking-[0.1em] sm:text-7xl lg:text-8xl">
+                      Jump Man
+                    </h1>
+                  </div>
+                  <p className="mt-5 max-w-xl text-sm leading-relaxed text-cyan-50 sm:text-base">
+                    Click anywhere to lock in and drop into the scene.
+                  </p>
+                  <div className="mt-7 inline-flex items-center gap-3 rounded-full border border-cyan-100/65 bg-cyan-100/14 px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-cyan-50">
+                    <span className="jump-cta-pulse inline-block h-2.5 w-2.5 rounded-full bg-cyan-200 shadow-[0_0_12px_rgba(149,242,255,0.9)]" />
+                    Click to start
+                  </div>
+                </div>
+                <div className="w-full max-w-xl">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-100/85 sm:text-sm">
+                    Controls
+                  </p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {SPLASH_CONTROLS.map(({ keys, action }) => (
+                      <div
+                        key={keys}
+                        className="jump-control-card rounded-xl px-3 py-2.5"
+                      >
+                        <div className="jump-keycap inline-flex rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-50/95 sm:text-[11px]">
+                          {keys}
+                        </div>
+                        <p className="mt-1.5 text-[11px] leading-snug text-cyan-50/92 sm:text-xs">
+                          {action}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
+      <MobileControlsOverlay
+        moveInputRef={mobileMoveInputRef}
+        jumpPressedRef={mobileJumpPressedRef}
+      />
+      <div className="mobile-portrait-lock jump-overlay-copy absolute inset-0 z-50 items-center justify-center px-5 py-8 text-center">
+        <div className="mobile-portrait-lock__scrim absolute inset-0" />
+        <div className="mobile-portrait-lock__panel relative w-full max-w-sm rounded-2xl px-6 py-7">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-100/85">
+            Orientation Required
+          </p>
+          <div className="mt-4 flex justify-center">
+            <div className="mobile-portrait-lock__device-frame">
+              <div className="mobile-portrait-lock__device-notch" />
+            </div>
+          </div>
+          <h2 className="mt-5 text-2xl font-semibold uppercase tracking-[0.12em] text-cyan-50">
+            Rotate To Landscape
+          </h2>
+          <p className="mt-3 text-sm leading-relaxed text-cyan-50/92">
+            This experience is optimized for a wide screen. Rotate your device
+            to continue.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
