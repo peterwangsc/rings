@@ -71,6 +71,7 @@ const LANDSCAPE_TREE_FIELD_RADIUS = GROUND_HALF_EXTENT - 4;
 const LANDSCAPE_TREE_MIN_SPACING = 7.2;
 const LANDSCAPE_TREE_CLEARING_RADIUS = 7.5;
 const LANDSCAPE_TREE_ROCK_CLEARANCE = 4;
+const LANDSCAPE_TREE_GROUND_SINK = 0.35;
 const LANDSCAPE_TREE_MAX_ATTEMPTS = LANDSCAPE_TREE_TARGET_COUNT * 120;
 
 type RockPlacement = (typeof ROCK_FORMATIONS)[number] & {
@@ -436,7 +437,7 @@ export function WorldGeometry({
       }
 
       points.push(new THREE.Vector2(x, z));
-      const y = sampleTerrainHeight(x, z);
+      const y = sampleTerrainHeight(x, z) - LANDSCAPE_TREE_GROUND_SINK;
       const heightScale = THREE.MathUtils.lerp(
         0.78,
         1.42,
