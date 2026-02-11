@@ -422,7 +422,7 @@ body {
   background: rgba(191, 242, 255, 0.85);
 }
 
-@media (max-width: 430px) and (orientation: portrait) {
+@media (max-width: 460px) and (orientation: portrait) {
   .mobile-portrait-lock {
     display: flex;
   }
