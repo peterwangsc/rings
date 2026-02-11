@@ -398,7 +398,6 @@ function FrameRateProbe({
 const CAMERA_MODE_CYCLE: readonly CameraMode[] = [
   "third_person",
   "first_person",
-  "third_person_free_look",
 ];
 
 export function CharacterRigScene() {
@@ -552,7 +551,7 @@ export function CharacterRigScene() {
           <p>Touch and drag to look around</p>
           <p>W A S D move, Space jump, Shift alternate gait</p>
           <p>CapsLock toggles default gait</p>
-          <p>V camera mode, F toggle FPS, H happy, J sad, Esc unlock</p>
+          <p>V toggle first-person / third-person, F toggle FPS, H happy, J sad, Esc unlock</p>
         </div>
       ) : null}
     </div>

@@ -523,38 +523,51 @@ export function CharacterRigController({
       groundedRecoveryLatchRef.current;
     const canConsumeJumpIntent = isGroundedStable;
 
-    const moveForward = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
-    const moveRight = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    const hasMoveIntent = moveForward !== 0 || moveRight !== 0;
+    const moveForwardInput = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
+    const moveRightInput = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     const isWalkGait = isWalkDefault ? !input.sprint : input.sprint;
 
     getForwardFromYaw(cameraYawRef.current, forwardRef.current);
     getRightFromForward(forwardRef.current, rightRef.current);
 
     moveDirectionRef.current.set(0, 0, 0);
-    if (hasMoveIntent) {
+    if (moveForwardInput !== 0 || moveRightInput !== 0) {
       moveDirectionRef.current
         .copy(forwardRef.current)
-        .multiplyScalar(moveForward)
-        .addScaledVector(rightRef.current, moveRight)
-        .normalize();
+        .multiplyScalar(moveForwardInput)
+        .addScaledVector(rightRef.current, moveRightInput);
+      if (moveDirectionRef.current.lengthSq() > 0) {
+        moveDirectionRef.current.normalize();
+      }
     }
 
-    const targetSpeed = isWalkGait ? PLAYER_WALK_SPEED : PLAYER_RUN_SPEED;
-    const targetVelocityX = moveDirectionRef.current.x * targetSpeed;
-    const targetVelocityZ = moveDirectionRef.current.z * targetSpeed;
-    const velocityBlend = 1 - Math.exp(-PLAYER_ACCELERATION * dt);
+    const hasMoveIntent = moveDirectionRef.current.lengthSq() > 0;
 
-    const nextVelocityX = THREE.MathUtils.lerp(
-      currentVelocity.x,
-      targetVelocityX,
-      velocityBlend,
-    );
-    const nextVelocityZ = THREE.MathUtils.lerp(
-      currentVelocity.z,
-      targetVelocityZ,
-      velocityBlend,
-    );
+    const targetSpeed = isWalkGait ? PLAYER_WALK_SPEED : PLAYER_RUN_SPEED;
+    const targetVelocityX = hasMoveIntent
+      ? moveDirectionRef.current.x * targetSpeed
+      : 0;
+    const targetVelocityZ = hasMoveIntent
+      ? moveDirectionRef.current.z * targetSpeed
+      : 0;
+    const velocityDeltaX = targetVelocityX - currentVelocity.x;
+    const velocityDeltaZ = targetVelocityZ - currentVelocity.z;
+    const maxVelocityDelta = PLAYER_ACCELERATION * dt;
+    const velocityDeltaMagnitude = Math.hypot(velocityDeltaX, velocityDeltaZ);
+    const velocityDeltaScale =
+      velocityDeltaMagnitude > maxVelocityDelta && velocityDeltaMagnitude > 0
+        ? maxVelocityDelta / velocityDeltaMagnitude
+        : 1;
+    let nextVelocityX = currentVelocity.x + velocityDeltaX * velocityDeltaScale;
+    let nextVelocityZ = currentVelocity.z + velocityDeltaZ * velocityDeltaScale;
+    if (hasMoveIntent && targetSpeed > 0) {
+      const nextPlanarSpeed = Math.hypot(nextVelocityX, nextVelocityZ);
+      if (nextPlanarSpeed > targetSpeed) {
+        const planarSpeedScale = targetSpeed / nextPlanarSpeed;
+        nextVelocityX *= planarSpeedScale;
+        nextVelocityZ *= planarSpeedScale;
+      }
+    }
 
     let didJump = false;
     let nextVelocityY = currentVelocity.y;
@@ -586,19 +599,11 @@ export function CharacterRigController({
       true,
     );
 
-    if (cameraMode === "third_person_free_look") {
-      if (hasMoveIntent) {
-        const movementYaw = Math.atan2(
-          moveDirectionRef.current.x,
-          -moveDirectionRef.current.z,
-        );
-        characterYawRef.current = normalizeAngle(
-          movementYaw * CHARACTER_CAMERA_YAW_SIGN,
-        );
-      }
-    } else {
+    const planarVelocityMagnitude = Math.hypot(nextVelocityX, nextVelocityZ);
+    if (planarVelocityMagnitude > 1e-4) {
+      const velocityYaw = Math.atan2(nextVelocityX, -nextVelocityZ);
       characterYawRef.current = normalizeAngle(
-        cameraYawRef.current * CHARACTER_CAMERA_YAW_SIGN,
+        velocityYaw * CHARACTER_CAMERA_YAW_SIGN,
       );
     }
 

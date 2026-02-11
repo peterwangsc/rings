@@ -2,6 +2,12 @@
 
 This file provides guidance to AI coding agents working in this repository.
 
+## Documentation sync rule
+
+- `AGENTS.md` and `CLAUDE.local.md` must stay identical.
+- Any change made to one of these files must be made to the other in the same update.
+- If they drift, treat `AGENTS.md` as the source of truth and resync `CLAUDE.local.md` immediately.
+
 ## Project
 
 A 3D character rig sandbox — a playable scene with a character you control, a camera that follows them, rocks with living shader surfaces, and a grass field under open sky. Built with Next.js 16, React Three Fiber, Three.js, and Rapier physics.
@@ -21,13 +27,13 @@ No test framework is configured.
 |---|---|
 | Click canvas | Lock pointer |
 | Mouse | Look around |
-| W, A, S, D | Move |
+| W, A, S, D | Move (camera-relative on the ground plane) |
 | Shift (hold) | Alternate gait (run / walk) |
 | CapsLock | Toggle default gait |
 | Space | Jump |
 | H | Trigger happy emote |
 | J | Trigger sad emote |
-| V | Cycle third-person / first-person / third-person free-look |
+| V | Toggle third-person / first-person |
 | Esc | Unlock pointer |
 
 ## Architecture
@@ -72,6 +78,7 @@ How heavy, light, snappy, or floaty the character feels to control.
 | Jump input buffer | `JUMP_INPUT_BUFFER_SECONDS` | How early before landing you can press jump and still have it count (currently 0.15s) |
 
 Walk and run speeds are built from a base value times `PLAYER_SPEED_SCALAR`. Change the scalar to shift both proportionally, or change each individually for a different walk-to-run ratio. Jump air time is calculated automatically from jump velocity and gravity — change either one and the arc adjusts.
+Movement intent is camera-relative on XZ: input sets desired acceleration direction from camera yaw, velocity updates toward target speed, and heading aligns to planar velocity while moving.
 
 ### 2. Camera personality
 
@@ -92,7 +99,7 @@ How the camera frames the character, how it responds to the mouse, and how each 
 | Wall collision radius | `THIRD_PERSON_CAMERA_COLLISION_RADIUS` | How big the invisible ball is that prevents the camera from clipping through walls |
 | Minimum zoom | `THIRD_PERSON_CAMERA_MIN_DISTANCE` | Closest the camera can get when pushed by a wall behind the character |
 
-First-person and both third-person modes share independent FOV behavior — first-person benefits from wider peripheral awareness, while third-person modes look better tighter. The third-person camera does a physics sphere-cast to avoid poking through geometry.
+First-person and third-person share independent FOV behavior — first-person benefits from wider peripheral awareness, while third-person looks better tighter. The third-person camera does a physics sphere-cast to avoid poking through geometry.
 
 **Camera math conventions:**
 
@@ -266,7 +273,7 @@ Where things are placed, how big they are, and the ground colors.
 1. Describe the visual goal — "warmer golden hour light", "more dramatic crack glow", "subtler strata banding."
 2. Identify which layer it belongs to (atmosphere, rock surface, rock shape, world layout).
 3. Adjust the relevant constants in that layer's file.
-4. Check the result from first-person, third-person follow, and third-person free-look camera modes.
+4. Check the result from first-person and third-person camera modes.
 
 ### For adding new visual elements
 
@@ -292,7 +299,7 @@ These are structural decisions that keep the whole system working. Don't change 
 
 **Physics authority:** The character's vertical position is controlled entirely by Rapier (gravity, collisions). Horizontal intent is on XZ. Never manually set the Y position per frame.
 
-**Character-camera coupling:** In `first_person` and `third_person`, the character faces where the camera points. In `third_person_free_look`, mouse look rotates camera only; character heading is driven by movement direction. The yaw sign inversion (`CHARACTER_CAMERA_YAW_SIGN = -1`) and model offset (`CHARACTER_MODEL_YAW_OFFSET = Math.PI`) are calibrated to the model. The visual root stays at a fixed local offset under the physics capsule so vertical placement is fully physics-driven.
+**Character-camera coupling:** In both camera modes, movement input is camera-relative on XZ. In `first_person`, mouse look controls the camera directly. In `third_person`, mouse look controls the orbit camera independently from movement. Character heading aligns with planar velocity direction while moving. The yaw sign inversion (`CHARACTER_CAMERA_YAW_SIGN = -1`) and model offset (`CHARACTER_MODEL_YAW_OFFSET = Math.PI`) are calibrated to the model. The visual root stays at a fixed local offset under the physics capsule so vertical placement is fully physics-driven.
 
 **Root motion stripping:** Animation clips have root translation tracks removed so physics controls position. New animations need the same treatment (see `characterAnimation.ts`). Locomotion/airborne clips are matched by alias and played as `idle`, `walk`, `running`, `jump`, `jump_running`; emote clips are matched as `happy` and `sad`.
 
@@ -305,9 +312,9 @@ These are structural decisions that keep the whole system working. Don't change 
 ## Validating your changes
 
 - Move around. Does the character accelerate, stop, and turn the way you intended?
-- Cycle all camera modes (press V). Do transitions feel coherent, and does free-look keep camera orbit independent from heading while idle?
+- Toggle camera mode (press V). Do transitions between first-person and third-person feel coherent, and does third-person keep camera orbit independent from heading while idle?
 - Jump near rocks. Does the character land on them as expected, or clip through?
-- Look at rocks from all camera modes. Do the shader effects (glow, strata, bump) read well at different distances and angles?
+- Look at rocks from both camera modes. Do the shader effects (glow, strata, bump) read well at different distances and angles?
 - Walk into fog. Does the atmosphere fade feel natural at the distance you set?
 - If you changed animation timing, watch transitions between idle, walk, run, and jump. Do the blends feel smooth or do they pop?
 

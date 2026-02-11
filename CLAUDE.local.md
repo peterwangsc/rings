@@ -2,6 +2,12 @@
 
 This file provides guidance to AI coding agents working in this repository.
 
+## Documentation sync rule
+
+- `AGENTS.md` and `CLAUDE.local.md` must stay identical.
+- Any change made to one of these files must be made to the other in the same update.
+- If they drift, treat `AGENTS.md` as the source of truth and resync `CLAUDE.local.md` immediately.
+
 ## Project
 
 A 3D character rig sandbox — a playable scene with a character you control, a camera that follows them, rocks with living shader surfaces, and a grass field under open sky. Built with Next.js 16, React Three Fiber, Three.js, and Rapier physics.
@@ -21,11 +27,13 @@ No test framework is configured.
 |---|---|
 | Click canvas | Lock pointer |
 | Mouse | Look around |
-| W, A, S, D | Move |
+| W, A, S, D | Move (camera-relative on the ground plane) |
 | Shift (hold) | Alternate gait (run / walk) |
 | CapsLock | Toggle default gait |
 | Space | Jump |
-| V | Toggle first-person / third-person |
+| H | Trigger happy emote |
+| J | Trigger sad emote |
+| V | Toggle third-person / first-person |
 | Esc | Unlock pointer |
 
 ## Architecture
@@ -33,7 +41,8 @@ No test framework is configured.
 ```
 page.tsx → CharacterRigScene → Canvas (R3F)
   ├── Physics (Rapier world)
-  ├── WorldGeometry (ground plane, rock formations with colliders)
+  ├── WorldGeometry (terrain, grass, rocks, campfire, and forest tree placement)
+  │     └── SingleTree (handcrafted conifer-style trunk + layered canopy)
   └── CharacterRigController (input, physics loop, camera)
         └── CharacterActor (model loading, animation mixer)
 ```
@@ -69,6 +78,7 @@ How heavy, light, snappy, or floaty the character feels to control.
 | Jump input buffer | `JUMP_INPUT_BUFFER_SECONDS` | How early before landing you can press jump and still have it count (currently 0.15s) |
 
 Walk and run speeds are built from a base value times `PLAYER_SPEED_SCALAR`. Change the scalar to shift both proportionally, or change each individually for a different walk-to-run ratio. Jump air time is calculated automatically from jump velocity and gravity — change either one and the arc adjusts.
+Movement intent is camera-relative on XZ: input sets desired acceleration direction from camera yaw, velocity updates toward target speed, and heading aligns to planar velocity while moving.
 
 ### 2. Camera personality
 
@@ -89,7 +99,7 @@ How the camera frames the character, how it responds to the mouse, and how each 
 | Wall collision radius | `THIRD_PERSON_CAMERA_COLLISION_RADIUS` | How big the invisible ball is that prevents the camera from clipping through walls |
 | Minimum zoom | `THIRD_PERSON_CAMERA_MIN_DISTANCE` | Closest the camera can get when pushed by a wall behind the character |
 
-First-person and third-person have independent FOVs — first-person benefits from wider peripheral awareness, while third-person looks better tighter. The camera does a physics sphere-cast to avoid poking through geometry.
+First-person and third-person share independent FOV behavior — first-person benefits from wider peripheral awareness, while third-person looks better tighter. The third-person camera does a physics sphere-cast to avoid poking through geometry.
 
 **Camera math conventions:**
 
@@ -117,10 +127,12 @@ How motion states blend together and how fast each clip plays.
 | Run animation speed | `RUNNING_TIME_SCALE` | Same for the run loop |
 | Jump animation speed | `JUMP_TIME_SCALE` | Same for the standing jump |
 | Running jump speed | `JUMP_RUNNING_TIME_SCALE` | Same for the running jump |
+| Happy emote speed | `HAPPY_TIME_SCALE` | Playback rate for the happy one-shot |
+| Sad emote speed | `SAD_TIME_SCALE` | Playback rate for the sad one-shot |
 | Movement detection threshold | `WALK_SPEED_THRESHOLD` | Minimum speed before the character switches from idle to walking — prevents twitchy transitions |
 | Speed readout smoothing | `PLANAR_SPEED_SMOOTHING` | How smoothly the speed measurement updates — prevents flickering between walk/idle at low speeds |
 
-The character has five motion states: `idle`, `walk`, `running`, `jump`, `jump_running`. Transitions happen automatically based on speed and input. The blend duration is the single most impactful timing value — it controls how fluid or mechanical transitions feel. Animation playback speed and movement speed are independent, so you can have a character that moves fast but animates calmly, or vice versa.
+The character has seven motion states: `idle`, `walk`, `running`, `jump`, `jump_running`, `happy`, `sad`. Locomotion and airborne transitions happen automatically based on speed/input. `happy` and `sad` are one-shot emotes triggered by `H`/`J`, and they play only while grounded with no move intent. The blend duration is the single most impactful timing value — it controls how fluid or mechanical transitions feel. Animation playback speed and movement speed are independent, so you can have a character that moves fast but animates calmly, or vice versa.
 
 **Files for deeper animation work:**
 - `app/lib/CharacterActor.tsx` — animation clips loaded and mixer managed
@@ -146,7 +158,23 @@ The mood of the scene — sky color, fog, sun direction, ambient tone.
 
 The hemisphere light is the main tool for overall color mood — its sky tint washes the tops of everything, its ground tint washes the undersides. The directional light adds shape through shadows. Fog distance dramatically affects how intimate or vast the world feels.
 
-### 5. Rock surfaces — the shader palette
+### 5. Tree silhouettes — handcrafted conifer stack
+
+Trees are currently built from a single handcrafted conifer profile (trunk + layered cone canopies) and instanced across the terrain with deterministic placement.
+
+**Primary files:** `app/vegetation/trees/SingleTree.tsx`, `app/scene/WorldGeometry.tsx`
+
+| What you're shaping | Where | What it does |
+|---|---|---|
+| Canopy profile | `BASE_CANOPY_LAYERS` in `SingleTree.tsx` | Defines each canopy layer's height, radius, vertical placement, and color |
+| Canopy twist | `CANOPY_MAX_TWIST_RADIANS` in `SingleTree.tsx` | Rotates higher canopy layers further around trunk for spiral structure |
+| Tree height variance | `heightScale` prop on `SingleTree` | Scales trunk + canopy proportions while preserving silhouette relationship |
+| Trunk thickness scaling | `trunkRadiusScale` in `SingleTree.tsx` | Keeps trunk believable as tree height changes |
+| Forest density | `LANDSCAPE_TREE_TARGET_COUNT` in `WorldGeometry.tsx` | Number of trees placed in the world |
+| Forest coverage | `LANDSCAPE_TREE_FIELD_RADIUS`, `LANDSCAPE_TREE_CLEARING_RADIUS` in `WorldGeometry.tsx` | Outer tree band and central player clearing |
+| Spacing and collision avoidance | `LANDSCAPE_TREE_MIN_SPACING`, `LANDSCAPE_TREE_ROCK_CLEARANCE` in `WorldGeometry.tsx` | Prevents trees from clumping or intersecting rocks |
+
+### 6. Rock surfaces — the shader palette
 
 The rocks use a custom shader that layers multiple visual effects. Each effect has its own set of knobs.
 
@@ -196,7 +224,7 @@ The rocks use a custom shader that layers multiple visual effects. Each effect h
 
 The glow colors are defined inline in the shader: cyan abyss glow `(0.10, 0.84, 0.96)` and orange ember glow `(0.94, 0.30, 0.16)`. To change these colors, search for `abyssGlow` and `emberGlow` in the emissive section of the shader.
 
-### 6. Rock silhouettes — the procedural shape
+### 7. Rock silhouettes — the procedural shape
 
 Each rock is generated from a sphere that gets sculpted by layered noise.
 
@@ -213,7 +241,7 @@ Each rock is generated from a sphere that gets sculpted by layered noise.
 | Crown softening | `ROCK_CROWN_SOFTEN_STRENGTH` | How rounded the tops become |
 | Base flatness | `ROCK_FOOTING_Y_MIN`, `ROCK_FOOTING_Y_MAX` | How the bottom flattens out to sit on the ground |
 
-### 7. World layout
+### 8. World layout
 
 Where things are placed, how big they are, and the ground colors.
 
@@ -245,7 +273,7 @@ Where things are placed, how big they are, and the ground colors.
 1. Describe the visual goal — "warmer golden hour light", "more dramatic crack glow", "subtler strata banding."
 2. Identify which layer it belongs to (atmosphere, rock surface, rock shape, world layout).
 3. Adjust the relevant constants in that layer's file.
-4. Check the result from both first-person and third-person camera.
+4. Check the result from first-person and third-person camera modes.
 
 ### For adding new visual elements
 
@@ -271,9 +299,9 @@ These are structural decisions that keep the whole system working. Don't change 
 
 **Physics authority:** The character's vertical position is controlled entirely by Rapier (gravity, collisions). Horizontal intent is on XZ. Never manually set the Y position per frame.
 
-**Character-camera coupling:** The character faces where the camera points. The yaw sign inversion (`CHARACTER_CAMERA_YAW_SIGN = -1`) and model offset (`CHARACTER_MODEL_YAW_OFFSET = Math.PI`) are calibrated to the model. The visual root stays at a fixed local offset under the physics capsule so vertical placement is fully physics-driven.
+**Character-camera coupling:** In both camera modes, movement input is camera-relative on XZ. In `first_person`, mouse look controls the camera directly. In `third_person`, mouse look controls the orbit camera independently from movement. Character heading aligns with planar velocity direction while moving. The yaw sign inversion (`CHARACTER_CAMERA_YAW_SIGN = -1`) and model offset (`CHARACTER_MODEL_YAW_OFFSET = Math.PI`) are calibrated to the model. The visual root stays at a fixed local offset under the physics capsule so vertical placement is fully physics-driven.
 
-**Root motion stripping:** Animation clips have root translation tracks removed so physics controls position. New animations need the same treatment (see `characterAnimation.ts`). Locomotion and airborne clips are matched by alias and played as `idle`, `walk`, `running`, `jump`, `jump_running`.
+**Root motion stripping:** Animation clips have root translation tracks removed so physics controls position. New animations need the same treatment (see `characterAnimation.ts`). Locomotion/airborne clips are matched by alias and played as `idle`, `walk`, `running`, `jump`, `jump_running`; emote clips are matched as `happy` and `sad`.
 
 **Collider-visual alignment:** Each rock's `collider` size should roughly match its `scale`. If you resize a rock visually, update its collider too or the player will bump into invisible walls or walk through visible rock.
 
@@ -284,7 +312,7 @@ These are structural decisions that keep the whole system working. Don't change 
 ## Validating your changes
 
 - Move around. Does the character accelerate, stop, and turn the way you intended?
-- Switch between first-person and third-person (press V). Does the transition feel coherent? Is the look direction preserved?
+- Toggle camera mode (press V). Do transitions between first-person and third-person feel coherent, and does third-person keep camera orbit independent from heading while idle?
 - Jump near rocks. Does the character land on them as expected, or clip through?
 - Look at rocks from both camera modes. Do the shader effects (glow, strata, bump) read well at different distances and angles?
 - Walk into fog. Does the atmosphere fade feel natural at the distance you set?
@@ -304,7 +332,8 @@ When changing camera, movement, coordinate-space, or animation coupling behavior
 |---|---|
 | Movement, camera, timing, layout, colors | `app/utils/constants.ts` |
 | Lighting, shadows, fog, canvas setup | `app/scene/CharacterRigScene.tsx` |
-| Ground plane, grass, rock placement | `app/scene/WorldGeometry.tsx` |
+| Ground plane, grass, rock placement, campfire, forest tree placement | `app/scene/WorldGeometry.tsx` |
+| Handcrafted conifer tree mesh | `app/vegetation/trees/SingleTree.tsx` |
 | Rock surface shader effects | `app/utils/shaders.ts` |
 | Rock procedural shape | `app/utils/rockGeometry.ts` |
 | Character model, animation playback | `app/lib/CharacterActor.tsx` |
