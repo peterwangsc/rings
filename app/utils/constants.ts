@@ -45,7 +45,7 @@ export const LOOK_TARGET_DISTANCE = 20;
 export const FIRST_PERSON_CAMERA_FOV = 55;
 export const THIRD_PERSON_CAMERA_FOV = 47;
 
-export const PLAYER_START_POSITION = new THREE.Vector3(0, 0.85, -2);
+export const PLAYER_START_POSITION = new THREE.Vector3(0, 1.5, -2);
 export const PLAYER_CAPSULE_HALF_HEIGHT = 0.45;
 export const PLAYER_CAPSULE_RADIUS = 0.35;
 export const PLAYER_VISUAL_Y_OFFSET = -(
