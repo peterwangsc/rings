@@ -155,3 +155,32 @@ export const ROCK_FORMATIONS = [
     scale: [1.04, 0.74, 0.93] as const,
   },
 ] as const;
+
+// --- Rings (collectibles) ---
+export const RING_HOVER_HEIGHT = 1.2;
+export const RING_MAJOR_RADIUS = 0.32;
+export const RING_TUBE_RADIUS = 0.055;
+export const RING_COLOR = "#FFD700";
+export const RING_EMISSIVE_COLOR = "#FFA000";
+export const RING_EMISSIVE_INTENSITY = 0.45;
+export const RING_ROUGHNESS = 0.3;
+export const RING_METALNESS = 0.8;
+export const RING_ROTATION_SPEED = 2.2;
+export const RING_BOB_AMPLITUDE = 0.18;
+export const RING_BOB_SPEED = 2.0;
+export const RING_SENSOR_RADIUS = 0.9;
+export const RING_TORUS_SEGMENTS = 24;
+export const RING_TUBE_SEGMENTS = 12;
+
+export const RING_PLACEMENTS: ReadonlyArray<readonly [number, number]> = [
+  [3, 0],
+  [-2, 3.5],
+  [5.5, -3],
+  [0, 5],
+  [-5.5, -2],
+  [6, 3.5],
+  [-1, -5.5],
+  [4, 7],
+  [-6.5, 1],
+  [1.5, -6],
+];

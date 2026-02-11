@@ -257,6 +257,29 @@ Where things are placed, how big they are, and the ground colors.
 | Rock base color | `ROCK_MATERIAL_COLOR` | Base tint before shader effects layer on top |
 | Ground size | `GROUND_HALF_EXTENT` | Half-width of the ground plane in meters |
 
+### 9. Rings (collectibles)
+
+Golden torus collectibles scattered across the terrain. Walking into a ring collects it (sensor-based pickup) and increments the HUD counter.
+
+**Primary files:** `app/gameplay/collectibles/Ring.tsx`, `app/gameplay/collectibles/RingField.tsx`, `app/hud/GameHUD.tsx`
+
+| What you're shaping | Constant | What it does |
+|---|---|---|
+| Float height | `RING_HOVER_HEIGHT` | How far above the terrain surface rings float |
+| Ring size | `RING_MAJOR_RADIUS`, `RING_TUBE_RADIUS` | Torus dimensions — overall ring size and tube thickness |
+| Ring color | `RING_COLOR` | Base gold color of the ring |
+| Ring glow | `RING_EMISSIVE_COLOR`, `RING_EMISSIVE_INTENSITY` | Self-illumination color and strength — keeps rings visible at night |
+| Ring surface | `RING_ROUGHNESS`, `RING_METALNESS` | Material feel — lower roughness and higher metalness for shiny gold |
+| Spin speed | `RING_ROTATION_SPEED` | How fast the ring rotates around its vertical axis |
+| Bob motion | `RING_BOB_AMPLITUDE`, `RING_BOB_SPEED` | Vertical hovering motion — amplitude and frequency |
+| Pickup range | `RING_SENSOR_RADIUS` | How close the player must be to collect the ring |
+| Ring positions | `RING_PLACEMENTS` | Array of `[x, z]` coordinates — Y is computed from terrain height |
+| Mesh detail | `RING_TORUS_SEGMENTS`, `RING_TUBE_SEGMENTS` | Geometry resolution of the torus |
+
+Rings use Rapier sensor colliders for pickup detection. Only the player's dynamic body triggers collection — static world geometry is ignored. The RingField computes world-space Y positions from terrain height at spawn time. Collected rings are tracked by ID in a `Set<string>` owned by `CharacterRigScene`.
+
+**Convention for new gameplay elements:** constants in `constants.ts`, 3D components in `app/gameplay/<category>/`, HUD overlays in `app/hud/`, state orchestrated in `CharacterRigScene`.
+
 ---
 
 ## How to work
@@ -340,5 +363,9 @@ When changing camera, movement, coordinate-space, or animation coupling behavior
 | Animation helpers, clip processing | `app/lib/characterAnimation.ts` |
 | Input and per-frame gameplay loop | `app/controller/CharacterRigController.tsx` |
 | Camera application logic | `app/camera/cameraRig.ts` |
+| Terrain height and noise sampling | `app/utils/terrain.ts` |
 | Direction and angle math | `app/utils/math.ts` |
 | Motion state resolution | `app/utils/physics.ts` |
+| Ring collectible (3D mesh + sensor) | `app/gameplay/collectibles/Ring.tsx` |
+| Ring field spawner and collection state | `app/gameplay/collectibles/RingField.tsx` |
+| Game HUD (ring counter) | `app/hud/GameHUD.tsx` |
