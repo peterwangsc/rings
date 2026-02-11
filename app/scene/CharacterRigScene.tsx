@@ -41,9 +41,12 @@ import type {
   MobileEmoteRequest,
   MobileMoveInput,
 } from "../controller/controllerTypes";
+import { RingField } from "../gameplay/collectibles/RingField";
+import { GameHUD } from "../hud/GameHUD";
 import {
   FPS_TOGGLE_KEY,
   HORIZON_COLOR,
+  RING_PLACEMENTS,
   SKY_FOG_FAR,
   SKY_FOG_NEAR,
   THIRD_PERSON_CAMERA_FOV,
@@ -733,6 +736,9 @@ export function CharacterRigScene() {
   const [isSplashDismissedByTouch, setIsSplashDismissedByTouch] =
     useState(false);
   const [fps, setFps] = useState<number | null>(null);
+  const [collectedRingIds, setCollectedRingIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
   const playerWorldPositionRef = useRef(new Vector3());
   const mobileMoveInputRef = useRef<MobileMoveInput>({ x: 0, y: 0 });
   const mobileJumpPressedRef = useRef(false);
@@ -760,6 +766,16 @@ export function CharacterRigScene() {
   }, []);
   const handleToggleFpsOverlay = useCallback(() => {
     setIsFpsVisible((isVisible) => !isVisible);
+  }, []);
+  const handleRingCollected = useCallback((ringId: string) => {
+    setCollectedRingIds((prev) => {
+      if (prev.has(ringId)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.add(ringId);
+      return next;
+    });
   }, []);
   const handlePlayerPositionUpdate = useCallback(
     (x: number, y: number, z: number) => {
@@ -878,6 +894,10 @@ export function CharacterRigScene() {
         <Physics gravity={[0, WORLD_GRAVITY_Y, 0]}>
           <Suspense fallback={null}>
             <WorldGeometry playerPositionRef={playerWorldPositionRef} />
+            <RingField
+              collectedIds={collectedRingIds}
+              onCollect={handleRingCollected}
+            />
             <CharacterRigController
               cameraMode={cameraMode}
               onToggleCameraMode={handleToggleCameraMode}
@@ -892,6 +912,10 @@ export function CharacterRigScene() {
           </Suspense>
         </Physics>
       </Canvas>
+      <GameHUD
+        ringCount={collectedRingIds.size}
+        totalRings={RING_PLACEMENTS.length}
+      />
       {isFpsVisible ? (
         <div className="pointer-events-none absolute right-4 top-4 z-20 rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
           <p className="font-semibold tracking-wide text-white">FPS</p>

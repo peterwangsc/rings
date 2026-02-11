@@ -32,20 +32,15 @@ import {
   PLAYER_START_POSITION,
   ROCK_FORMATIONS,
   ROCK_MATERIAL_COLOR,
-  TERRAIN_BASE_NOISE_SCALE,
   TERRAIN_COLOR_DRY,
   TERRAIN_COLOR_HIGHLAND,
   TERRAIN_COLOR_MEADOW,
   TERRAIN_COLOR_RIDGE,
   TERRAIN_COLOR_VALLEY,
   TERRAIN_COLOR_WILDFLOWER,
-  TERRAIN_DETAIL_NOISE_SCALE,
   TERRAIN_EDGE_FALLOFF_END,
   TERRAIN_EDGE_FALLOFF_START,
-  TERRAIN_FLAT_RADIUS,
   TERRAIN_HEIGHT_AMPLITUDE,
-  TERRAIN_MICRO_NOISE_SCALE,
-  TERRAIN_RIDGE_STRENGTH,
 } from "../utils/constants";
 import {
   getSingleTreeTrunkCollider,
@@ -53,6 +48,13 @@ import {
 } from "../vegetation/trees/SingleTree";
 import { createProceduralRockGeometry } from "../utils/rockGeometry";
 import { createRockMaterial } from "../utils/shaders";
+import {
+  hash1D,
+  smoothstep,
+  valueNoise2D,
+  sampleTerrainHeight,
+  sampleTerrainSlope,
+} from "../utils/terrain";
 import { Campfire } from "./Campfire";
 
 const SIMPLEX_NOISE_TEXTURE_PATH = "/simplex-noise.png";
@@ -60,7 +62,6 @@ const SIMPLEX_NOISE_TEXTURE_ANISOTROPY = 8;
 const GRASS_SHADER_CACHE_KEY = "grass-blades-v1";
 const TAU = Math.PI * 2;
 const GRASS_BASE_Y = 0.03;
-const TERRAIN_SLOPE_SAMPLE_DELTA = 0.45;
 const TERRAIN_CHUNK_SIZE = GROUND_HALF_EXTENT * 2;
 const ACTIVE_TERRAIN_CHUNK_RADIUS = 1;
 const ROCK_COLLIDER_MODE = "hull" as const;
@@ -91,72 +92,6 @@ type TerrainChunkCoord = {
   x: number;
   z: number;
 };
-
-function fract(value: number) {
-  return value - Math.floor(value);
-}
-
-function smoothstep(edge0: number, edge1: number, x: number) {
-  const t = THREE.MathUtils.clamp((x - edge0) / Math.max(edge1 - edge0, 1e-6), 0, 1);
-  return t * t * (3 - 2 * t);
-}
-
-function hash2D(x: number, z: number) {
-  return fract(Math.sin(x * 127.1 + z * 311.7) * 43758.5453123);
-}
-
-function hash1D(value: number) {
-  return fract(Math.sin(value * 12.9898) * 43758.5453123);
-}
-
-function valueNoise2D(x: number, z: number) {
-  const x0 = Math.floor(x);
-  const z0 = Math.floor(z);
-  const xf = x - x0;
-  const zf = z - z0;
-
-  const u = xf * xf * (3 - 2 * xf);
-  const v = zf * zf * (3 - 2 * zf);
-
-  const n00 = hash2D(x0, z0);
-  const n10 = hash2D(x0 + 1, z0);
-  const n01 = hash2D(x0, z0 + 1);
-  const n11 = hash2D(x0 + 1, z0 + 1);
-
-  const nx0 = THREE.MathUtils.lerp(n00, n10, u);
-  const nx1 = THREE.MathUtils.lerp(n01, n11, u);
-  return THREE.MathUtils.lerp(nx0, nx1, v);
-}
-
-function sampleTerrainHeight(x: number, z: number) {
-  const base = valueNoise2D(x * TERRAIN_BASE_NOISE_SCALE, z * TERRAIN_BASE_NOISE_SCALE) * 2 - 1;
-  const detail =
-    valueNoise2D((x + 39.2) * TERRAIN_DETAIL_NOISE_SCALE, (z - 12.7) * TERRAIN_DETAIL_NOISE_SCALE) *
-      2 -
-    1;
-  const micro =
-    valueNoise2D((x - 14.4) * TERRAIN_MICRO_NOISE_SCALE, (z + 24.3) * TERRAIN_MICRO_NOISE_SCALE) *
-      2 -
-    1;
-
-  const ridgeNoise = valueNoise2D((x + 71.1) * 0.08, (z - 8.9) * 0.08) * 2 - 1;
-  const ridgeShape = 1 - Math.abs(ridgeNoise);
-  const ridge = Math.pow(Math.max(ridgeShape, 0), 2.1) * TERRAIN_RIDGE_STRENGTH;
-
-  const radius = Math.hypot(x, z);
-  const centerMask = smoothstep(TERRAIN_FLAT_RADIUS * 0.45, TERRAIN_FLAT_RADIUS, radius);
-  const edgeMask = 1 - smoothstep(TERRAIN_EDGE_FALLOFF_START, TERRAIN_EDGE_FALLOFF_END, radius);
-
-  const combinedNoise = base * 0.62 + detail * 0.26 + micro * 0.12;
-  return (combinedNoise + ridge) * TERRAIN_HEIGHT_AMPLITUDE * centerMask * edgeMask;
-}
-
-function sampleTerrainSlope(x: number, z: number) {
-  const delta = TERRAIN_SLOPE_SAMPLE_DELTA;
-  const dx = sampleTerrainHeight(x + delta, z) - sampleTerrainHeight(x - delta, z);
-  const dz = sampleTerrainHeight(x, z + delta) - sampleTerrainHeight(x, z - delta);
-  return Math.hypot(dx, dz) / (2 * delta);
-}
 
 function isNearRock(
   x: number,
