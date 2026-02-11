@@ -756,6 +756,7 @@ export function CharacterRigController({
       enabledRotations={[false, false, false]}
       linearDamping={PLAYER_LINEAR_DAMPING}
       position={PLAYER_START_POSITION.toArray()}
+      userData={{ kind: "player" }}
     >
       <CapsuleCollider
         args={[PLAYER_CAPSULE_HALF_HEIGHT, PLAYER_CAPSULE_RADIUS]}

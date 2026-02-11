@@ -46,7 +46,10 @@ export function Ring({ id, position, onCollect }: RingProps) {
       colliders={false}
       position={[position[0], position[1], position[2]]}
       onIntersectionEnter={({ other }) => {
-        if (other.rigidBody?.isDynamic()) {
+        if (
+          (other.rigidBody?.userData as { kind?: string } | undefined)
+            ?.kind === "player"
+        ) {
           onCollect(id);
         }
       }}
