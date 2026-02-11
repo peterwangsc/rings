@@ -221,7 +221,7 @@ body {
     0 18px 34px -22px rgba(0, 0, 0, 0.82),
     inset 0 2px 0 rgba(255, 255, 255, 0.62),
     inset 0 -8px 14px -8px rgba(10, 56, 84, 0.58);
-  color: #f5fdff;
+  color: #11486d;
   transition:
     transform 0.08s ease,
     filter 0.12s ease,
@@ -254,21 +254,33 @@ body {
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
+  color: #0d3f60;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
-.mobile-control-emoji {
+.mobile-jump-button--active .mobile-jump-button__label {
+  color: #0a324d;
+}
+
+.mobile-control-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
   line-height: 1;
+  stroke-width: 2.3;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.28));
 }
 
-.mobile-control-emoji--emote {
-  font-size: 1.22rem;
+.mobile-control-icon--emote {
+  width: 1.22rem;
+  height: 1.22rem;
 }
 
-.mobile-control-emoji--camera {
-  font-size: 1.24rem;
+.mobile-control-icon--camera {
+  width: 1.24rem;
+  height: 1.24rem;
 }
 
 .mobile-emote-button {
@@ -284,7 +296,7 @@ body {
     0 14px 22px -18px rgba(0, 0, 0, 0.8),
     inset 0 1px 0 rgba(255, 255, 255, 0.54),
     inset 0 -6px 10px -8px rgba(10, 56, 84, 0.66);
-  color: #f2fbff;
+  color: #12384d;
   transition:
     transform 0.08s ease,
     filter 0.12s ease,
@@ -299,6 +311,7 @@ body {
 .mobile-emote-button--happy {
   left: 48px;
   top: 11px;
+  color: #0f4a3d;
   background:
     radial-gradient(
       circle at 30% 24%,
@@ -311,6 +324,7 @@ body {
 .mobile-emote-button--sad {
   left: 48px;
   bottom: 11px;
+  color: #163d60;
   background:
     radial-gradient(
       circle at 30% 24%,
@@ -340,7 +354,7 @@ body {
     0 14px 24px -20px rgba(0, 0, 0, 0.78),
     inset 0 1px 0 rgba(255, 255, 255, 0.58),
     inset 0 -6px 10px -8px rgba(10, 56, 84, 0.62);
-  color: #ecfbff;
+  color: #12456f;
   transition:
     transform 0.08s ease,
     filter 0.12s ease,
@@ -387,8 +401,9 @@ body {
     0 0 18px rgba(109, 214, 255, 0.32);
 }
 
-.mobile-portrait-lock__rotation-emoji {
-  font-size: 2rem;
+.mobile-portrait-lock__rotation-icon {
+  width: 2rem;
+  height: 2rem;
   position: absolute;
   top: 50%;
   left: 50%;

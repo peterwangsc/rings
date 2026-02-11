@@ -3,6 +3,7 @@
 import { Physics } from "@react-three/rapier";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Sky, Clouds, Cloud, Stars } from "@react-three/drei";
+import { Camera, Frown, RotateCw, Smile } from "lucide-react";
 import {
   Suspense,
   type MutableRefObject,
@@ -334,12 +335,10 @@ function MobileControlsOverlay({
           className="mobile-view-toggle-button pointer-events-auto touch-none select-none"
           onClick={onToggleCameraMode}
         >
-          <span
+          <Camera
             aria-hidden="true"
-            className="mobile-control-emoji mobile-control-emoji--camera"
-          >
-            🎥
-          </span>
+            className="mobile-control-icon mobile-control-icon--camera"
+          />
         </button>
         <div className="mobile-jump-cluster">
           <button
@@ -348,12 +347,10 @@ function MobileControlsOverlay({
             className="mobile-emote-button mobile-emote-button--happy pointer-events-auto touch-none select-none"
             onPointerDown={(event) => handleEmotePointerDown(event, "happy")}
           >
-            <span
+            <Smile
               aria-hidden="true"
-              className="mobile-control-emoji mobile-control-emoji--emote"
-            >
-              😊
-            </span>
+              className="mobile-control-icon mobile-control-icon--emote"
+            />
           </button>
           <button
             type="button"
@@ -361,12 +358,10 @@ function MobileControlsOverlay({
             className="mobile-emote-button mobile-emote-button--sad pointer-events-auto touch-none select-none"
             onPointerDown={(event) => handleEmotePointerDown(event, "sad")}
           >
-            <span
+            <Frown
               aria-hidden="true"
-              className="mobile-control-emoji mobile-control-emoji--emote"
-            >
-              😔
-            </span>
+              className="mobile-control-icon mobile-control-icon--emote"
+            />
           </button>
           <button
             type="button"
@@ -978,7 +973,10 @@ export function CharacterRigScene() {
           </p>
           <div className="mt-4 flex justify-center">
             <div className="mobile-portrait-lock__device-frame">
-              <span className="mobile-portrait-lock__rotation-emoji">🔄</span>
+              <RotateCw
+                aria-hidden="true"
+                className="mobile-portrait-lock__rotation-icon"
+              />
               <div className="mobile-portrait-lock__device-notch" />
             </div>
           </div>
