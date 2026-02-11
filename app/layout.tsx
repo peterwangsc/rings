@@ -19,7 +19,7 @@ const jumpDisplay = Bungee({
 });
 
 export const metadata: Metadata = {
-  title: "jump around",
+  title: "JUMP MAN",
   description: "3D character rig sandbox",
 };
 
