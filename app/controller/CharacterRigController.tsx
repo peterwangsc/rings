@@ -82,6 +82,7 @@ export function CharacterRigController({
   onPlayerPositionUpdate,
   mobileMoveInputRef,
   mobileJumpPressedRef,
+  mobileEmoteRequestRef,
 }: CharacterRigControllerProps) {
   const { camera, gl } = useThree();
   const { rapier, world } = useRapier();
@@ -474,10 +475,17 @@ export function CharacterRigController({
     const input = inputStateRef.current;
     const mobileMoveInput = mobileMoveInputRef?.current;
     const mobileJumpPressed = mobileJumpPressedRef?.current ?? false;
+    const mobileEmoteRequest = mobileEmoteRequestRef?.current ?? null;
     if (mobileJumpPressed && !mobileJumpWasPressedRef.current) {
       jumpIntentTimerRef.current = JUMP_INPUT_BUFFER_SECONDS;
     }
     mobileJumpWasPressedRef.current = mobileJumpPressed;
+    if (mobileEmoteRequest) {
+      emoteRequestRef.current = mobileEmoteRequest;
+      if (mobileEmoteRequestRef) {
+        mobileEmoteRequestRef.current = null;
+      }
+    }
 
     const translation = body.translation();
     const currentVelocity = body.linvel();
@@ -603,17 +611,18 @@ export function CharacterRigController({
       groundedRecoveryLatchRef.current = false;
     }
 
-    const shouldInterruptActiveEmote =
-      activeEmoteRef.current !== null &&
-      (!isGroundedStable || hasMoveIntent || didJump);
-    if (shouldInterruptActiveEmote) {
-      activeEmoteRef.current = null;
+    const canPlayEmote = isGroundedStable && !hasMoveIntent && !didJump;
+    if (emoteRequestRef.current) {
+      const nextEmote = emoteRequestRef.current;
+      emoteRequestRef.current = null;
+      if (canPlayEmote) {
+        // Replace any currently playing emote immediately; do not queue.
+        activeEmoteRef.current = nextEmote;
+      }
     }
 
-    const canPlayEmote = isGroundedStable && !hasMoveIntent && !didJump;
-    if (!activeEmoteRef.current && emoteRequestRef.current && canPlayEmote) {
-      activeEmoteRef.current = emoteRequestRef.current;
-      emoteRequestRef.current = null;
+    if (activeEmoteRef.current !== null && !canPlayEmote) {
+      activeEmoteRef.current = null;
     }
 
     body.setLinvel(

@@ -15,6 +15,8 @@ export interface MobileMoveInput {
   y: number;
 }
 
+export type MobileEmoteRequest = "happy" | "sad" | null;
+
 export interface CharacterRigControllerProps {
   readonly cameraMode: CameraMode;
   readonly onToggleCameraMode: () => void;
@@ -24,4 +26,5 @@ export interface CharacterRigControllerProps {
   readonly onPlayerPositionUpdate?: (x: number, y: number, z: number) => void;
   readonly mobileMoveInputRef?: MutableRefObject<MobileMoveInput>;
   readonly mobileJumpPressedRef?: MutableRefObject<boolean>;
+  readonly mobileEmoteRequestRef?: MutableRefObject<MobileEmoteRequest>;
 }

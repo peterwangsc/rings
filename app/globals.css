@@ -214,6 +214,18 @@ body {
     box-shadow 0.12s ease;
 }
 
+.mobile-jump-cluster {
+  position: relative;
+  width: 204px;
+  height: 168px;
+}
+
+.mobile-jump-cluster__jump {
+  position: absolute;
+  top: 28px;
+  right: 0;
+}
+
 .mobile-jump-button--active {
   transform: translateY(1px) scale(0.98);
   filter: brightness(0.95);
@@ -228,6 +240,90 @@ body {
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
+}
+
+.mobile-control-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.mobile-control-emoji--emote {
+  font-size: 1.22rem;
+}
+
+.mobile-control-emoji--camera {
+  font-size: 1.24rem;
+}
+
+.mobile-emote-button {
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  border: 1px solid rgba(200, 241, 255, 0.66);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 14px 22px -18px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.54),
+    inset 0 -6px 10px -8px rgba(10, 56, 84, 0.66);
+  color: #f2fbff;
+  transition:
+    transform 0.08s ease,
+    filter 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.mobile-emote-button:active {
+  transform: translateY(1px) scale(0.97);
+  filter: brightness(0.95);
+}
+
+.mobile-emote-button--happy {
+  left: 48px;
+  top: 11px;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(247, 255, 250, 0.86), rgba(112, 223, 183, 0.45)),
+    rgba(28, 124, 103, 0.68);
+}
+
+.mobile-emote-button--sad {
+  left: 48px;
+  bottom: 11px;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(247, 252, 255, 0.84), rgba(132, 193, 241, 0.44)),
+    rgba(38, 98, 152, 0.68);
+}
+
+.mobile-view-toggle-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(198, 242, 255, 0.64);
+  background:
+    radial-gradient(circle at 30% 24%, rgba(247, 254, 255, 0.84), rgba(102, 212, 247, 0.45)),
+    rgba(22, 96, 148, 0.62);
+  box-shadow:
+    0 14px 24px -20px rgba(0, 0, 0, 0.78),
+    inset 0 1px 0 rgba(255, 255, 255, 0.58),
+    inset 0 -6px 10px -8px rgba(10, 56, 84, 0.62);
+  color: #ecfbff;
+  transition:
+    transform 0.08s ease,
+    filter 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.mobile-view-toggle-button:active {
+  transform: translateY(1px) scale(0.98);
+  filter: brightness(0.95);
 }
 
 .mobile-portrait-lock {

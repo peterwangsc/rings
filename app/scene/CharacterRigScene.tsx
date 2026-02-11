@@ -36,7 +36,10 @@ import {
 import type { Sky as SkyImpl } from "three-stdlib";
 import type { CameraMode } from "../camera/cameraTypes";
 import { CharacterRigController } from "../controller/CharacterRigController";
-import type { MobileMoveInput } from "../controller/controllerTypes";
+import type {
+  MobileEmoteRequest,
+  MobileMoveInput,
+} from "../controller/controllerTypes";
 import {
   FPS_TOGGLE_KEY,
   HORIZON_COLOR,
@@ -74,15 +77,18 @@ const FPS_UPDATE_INTERVAL_SECONDS = 0.35;
 const FPS_SMOOTHING_FACTOR = 0.45;
 const MOBILE_JOYSTICK_RADIUS_PX = 44;
 const MOBILE_JOYSTICK_DEADZONE = 0.08;
-const SPLASH_CONTROLS: ReadonlyArray<{ keys: string; action: string }> = [
-  { keys: "W A S D", action: "Move" },
-  { keys: "Space", action: "Jump" },
-  { keys: "Shift (hold)", action: "Alternate gait" },
-  { keys: "CapsLock", action: "Toggle default gait" },
-  { keys: "V", action: "Toggle camera mode" },
-  { keys: "H / J", action: "Happy and sad emotes" },
-  { keys: "F", action: "Toggle FPS overlay" },
-  { keys: "Esc", action: "Unlock pointer" },
+const SPLASH_CONTROLS: ReadonlyArray<{
+  keys: readonly string[];
+  action: string;
+}> = [
+  { keys: ["W", "A", "S", "D"], action: "Move" },
+  { keys: ["Space"], action: "Jump" },
+  { keys: ["Shift"], action: "Hold for walk/run" },
+  { keys: ["CapsLock"], action: "Toggle walk/run" },
+  { keys: ["V"], action: "Toggle camera mode" },
+  { keys: ["H", "J"], action: "Happy and sad emotes" },
+  { keys: ["F"], action: "Toggle FPS overlay" },
+  { keys: ["Esc"], action: "Unlock pointer" },
 ];
 
 type SkyMaterialWithSunPosition = ShaderMaterial & {
@@ -102,9 +108,13 @@ type SkyMaterialWithSunPosition = ShaderMaterial & {
 function MobileControlsOverlay({
   moveInputRef,
   jumpPressedRef,
+  emoteRequestRef,
+  onToggleCameraMode,
 }: {
   moveInputRef: MutableRefObject<MobileMoveInput>;
   jumpPressedRef: MutableRefObject<boolean>;
+  emoteRequestRef: MutableRefObject<MobileEmoteRequest>;
+  onToggleCameraMode: () => void;
 }) {
   const joystickPointerIdRef = useRef<number | null>(null);
   const jumpPointerIdRef = useRef<number | null>(null);
@@ -277,14 +287,23 @@ function MobileControlsOverlay({
     [jumpPressedRef],
   );
 
+  const handleEmotePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>, emoteState: "happy" | "sad") => {
+      emoteRequestRef.current = emoteState;
+      event.preventDefault();
+    },
+    [emoteRequestRef],
+  );
+
   useEffect(() => {
     return () => {
       setMoveInput(0, 0);
       jumpPressedRef.current = false;
+      emoteRequestRef.current = null;
       joystickPointerIdRef.current = null;
       jumpPointerIdRef.current = null;
     };
-  }, [jumpPressedRef, setMoveInput]);
+  }, [emoteRequestRef, jumpPressedRef, setMoveInput]);
 
   return (
     <div className="mobile-game-controls pointer-events-none absolute inset-x-0 bottom-0 z-40 items-end justify-between px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-6">
@@ -305,17 +324,51 @@ function MobileControlsOverlay({
           }}
         />
       </div>
-      <button
-        type="button"
-        aria-label="Jump"
-        className={`mobile-jump-button pointer-events-auto touch-none select-none ${isJumpActive ? "mobile-jump-button--active" : ""}`}
-        onPointerDown={handleJumpPointerDown}
-        onPointerUp={handleJumpPointerUp}
-        onPointerCancel={handleJumpPointerUp}
-        onLostPointerCapture={handleJumpLostPointerCapture}
-      >
-        <span className="mobile-jump-button__label">Jump</span>
-      </button>
+      <div className="flex flex-col items-end gap-2">
+        <button
+          type="button"
+          aria-label="Toggle view mode"
+          className="mobile-view-toggle-button pointer-events-auto touch-none select-none"
+          onClick={onToggleCameraMode}
+        >
+          <span aria-hidden="true" className="mobile-control-emoji mobile-control-emoji--camera">
+            🎥
+          </span>
+        </button>
+        <div className="mobile-jump-cluster">
+          <button
+            type="button"
+            aria-label="Happy emote"
+            className="mobile-emote-button mobile-emote-button--happy pointer-events-auto touch-none select-none"
+            onPointerDown={(event) => handleEmotePointerDown(event, "happy")}
+          >
+            <span aria-hidden="true" className="mobile-control-emoji mobile-control-emoji--emote">
+              😊
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-label="Sad emote"
+            className="mobile-emote-button mobile-emote-button--sad pointer-events-auto touch-none select-none"
+            onPointerDown={(event) => handleEmotePointerDown(event, "sad")}
+          >
+            <span aria-hidden="true" className="mobile-control-emoji mobile-control-emoji--emote">
+              😔
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-label="Jump"
+            className={`mobile-jump-button mobile-jump-cluster__jump pointer-events-auto touch-none select-none ${isJumpActive ? "mobile-jump-button--active" : ""}`}
+            onPointerDown={handleJumpPointerDown}
+            onPointerUp={handleJumpPointerUp}
+            onPointerCancel={handleJumpPointerUp}
+            onLostPointerCapture={handleJumpLostPointerCapture}
+          >
+            <span className="mobile-jump-button__label">Jump</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -675,6 +728,7 @@ export function CharacterRigScene() {
   const playerWorldPositionRef = useRef(new Vector3());
   const mobileMoveInputRef = useRef<MobileMoveInput>({ x: 0, y: 0 });
   const mobileJumpPressedRef = useRef(false);
+  const mobileEmoteRequestRef = useRef<MobileEmoteRequest>(null);
 
   const handleToggleCameraMode = useCallback(() => {
     setCameraMode((currentMode) => {
@@ -825,6 +879,7 @@ export function CharacterRigScene() {
               onPlayerPositionUpdate={handlePlayerPositionUpdate}
               mobileMoveInputRef={mobileMoveInputRef}
               mobileJumpPressedRef={mobileJumpPressedRef}
+              mobileEmoteRequestRef={mobileEmoteRequestRef}
             />
           </Suspense>
         </Physics>
@@ -869,11 +924,18 @@ export function CharacterRigScene() {
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {SPLASH_CONTROLS.map(({ keys, action }) => (
                       <div
-                        key={keys}
+                        key={action}
                         className="jump-control-card rounded-xl px-3 py-2.5"
                       >
-                        <div className="jump-keycap inline-flex rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-50/95 sm:text-[11px]">
-                          {keys}
+                        <div className="flex flex-wrap gap-1.5">
+                          {keys.map((keyLabel) => (
+                            <span
+                              key={`${action}-${keyLabel}`}
+                              className="jump-keycap inline-flex rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-50/95 sm:text-[11px]"
+                            >
+                              {keyLabel}
+                            </span>
+                          ))}
                         </div>
                         <p className="mt-1.5 text-[11px] leading-snug text-cyan-50/92 sm:text-xs">
                           {action}
@@ -890,6 +952,8 @@ export function CharacterRigScene() {
       <MobileControlsOverlay
         moveInputRef={mobileMoveInputRef}
         jumpPressedRef={mobileJumpPressedRef}
+        emoteRequestRef={mobileEmoteRequestRef}
+        onToggleCameraMode={handleToggleCameraMode}
       />
       <div className="mobile-portrait-lock jump-overlay-copy absolute inset-0 z-50 items-center justify-center px-5 py-8 text-center">
         <div className="mobile-portrait-lock__scrim absolute inset-0" />
