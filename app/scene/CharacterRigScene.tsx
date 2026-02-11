@@ -288,7 +288,10 @@ function MobileControlsOverlay({
   );
 
   const handleEmotePointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLButtonElement>, emoteState: "happy" | "sad") => {
+    (
+      event: ReactPointerEvent<HTMLButtonElement>,
+      emoteState: "happy" | "sad",
+    ) => {
       emoteRequestRef.current = emoteState;
       event.preventDefault();
     },
@@ -331,7 +334,10 @@ function MobileControlsOverlay({
           className="mobile-view-toggle-button pointer-events-auto touch-none select-none"
           onClick={onToggleCameraMode}
         >
-          <span aria-hidden="true" className="mobile-control-emoji mobile-control-emoji--camera">
+          <span
+            aria-hidden="true"
+            className="mobile-control-emoji mobile-control-emoji--camera"
+          >
             🎥
           </span>
         </button>
@@ -342,7 +348,10 @@ function MobileControlsOverlay({
             className="mobile-emote-button mobile-emote-button--happy pointer-events-auto touch-none select-none"
             onPointerDown={(event) => handleEmotePointerDown(event, "happy")}
           >
-            <span aria-hidden="true" className="mobile-control-emoji mobile-control-emoji--emote">
+            <span
+              aria-hidden="true"
+              className="mobile-control-emoji mobile-control-emoji--emote"
+            >
               😊
             </span>
           </button>
@@ -352,7 +361,10 @@ function MobileControlsOverlay({
             className="mobile-emote-button mobile-emote-button--sad pointer-events-auto touch-none select-none"
             onPointerDown={(event) => handleEmotePointerDown(event, "sad")}
           >
-            <span aria-hidden="true" className="mobile-control-emoji mobile-control-emoji--emote">
+            <span
+              aria-hidden="true"
+              className="mobile-control-emoji mobile-control-emoji--emote"
+            >
               😔
             </span>
           </button>
@@ -723,7 +735,8 @@ export function CharacterRigScene() {
   const [isWalkDefault, setIsWalkDefault] = useState(false);
   const [isPointerLocked, setIsPointerLocked] = useState(false);
   const [isFpsVisible, setIsFpsVisible] = useState(false);
-  const [isSplashDismissedByTouch, setIsSplashDismissedByTouch] = useState(false);
+  const [isSplashDismissedByTouch, setIsSplashDismissedByTouch] =
+    useState(false);
   const [fps, setFps] = useState<number | null>(null);
   const playerWorldPositionRef = useRef(new Vector3());
   const mobileMoveInputRef = useRef<MobileMoveInput>({ x: 0, y: 0 });
@@ -780,7 +793,9 @@ export function CharacterRigScene() {
       }
     };
 
-    window.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    window.addEventListener("pointerdown", handlePointerDown, {
+      passive: true,
+    });
     return () => {
       window.removeEventListener("pointerdown", handlePointerDown);
     };
@@ -963,6 +978,7 @@ export function CharacterRigScene() {
           </p>
           <div className="mt-4 flex justify-center">
             <div className="mobile-portrait-lock__device-frame">
+              <span className="mobile-portrait-lock__rotation-emoji">🔄</span>
               <div className="mobile-portrait-lock__device-notch" />
             </div>
           </div>
