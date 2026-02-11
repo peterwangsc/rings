@@ -5,6 +5,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Sky, Clouds, Cloud, Stars } from "@react-three/drei";
 import {
   Suspense,
+  type MutableRefObject,
   useCallback,
   useEffect,
   useMemo,
@@ -24,10 +25,12 @@ import {
   MathUtils,
   Mesh,
   MeshBasicMaterial,
+  Object3D,
   Points,
   ShaderMaterial,
   Sprite,
   SpriteMaterial,
+  Vector3,
 } from "three";
 import type { Sky as SkyImpl } from "three-stdlib";
 import type { CameraMode } from "../camera/cameraTypes";
@@ -46,8 +49,10 @@ import { WorldGeometry } from "./WorldGeometry";
 const SUN_CYCLE_DURATION = 180;
 /** Radius of the sun's circular arc. */
 const SUN_ORBIT_RADIUS = 18;
+const SUN_ORBIT_Z_OFFSET = 6;
 /** Moon orbits at the same radius, opposite the sun. */
 const MOON_ORBIT_RADIUS = 80;
+const MOON_ORBIT_Z_OFFSET = -10;
 const MOON_VISUAL_RADIUS = 1.8;
 const MOON_HALO_BASE_SIZE = 11;
 const MOON_HALO_PULSE_SIZE = 13.5;
@@ -80,16 +85,24 @@ type SkyMaterialWithSunPosition = ShaderMaterial & {
   };
 };
 
-function AnimatedSun() {
+function AnimatedSun({
+  followPositionRef,
+}: {
+  followPositionRef: MutableRefObject<Vector3>;
+}) {
   const skyRef = useRef<SkyImpl>(null);
   const lightRef = useRef<DirectionalLight>(null);
+  const sunTargetRef = useRef<Object3D>(null);
   const moonRef = useRef<Mesh>(null);
   const moonHaloRef = useRef<Sprite>(null);
   const moonLightRef = useRef<DirectionalLight>(null);
+  const moonTargetRef = useRef<Object3D>(null);
   const starsRef = useRef<Points>(null);
   const hemisphereRef = useRef<HemisphereLight>(null);
   const ambientRef = useRef<AmbientLight>(null);
   const angleRef = useRef(Math.PI * 0.25); // start mid-morning
+  const sunOffsetRef = useRef(new Vector3());
+  const moonOffsetRef = useRef(new Vector3());
   const daySkyColor = useMemo(() => new Color(HORIZON_COLOR), []);
   const nightSkyColor = useMemo(() => new Color(NIGHT_SKY_COLOR), []);
   const blendedSkyColor = useMemo(() => new Color(HORIZON_COLOR), []);
@@ -139,6 +152,15 @@ function AnimatedSun() {
   }, [moonGlowTexture]);
 
   useEffect(() => {
+    if (lightRef.current && sunTargetRef.current) {
+      lightRef.current.target = sunTargetRef.current;
+    }
+    if (moonLightRef.current && moonTargetRef.current) {
+      moonLightRef.current.target = moonTargetRef.current;
+    }
+  }, []);
+
+  useEffect(() => {
     if (skyRef.current) {
       // Sky and stars are both transparent; lock draw order so camera-facing
       // sorting cannot cause hemisphere-dependent popping.
@@ -167,20 +189,28 @@ function AnimatedSun() {
   useFrame((state, delta) => {
     angleRef.current += (delta / SUN_CYCLE_DURATION) * Math.PI * 2;
     const angle = angleRef.current;
+    const followPosition = followPositionRef.current;
 
-    // Sun position
-    const sx = SUN_ORBIT_RADIUS * Math.cos(angle);
-    const sy = SUN_ORBIT_RADIUS * Math.sin(angle);
-    const sz = 6;
-    const sunHeight = sy / SUN_ORBIT_RADIUS;
+    // Sun position offset around the player anchor.
+    const sunOffset = sunOffsetRef.current.set(
+      SUN_ORBIT_RADIUS * Math.cos(angle),
+      SUN_ORBIT_RADIUS * Math.sin(angle),
+      SUN_ORBIT_Z_OFFSET,
+    );
+    const sunHeight = sunOffset.y / SUN_ORBIT_RADIUS;
     const sunLightFactor = MathUtils.smoothstep(sunHeight, -0.04, 0.08);
     const nightFactor = MathUtils.clamp((-sunHeight - 0.08) / 0.42, 0, 1);
 
     if (skyRef.current) {
+      skyRef.current.position.copy(followPosition);
       const skyMaterial = skyRef.current.material;
       if (!Array.isArray(skyMaterial)) {
         const typedSkyMaterial = skyMaterial as SkyMaterialWithSunPosition;
-        typedSkyMaterial.uniforms.sunPosition.value.set(sx, sy, sz);
+        typedSkyMaterial.uniforms.sunPosition.value.set(
+          sunOffset.x,
+          sunOffset.y,
+          sunOffset.z,
+        );
         typedSkyMaterial.uniforms.turbidity.value = MathUtils.lerp(
           0.8,
           10.0,
@@ -212,15 +242,21 @@ function AnimatedSun() {
     }
     // Moon position — opposite side of the orbit
     const moonAngle = angle + Math.PI;
-    const mx = MOON_ORBIT_RADIUS * Math.cos(moonAngle);
-    const my = MOON_ORBIT_RADIUS * Math.sin(moonAngle);
-    const mz = -10;
+    const moonOffset = moonOffsetRef.current.set(
+      MOON_ORBIT_RADIUS * Math.cos(moonAngle),
+      MOON_ORBIT_RADIUS * Math.sin(moonAngle),
+      MOON_ORBIT_Z_OFFSET,
+    );
     const sceneFog = state.scene.fog;
     blendedSkyColor.lerpColors(daySkyColor, nightSkyColor, nightFactor);
     state.scene.background = blendedSkyColor;
 
     if (lightRef.current) {
-      lightRef.current.position.set(sx, sy, sz);
+      lightRef.current.position
+        .copy(followPosition)
+        .add(sunOffset);
+      lightRef.current.target.position.copy(followPosition);
+      lightRef.current.target.updateMatrixWorld();
       lightRef.current.intensity = SUN_LIGHT_DAY_INTENSITY * sunLightFactor;
       lightRef.current.castShadow =
         sunLightFactor > SUN_SHADOW_ENABLE_THRESHOLD;
@@ -233,16 +269,18 @@ function AnimatedSun() {
     }
 
     if (moonRef.current) {
-      moonRef.current.position.set(mx, my, mz);
+      moonRef.current.position.copy(followPosition).add(moonOffset);
     }
     if (moonLightRef.current) {
-      moonLightRef.current.position.set(mx, my, mz);
+      moonLightRef.current.position.copy(followPosition).add(moonOffset);
+      moonLightRef.current.target.position.copy(followPosition);
+      moonLightRef.current.target.updateMatrixWorld();
       // Fade moonlight in when moon is above horizon, out when below
-      const moonElevation = Math.max(0, my / MOON_ORBIT_RADIUS);
+      const moonElevation = Math.max(0, moonOffset.y / MOON_ORBIT_RADIUS);
       moonLightRef.current.intensity = moonElevation * 0.3 * nightFactor;
       if (moonHaloRef.current) {
         const moonGlowFactor = moonElevation * nightFactor;
-        moonHaloRef.current.position.set(mx, my, mz);
+        moonHaloRef.current.position.copy(followPosition).add(moonOffset);
         const haloSize = MathUtils.lerp(
           MOON_HALO_BASE_SIZE,
           MOON_HALO_PULSE_SIZE,
@@ -282,6 +320,8 @@ function AnimatedSun() {
 
   return (
     <>
+      <object3D ref={sunTargetRef} />
+      <object3D ref={moonTargetRef} />
       <Stars
         ref={starsRef}
         radius={46}
@@ -406,6 +446,7 @@ export function CharacterRigScene() {
   const [isPointerLocked, setIsPointerLocked] = useState(false);
   const [isFpsVisible, setIsFpsVisible] = useState(false);
   const [fps, setFps] = useState<number | null>(null);
+  const playerWorldPositionRef = useRef(new Vector3());
 
   const handleToggleCameraMode = useCallback(() => {
     setCameraMode((currentMode) => {
@@ -428,6 +469,12 @@ export function CharacterRigScene() {
   const handleToggleFpsOverlay = useCallback(() => {
     setIsFpsVisible((isVisible) => !isVisible);
   }, []);
+  const handlePlayerPositionUpdate = useCallback(
+    (x: number, y: number, z: number) => {
+      playerWorldPositionRef.current.set(x, y, z);
+    },
+    [],
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -456,7 +503,7 @@ export function CharacterRigScene() {
         }}
         className="h-full w-full touch-none"
       >
-        <AnimatedSun />
+        <AnimatedSun followPositionRef={playerWorldPositionRef} />
         {isFpsVisible ? <FrameRateProbe onUpdate={handleFpsUpdate} /> : null}
         <fog attach="fog" args={[HORIZON_COLOR, SKY_FOG_NEAR, SKY_FOG_FAR]} />
         <Clouds
@@ -523,7 +570,7 @@ export function CharacterRigScene() {
         </Clouds>
         <Physics gravity={[0, WORLD_GRAVITY_Y, 0]}>
           <Suspense fallback={null}>
-            <WorldGeometry />
+            <WorldGeometry playerPositionRef={playerWorldPositionRef} />
           </Suspense>
           <Suspense fallback={null}>
             <CharacterRigController
@@ -532,6 +579,7 @@ export function CharacterRigScene() {
               isWalkDefault={isWalkDefault}
               onToggleDefaultGait={handleToggleDefaultGait}
               onPointerLockChange={handlePointerLockChange}
+              onPlayerPositionUpdate={handlePlayerPositionUpdate}
             />
           </Suspense>
         </Physics>

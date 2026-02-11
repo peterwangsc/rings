@@ -1,6 +1,11 @@
 import { useFrame, useLoader } from "@react-three/fiber";
-import { CuboidCollider, MeshCollider, RigidBody } from "@react-three/rapier";
-import { useEffect, useMemo, useRef } from "react";
+import {
+  CuboidCollider,
+  CylinderCollider,
+  MeshCollider,
+  RigidBody,
+} from "@react-three/rapier";
+import { type MutableRefObject, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import {
   CAMPFIRE_POSITION,
@@ -24,6 +29,7 @@ import {
   GRASS_WIND_STRENGTH,
   GROUND_HALF_EXTENT,
   GROUND_MESH_SEGMENTS,
+  PLAYER_START_POSITION,
   ROCK_FORMATIONS,
   ROCK_MATERIAL_COLOR,
   TERRAIN_BASE_NOISE_SCALE,
@@ -41,7 +47,10 @@ import {
   TERRAIN_MICRO_NOISE_SCALE,
   TERRAIN_RIDGE_STRENGTH,
 } from "../utils/constants";
-import { SingleTree } from "../vegetation/trees/SingleTree";
+import {
+  getSingleTreeTrunkCollider,
+  SingleTree,
+} from "../vegetation/trees/SingleTree";
 import { createProceduralRockGeometry } from "../utils/rockGeometry";
 import { createRockMaterial } from "../utils/shaders";
 import { Campfire } from "./Campfire";
@@ -52,6 +61,11 @@ const GRASS_SHADER_CACHE_KEY = "grass-blades-v1";
 const TAU = Math.PI * 2;
 const GRASS_BASE_Y = 0.03;
 const TERRAIN_SLOPE_SAMPLE_DELTA = 0.45;
+const TERRAIN_CHUNK_SIZE = GROUND_HALF_EXTENT * 2;
+const ACTIVE_TERRAIN_CHUNK_RADIUS = 1;
+const ROCK_COLLIDER_MODE = "hull" as const;
+const ROCK_COLLIDER_PADDING = 0.02;
+const TREE_LOCAL_ORIGIN = [0, 0, 0] as const;
 const LANDSCAPE_TREE_TARGET_COUNT = 54;
 const LANDSCAPE_TREE_FIELD_RADIUS = GROUND_HALF_EXTENT - 4;
 const LANDSCAPE_TREE_MIN_SPACING = 7.2;
@@ -59,11 +73,22 @@ const LANDSCAPE_TREE_CLEARING_RADIUS = 7.5;
 const LANDSCAPE_TREE_ROCK_CLEARANCE = 4;
 const LANDSCAPE_TREE_MAX_ATTEMPTS = LANDSCAPE_TREE_TARGET_COUNT * 120;
 
+type RockPlacement = (typeof ROCK_FORMATIONS)[number] & {
+  terrainY: number;
+  colliderHalfExtents: readonly [number, number, number];
+  colliderOffset: readonly [number, number, number];
+};
+
 type GrassShaderUniforms = {
   uTime: THREE.IUniform<number>;
   uWind: THREE.IUniform<THREE.Vector3>;
   uFadeDistance: THREE.IUniform<THREE.Vector2>;
   uColorRamp: THREE.IUniform<THREE.Vector2>;
+};
+
+type TerrainChunkCoord = {
+  x: number;
+  z: number;
 };
 
 function fract(value: number) {
@@ -132,12 +157,19 @@ function sampleTerrainSlope(x: number, z: number) {
   return Math.hypot(dx, dz) / (2 * delta);
 }
 
-function isNearRock(x: number, z: number, clearance: number) {
-  return ROCK_FORMATIONS.some((rock) => {
-    const dx = x - rock.position[0];
-    const dz = z - rock.position[2];
-    const clearX = rock.collider[0] + clearance;
-    const clearZ = rock.collider[2] + clearance;
+function isNearRock(
+  x: number,
+  z: number,
+  clearance: number,
+  rockPlacements: readonly RockPlacement[],
+) {
+  return rockPlacements.some((rock) => {
+    const rockCenterX = rock.position[0] + rock.colliderOffset[0];
+    const rockCenterZ = rock.position[2] + rock.colliderOffset[2];
+    const dx = x - rockCenterX;
+    const dz = z - rockCenterZ;
+    const clearX = rock.colliderHalfExtents[0] + clearance;
+    const clearZ = rock.colliderHalfExtents[2] + clearance;
     if (Math.abs(dx) < clearX && Math.abs(dz) < clearZ) {
       return true;
     }
@@ -146,11 +178,143 @@ function isNearRock(x: number, z: number, clearance: number) {
   });
 }
 
-export function WorldGeometry() {
+function getChunkCoordinate(value: number) {
+  return Math.floor((value + GROUND_HALF_EXTENT) / TERRAIN_CHUNK_SIZE);
+}
+
+function getChunkCenterWorld(chunkCoordinate: number) {
+  return chunkCoordinate * TERRAIN_CHUNK_SIZE;
+}
+
+function createTerrainGeometry(chunkX: number, chunkZ: number) {
+  const geometry = new THREE.PlaneGeometry(
+    TERRAIN_CHUNK_SIZE,
+    TERRAIN_CHUNK_SIZE,
+    GROUND_MESH_SEGMENTS,
+    GROUND_MESH_SEGMENTS,
+  );
+  geometry.rotateX(-Math.PI * 0.5);
+
+  const positions = geometry.attributes.position as THREE.BufferAttribute;
+  const colors = new Float32Array(positions.count * 3);
+  const chunkCenterX = getChunkCenterWorld(chunkX);
+  const chunkCenterZ = getChunkCenterWorld(chunkZ);
+
+  const valleyColor = new THREE.Color(TERRAIN_COLOR_VALLEY);
+  const meadowColor = new THREE.Color(TERRAIN_COLOR_MEADOW);
+  const highlandColor = new THREE.Color(TERRAIN_COLOR_HIGHLAND);
+  const ridgeColor = new THREE.Color(TERRAIN_COLOR_RIDGE);
+  const dryColor = new THREE.Color(TERRAIN_COLOR_DRY);
+  const wildflowerColor = new THREE.Color(TERRAIN_COLOR_WILDFLOWER);
+  const workingColor = new THREE.Color();
+
+  for (let i = 0; i < positions.count; i++) {
+    const localX = positions.getX(i);
+    const localZ = positions.getZ(i);
+    const worldX = chunkCenterX + localX;
+    const worldZ = chunkCenterZ + localZ;
+    const y = sampleTerrainHeight(worldX, worldZ);
+    positions.setY(i, y);
+
+    const radius = Math.hypot(worldX, worldZ);
+    const edgeDamp =
+      1 - smoothstep(TERRAIN_EDGE_FALLOFF_START, TERRAIN_EDGE_FALLOFF_END, radius);
+    const broadNoise = valueNoise2D((worldX - 13.5) * 0.08, (worldZ + 7.4) * 0.08);
+    const detailNoise = valueNoise2D((worldX + 21.2) * 0.16, (worldZ - 5.6) * 0.16);
+    const moistureNoise = valueNoise2D((worldX - 44.1) * 0.06, (worldZ + 15.4) * 0.06);
+    const flowerNoise = valueNoise2D((worldX + 7.5) * 0.24, (worldZ - 31.2) * 0.24);
+    const slope = sampleTerrainSlope(worldX, worldZ);
+    const steepMask = smoothstep(0.52, 1.34, slope);
+
+    const heightFactor = THREE.MathUtils.clamp(
+      y / (TERRAIN_HEIGHT_AMPLITUDE * 1.2) + 0.5,
+      0,
+      1,
+    );
+    const valleyMask = 1 - smoothstep(0.28, 0.56, heightFactor);
+    const highlandMask = smoothstep(0.56, 0.9, heightFactor);
+    const dryMask = THREE.MathUtils.clamp((1 - moistureNoise) * 0.65 + highlandMask * 0.35, 0, 1);
+    const ridgeMask = THREE.MathUtils.clamp(steepMask * 0.78 + (1 - broadNoise) * 0.22, 0, 1);
+    const flowerMask =
+      smoothstep(0.83, 0.98, flowerNoise) *
+      (1 - steepMask) *
+      THREE.MathUtils.clamp(1 - valleyMask * 0.85, 0, 1);
+
+    const meadowBlend = THREE.MathUtils.clamp(
+      (1 - valleyMask * 0.55) * (0.72 + broadNoise * 0.28),
+      0,
+      1,
+    );
+
+    workingColor.copy(valleyColor);
+    workingColor.lerp(meadowColor, meadowBlend);
+    workingColor.lerp(highlandColor, highlandMask * 0.68);
+    workingColor.lerp(ridgeColor, ridgeMask * 0.52);
+    workingColor.lerp(dryColor, dryMask * 0.3);
+    workingColor.lerp(wildflowerColor, flowerMask * 0.26);
+    workingColor.offsetHSL((detailNoise - 0.5) * 0.02, 0, (detailNoise - 0.5) * 0.03);
+    workingColor.multiplyScalar(0.84 + edgeDamp * 0.16);
+
+    colors[i * 3] = workingColor.r;
+    colors[i * 3 + 1] = workingColor.g;
+    colors[i * 3 + 2] = workingColor.b;
+  }
+
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  positions.needsUpdate = true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function TerrainChunk({
+  chunkX,
+  chunkZ,
+  terrainMaterial,
+}: {
+  chunkX: number;
+  chunkZ: number;
+  terrainMaterial: THREE.MeshStandardMaterial;
+}) {
+  const terrainGeometry = useMemo(
+    () => createTerrainGeometry(chunkX, chunkZ),
+    [chunkX, chunkZ],
+  );
+  const chunkPosition = useMemo(
+    () => [getChunkCenterWorld(chunkX), 0, getChunkCenterWorld(chunkZ)] as const,
+    [chunkX, chunkZ],
+  );
+
+  useEffect(() => {
+    return () => {
+      terrainGeometry.dispose();
+    };
+  }, [terrainGeometry]);
+
+  return (
+    <RigidBody type="fixed" colliders={false} position={chunkPosition}>
+      <MeshCollider type="trimesh">
+        <mesh geometry={terrainGeometry} material={terrainMaterial} receiveShadow />
+      </MeshCollider>
+    </RigidBody>
+  );
+}
+
+export function WorldGeometry({
+  playerPositionRef,
+}: {
+  playerPositionRef: MutableRefObject<THREE.Vector3>;
+}) {
   const grassRef =
     useRef<THREE.InstancedMesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>>(
       null,
     );
+  const [centerChunk, setCenterChunk] = useState<TerrainChunkCoord>(() => ({
+    x: getChunkCoordinate(PLAYER_START_POSITION.x),
+    z: getChunkCoordinate(PLAYER_START_POSITION.z),
+  }));
+  const activeCenterChunkRef = useRef(centerChunk);
 
   const loadedRockNoiseTexture = useLoader(
     THREE.TextureLoader,
@@ -167,82 +331,6 @@ export function WorldGeometry() {
     texture.needsUpdate = true;
     return texture;
   }, [loadedRockNoiseTexture]);
-
-  const terrainGeometry = useMemo(() => {
-    const geometry = new THREE.PlaneGeometry(
-      GROUND_HALF_EXTENT * 2,
-      GROUND_HALF_EXTENT * 2,
-      GROUND_MESH_SEGMENTS,
-      GROUND_MESH_SEGMENTS,
-    );
-    geometry.rotateX(-Math.PI * 0.5);
-
-    const positions = geometry.attributes.position as THREE.BufferAttribute;
-    const colors = new Float32Array(positions.count * 3);
-
-    const valleyColor = new THREE.Color(TERRAIN_COLOR_VALLEY);
-    const meadowColor = new THREE.Color(TERRAIN_COLOR_MEADOW);
-    const highlandColor = new THREE.Color(TERRAIN_COLOR_HIGHLAND);
-    const ridgeColor = new THREE.Color(TERRAIN_COLOR_RIDGE);
-    const dryColor = new THREE.Color(TERRAIN_COLOR_DRY);
-    const wildflowerColor = new THREE.Color(TERRAIN_COLOR_WILDFLOWER);
-    const workingColor = new THREE.Color();
-
-    for (let i = 0; i < positions.count; i++) {
-      const x = positions.getX(i);
-      const z = positions.getZ(i);
-      const y = sampleTerrainHeight(x, z);
-      positions.setY(i, y);
-
-      const radius = Math.hypot(x, z);
-      const edgeDamp =
-        1 - smoothstep(TERRAIN_EDGE_FALLOFF_START, TERRAIN_EDGE_FALLOFF_END, radius);
-      const broadNoise = valueNoise2D((x - 13.5) * 0.08, (z + 7.4) * 0.08);
-      const detailNoise = valueNoise2D((x + 21.2) * 0.16, (z - 5.6) * 0.16);
-      const moistureNoise = valueNoise2D((x - 44.1) * 0.06, (z + 15.4) * 0.06);
-      const flowerNoise = valueNoise2D((x + 7.5) * 0.24, (z - 31.2) * 0.24);
-      const slope = sampleTerrainSlope(x, z);
-      const steepMask = smoothstep(0.52, 1.34, slope);
-
-      const heightFactor = THREE.MathUtils.clamp(
-        y / (TERRAIN_HEIGHT_AMPLITUDE * 1.2) + 0.5,
-        0,
-        1,
-      );
-      const valleyMask = 1 - smoothstep(0.28, 0.56, heightFactor);
-      const highlandMask = smoothstep(0.56, 0.9, heightFactor);
-      const dryMask = THREE.MathUtils.clamp((1 - moistureNoise) * 0.65 + highlandMask * 0.35, 0, 1);
-      const ridgeMask = THREE.MathUtils.clamp(steepMask * 0.78 + (1 - broadNoise) * 0.22, 0, 1);
-      const flowerMask =
-        smoothstep(0.83, 0.98, flowerNoise) * (1 - steepMask) * THREE.MathUtils.clamp(1 - valleyMask * 0.85, 0, 1);
-
-      const meadowBlend = THREE.MathUtils.clamp(
-        (1 - valleyMask * 0.55) * (0.72 + broadNoise * 0.28),
-        0,
-        1,
-      );
-
-      workingColor.copy(valleyColor);
-      workingColor.lerp(meadowColor, meadowBlend);
-      workingColor.lerp(highlandColor, highlandMask * 0.68);
-      workingColor.lerp(ridgeColor, ridgeMask * 0.52);
-      workingColor.lerp(dryColor, dryMask * 0.3);
-      workingColor.lerp(wildflowerColor, flowerMask * 0.26);
-      workingColor.offsetHSL((detailNoise - 0.5) * 0.02, 0, (detailNoise - 0.5) * 0.03);
-      workingColor.multiplyScalar(0.84 + edgeDamp * 0.16);
-
-      colors[i * 3] = workingColor.r;
-      colors[i * 3 + 1] = workingColor.g;
-      colors[i * 3 + 2] = workingColor.b;
-    }
-
-    geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-    positions.needsUpdate = true;
-    geometry.computeVertexNormals();
-    geometry.computeBoundingBox();
-    geometry.computeBoundingSphere();
-    return geometry;
-  }, []);
 
   const terrainMaterial = useMemo(
     () =>
@@ -262,13 +350,36 @@ export function WorldGeometry() {
     () => ROCK_FORMATIONS.map((_, index) => createProceduralRockGeometry(index)),
     [],
   );
-  const rockPlacements = useMemo(
+  const rockPlacements = useMemo<readonly RockPlacement[]>(
     () =>
-      ROCK_FORMATIONS.map((rock) => ({
-        ...rock,
-        terrainY: sampleTerrainHeight(rock.position[0], rock.position[2]),
-      })),
-    [],
+      ROCK_FORMATIONS.map((rock, index) => {
+        const geometry = rockGeometries[index];
+        const boundingBox = geometry.boundingBox ?? geometry.computeBoundingBox();
+        if (!boundingBox) {
+          throw new Error(`Rock geometry ${index} is missing a bounding box.`);
+        }
+
+        const scaledMin = boundingBox.min.clone().multiply(
+          new THREE.Vector3(rock.scale[0], rock.scale[1], rock.scale[2]),
+        );
+        const scaledMax = boundingBox.max.clone().multiply(
+          new THREE.Vector3(rock.scale[0], rock.scale[1], rock.scale[2]),
+        );
+        const size = scaledMax.clone().sub(scaledMin);
+        const center = scaledMin.clone().add(scaledMax).multiplyScalar(0.5);
+
+        return {
+          ...rock,
+          terrainY: sampleTerrainHeight(rock.position[0], rock.position[2]),
+          colliderHalfExtents: [
+            Math.max(size.x * 0.5 + ROCK_COLLIDER_PADDING, 0.01),
+            Math.max(size.y * 0.5 + ROCK_COLLIDER_PADDING, 0.01),
+            Math.max(size.z * 0.5 + ROCK_COLLIDER_PADDING, 0.01),
+          ] as const,
+          colliderOffset: [center.x, center.y, center.z] as const,
+        };
+      }),
+    [rockGeometries],
   );
   const campfirePlacement = useMemo(
     () =>
@@ -285,6 +396,7 @@ export function WorldGeometry() {
       id: string;
       position: readonly [number, number, number];
       heightScale: number;
+      trunkCollider: ReturnType<typeof getSingleTreeTrunkCollider>;
     }> = [];
     const points: THREE.Vector2[] = [];
 
@@ -310,7 +422,7 @@ export function WorldGeometry() {
       ) {
         continue;
       }
-      if (isNearRock(x, z, LANDSCAPE_TREE_ROCK_CLEARANCE)) {
+      if (isNearRock(x, z, LANDSCAPE_TREE_ROCK_CLEARANCE, rockPlacements)) {
         continue;
       }
 
@@ -335,11 +447,12 @@ export function WorldGeometry() {
         id: `single-tree-${placements.length}`,
         position: [x, y, z] as const,
         heightScale,
+        trunkCollider: getSingleTreeTrunkCollider(heightScale),
       });
     }
 
     return placements;
-  }, []);
+  }, [rockPlacements]);
 
   const grassField = useMemo(() => {
     const bladeGeometry = new THREE.PlaneGeometry(1, 1, 1, 4);
@@ -382,7 +495,7 @@ export function WorldGeometry() {
       if (density < densityThreshold) {
         continue;
       }
-      if (isNearRock(x, z, GRASS_ROCK_CLEARANCE)) {
+      if (isNearRock(x, z, GRASS_ROCK_CLEARANCE, rockPlacements)) {
         continue;
       }
 
@@ -429,7 +542,7 @@ export function WorldGeometry() {
       bladeMatrices,
       bladeCount,
     };
-  }, []);
+  }, [rockPlacements]);
 
   const { material: grassMaterial } = useMemo(() => {
     const timeUniform: THREE.IUniform<number> = { value: 0 };
@@ -552,7 +665,32 @@ diffuseColor.rgb *= gradient * tint;
     return { material, uniforms };
   }, []);
 
+  const activeTerrainChunks = useMemo(() => {
+    const chunks: TerrainChunkCoord[] = [];
+    for (let zOffset = -ACTIVE_TERRAIN_CHUNK_RADIUS; zOffset <= ACTIVE_TERRAIN_CHUNK_RADIUS; zOffset += 1) {
+      for (let xOffset = -ACTIVE_TERRAIN_CHUNK_RADIUS; xOffset <= ACTIVE_TERRAIN_CHUNK_RADIUS; xOffset += 1) {
+        chunks.push({
+          x: centerChunk.x + xOffset,
+          z: centerChunk.z + zOffset,
+        });
+      }
+    }
+    return chunks;
+  }, [centerChunk.x, centerChunk.z]);
+
   useFrame((state) => {
+    const playerPosition = playerPositionRef.current;
+    const nextChunkX = getChunkCoordinate(playerPosition.x);
+    const nextChunkZ = getChunkCoordinate(playerPosition.z);
+    if (
+      nextChunkX !== activeCenterChunkRef.current.x ||
+      nextChunkZ !== activeCenterChunkRef.current.z
+    ) {
+      const nextCenterChunk = { x: nextChunkX, z: nextChunkZ };
+      activeCenterChunkRef.current = nextCenterChunk;
+      setCenterChunk(nextCenterChunk);
+    }
+
     const grassMesh = grassRef.current;
     if (!grassMesh) {
       return;
@@ -584,7 +722,6 @@ diffuseColor.rgb *= gradient * tint;
   useEffect(() => {
     return () => {
       terrainMaterial.dispose();
-      terrainGeometry.dispose();
       rockMaterial.dispose();
       grassMaterial.dispose();
       grassField.bladeGeometry.dispose();
@@ -597,17 +734,19 @@ diffuseColor.rgb *= gradient * tint;
     rockGeometries,
     rockMaterial,
     rockNoiseTexture,
-    terrainGeometry,
     terrainMaterial,
   ]);
 
   return (
     <>
-      <RigidBody type="fixed" colliders={false}>
-        <MeshCollider type="trimesh">
-          <mesh geometry={terrainGeometry} material={terrainMaterial} receiveShadow />
-        </MeshCollider>
-      </RigidBody>
+      {activeTerrainChunks.map((chunk) => (
+        <TerrainChunk
+          key={`terrain-chunk-${chunk.x}-${chunk.z}`}
+          chunkX={chunk.x}
+          chunkZ={chunk.z}
+          terrainMaterial={terrainMaterial}
+        />
+      ))}
 
       <instancedMesh
         ref={grassRef}
@@ -616,11 +755,18 @@ diffuseColor.rgb *= gradient * tint;
       />
 
       {singleTreePlacements.map((tree) => (
-        <SingleTree
+        <RigidBody
           key={tree.id}
+          type="fixed"
+          colliders={false}
           position={tree.position}
-          heightScale={tree.heightScale}
-        />
+        >
+          <CylinderCollider
+            args={[tree.trunkCollider.halfHeight, tree.trunkCollider.radius]}
+            position={[0, tree.trunkCollider.centerY, 0]}
+          />
+          <SingleTree position={TREE_LOCAL_ORIGIN} heightScale={tree.heightScale} />
+        </RigidBody>
       ))}
 
       <Campfire position={campfirePlacement} />
@@ -632,14 +778,39 @@ diffuseColor.rgb *= gradient * tint;
           colliders={false}
           position={[rock.position[0], rock.position[1] + rock.terrainY, rock.position[2]]}
         >
-          <CuboidCollider args={[rock.collider[0], rock.collider[1], rock.collider[2]]} />
-          <mesh
-            castShadow
-            receiveShadow
-            scale={rock.scale}
-            material={rockMaterial}
-            geometry={rockGeometries[index]}
-          />
+          {ROCK_COLLIDER_MODE === "hull" ? (
+            <MeshCollider type="hull">
+              <mesh
+                castShadow
+                receiveShadow
+                scale={rock.scale}
+                material={rockMaterial}
+                geometry={rockGeometries[index]}
+              />
+            </MeshCollider>
+          ) : (
+            <>
+              <CuboidCollider
+                args={[
+                  rock.colliderHalfExtents[0],
+                  rock.colliderHalfExtents[1],
+                  rock.colliderHalfExtents[2],
+                ]}
+                position={[
+                  rock.colliderOffset[0],
+                  rock.colliderOffset[1],
+                  rock.colliderOffset[2],
+                ]}
+              />
+              <mesh
+                castShadow
+                receiveShadow
+                scale={rock.scale}
+                material={rockMaterial}
+                geometry={rockGeometries[index]}
+              />
+            </>
+          )}
         </RigidBody>
       ))}
     </>

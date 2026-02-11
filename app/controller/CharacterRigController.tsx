@@ -79,6 +79,7 @@ export function CharacterRigController({
   isWalkDefault,
   onToggleDefaultGait,
   onPointerLockChange,
+  onPlayerPositionUpdate,
 }: CharacterRigControllerProps) {
   const { camera, gl } = useThree();
   const { rapier, world } = useRapier();
@@ -647,6 +648,7 @@ export function CharacterRigController({
     setMotionStateIfChanged(targetMotionState, motionStateRef, setActorMotionState);
 
     playerPositionRef.current.set(translation.x, translation.y, translation.z);
+    onPlayerPositionUpdate?.(translation.x, translation.y, translation.z);
 
     getLookDirection(
       cameraYawRef.current,

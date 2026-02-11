@@ -6,6 +6,12 @@ type SingleTreeProps = {
   heightScale?: number;
 };
 
+export type SingleTreeTrunkCollider = {
+  halfHeight: number;
+  centerY: number;
+  radius: number;
+};
+
 const BASE_CANOPY_LAYERS = [
   { y: 6.7, radius: 3.6, height: 4.8, color: "#3C7738" },
   { y: 8.7, radius: 3.0, height: 4.0, color: "#376F35" },
@@ -14,50 +20,94 @@ const BASE_CANOPY_LAYERS = [
   { y: 13.3, radius: 1.05, height: 1.9, color: "#2B562A" },
 ] as const;
 const CANOPY_MAX_TWIST_RADIANS = Math.PI * 0.38;
+const TRUNK_COLLIDER_RADIUS_MULTIPLIER = 0.82;
+const TRUNK_COLLIDER_CANOPY_PENETRATION = 0.35;
 
-export function SingleTree({ position, heightScale = 1 }: SingleTreeProps) {
+type SingleTreeShape = {
+  normalizedHeightScale: number;
+  canopyLayers: Array<{
+    y: number;
+    radius: number;
+    height: number;
+    color: string;
+  }>;
+  canopyBounds: {
+    lowestBottom: number;
+    highestTop: number;
+  };
+  trunkDimensions: {
+    height: number;
+    y: number;
+  };
+  trunkRadii: {
+    top: number;
+    bottom: number;
+  };
+};
+
+function createSingleTreeShape(heightScale: number): SingleTreeShape {
   const normalizedHeightScale = THREE.MathUtils.clamp(heightScale, 0.7, 1.8);
   const canopyRadiusScale = Math.pow(normalizedHeightScale, 0.72);
   const trunkRadiusScale = Math.pow(normalizedHeightScale, 0.62);
+  const canopyLayers = BASE_CANOPY_LAYERS.map((layer) => ({
+    ...layer,
+    y: layer.y * normalizedHeightScale,
+    height: layer.height * normalizedHeightScale,
+    radius: layer.radius * canopyRadiusScale,
+  }));
+  const canopyBounds = canopyLayers.reduce(
+    (bounds, layer) => {
+      const halfHeight = layer.height * 0.5;
+      bounds.lowestBottom = Math.min(bounds.lowestBottom, layer.y - halfHeight);
+      bounds.highestTop = Math.max(bounds.highestTop, layer.y + halfHeight);
+      return bounds;
+    },
+    { lowestBottom: Infinity, highestTop: -Infinity },
+  );
+  const topMargin = 0.45 * normalizedHeightScale;
+  const minimumReachIntoCanopy = 0.75 * normalizedHeightScale;
+  const topY = canopyBounds.highestTop - topMargin;
+  const trunkHeight = Math.max(
+    canopyBounds.lowestBottom + minimumReachIntoCanopy,
+    topY,
+  );
 
-  const canopyLayers = useMemo(
-    () =>
-      BASE_CANOPY_LAYERS.map((layer) => ({
-        ...layer,
-        y: layer.y * normalizedHeightScale,
-        height: layer.height * normalizedHeightScale,
-        radius: layer.radius * canopyRadiusScale,
-      })),
-    [canopyRadiusScale, normalizedHeightScale],
+  return {
+    normalizedHeightScale,
+    canopyLayers,
+    canopyBounds,
+    trunkDimensions: {
+      height: trunkHeight,
+      y: trunkHeight * 0.5,
+    },
+    trunkRadii: {
+      top: 0.22 * trunkRadiusScale,
+      bottom: 0.56 * trunkRadiusScale,
+    },
+  };
+}
+
+export function getSingleTreeTrunkCollider(
+  heightScale = 1,
+): SingleTreeTrunkCollider {
+  const { normalizedHeightScale, canopyBounds, trunkDimensions, trunkRadii } =
+    createSingleTreeShape(heightScale);
+  const colliderTopY = Math.min(
+    trunkDimensions.height,
+    canopyBounds.lowestBottom + TRUNK_COLLIDER_CANOPY_PENETRATION * normalizedHeightScale,
   );
-  const canopyBounds = useMemo(
-    () =>
-      canopyLayers.reduce(
-        (bounds, layer) => {
-          const halfHeight = layer.height * 0.5;
-          bounds.lowestBottom = Math.min(bounds.lowestBottom, layer.y - halfHeight);
-          bounds.highestTop = Math.max(bounds.highestTop, layer.y + halfHeight);
-          return bounds;
-        },
-        { lowestBottom: Infinity, highestTop: -Infinity },
-      ),
-    [canopyLayers],
-  );
-  const trunkDimensions = useMemo(() => {
-    // Keep trunk inside canopy by a small top margin while still reaching into lower canopy.
-    const topMargin = 0.45 * normalizedHeightScale;
-    const minimumReachIntoCanopy = 0.75 * normalizedHeightScale;
-    const topY = canopyBounds.highestTop - topMargin;
-    const height = Math.max(
-      canopyBounds.lowestBottom + minimumReachIntoCanopy,
-      topY,
-    );
-    return { height, y: height * 0.5 };
-  }, [canopyBounds, normalizedHeightScale]);
-  const trunkRadii = useMemo(
-    () => ({ top: 0.22 * trunkRadiusScale, bottom: 0.56 * trunkRadiusScale }),
-    [trunkRadiusScale],
-  );
+  const colliderHeight = Math.max(colliderTopY, 0.1);
+
+  return {
+    halfHeight: colliderHeight * 0.5,
+    centerY: colliderHeight * 0.5,
+    radius: Math.max(trunkRadii.bottom * TRUNK_COLLIDER_RADIUS_MULTIPLIER, 0.05),
+  };
+}
+
+export function SingleTree({ position, heightScale = 1 }: SingleTreeProps) {
+  const treeShape = useMemo(() => createSingleTreeShape(heightScale), [heightScale]);
+  const { canopyLayers, canopyBounds, trunkDimensions, trunkRadii } = treeShape;
   const canopyTwistAngles = useMemo(() => {
     const heightSpan = Math.max(
       canopyBounds.highestTop - canopyBounds.lowestBottom,

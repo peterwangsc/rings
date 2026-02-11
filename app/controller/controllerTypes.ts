@@ -15,4 +15,5 @@ export interface CharacterRigControllerProps {
   readonly isWalkDefault: boolean;
   readonly onToggleDefaultGait: () => void;
   readonly onPointerLockChange?: (isLocked: boolean) => void;
+  readonly onPlayerPositionUpdate?: (x: number, y: number, z: number) => void;
 }
