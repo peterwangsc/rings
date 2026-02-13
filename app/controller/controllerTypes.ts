@@ -4,6 +4,7 @@ import type { MutableRefObject } from "react";
 import type {
   AuthoritativePlayerState,
   FireballSpawnEvent,
+  GoombaState,
   NetPlayerSnapshot,
 } from "../multiplayer/state/multiplayerTypes";
 
@@ -42,6 +43,8 @@ export interface CharacterRigControllerProps {
     directionY: number;
     directionZ: number;
   }) => void;
+  readonly goombas?: readonly GoombaState[];
+  readonly onLocalGoombaHit?: (goombaId: string) => void;
   readonly authoritativeLocalPlayerState?: AuthoritativePlayerState | null;
   readonly networkFireballSpawnQueueRef?: MutableRefObject<FireballSpawnEvent[]>;
 }

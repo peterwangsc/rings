@@ -194,6 +194,13 @@ export const RING_BOB_SPEED = 2.0;
 export const RING_SENSOR_RADIUS = 0.9;
 export const RING_TORUS_SEGMENTS = 24;
 export const RING_TUBE_SEGMENTS = 12;
+export const RING_DROP_SENSOR_RADIUS = 1.2;
+export const RING_DROP_FALL_START_HEIGHT = 2.2;
+export const RING_DROP_FALL_DURATION_MS = 650;
+export const RING_DROP_LIFETIME_MS = 12_000;
+export const RING_DROP_DESPAWN_FLASH_WINDOW_MS = 2_200;
+export const RING_DROP_DESPAWN_FLASH_HZ = 9.5;
+export const RING_DROP_DESPAWN_MIN_ALPHA = 0.12;
 
 export const RING_PLACEMENTS: ReadonlyArray<readonly [number, number]> = [
   [3, 0],
@@ -226,3 +233,13 @@ export const FIREBALL_HIT_FADE_DECAY = 13;
 export const FIREBALL_HIT_FADE_MAX_SECONDS = 0.25;
 export const FIREBALL_EMISSIVE_INTENSITY = 2.8;
 export const FIREBALL_LIGHT_INTENSITY = 2.1;
+
+// --- Goomba enemy ---
+export const GOOMBA_MODEL_PATH =
+  "/models/character/goomba_rar_extract/Goomba/Goomba_OpenCollada.DAE";
+export const GOOMBA_MODEL_SCALE = 0.15;
+export const GOOMBA_INTERACT_DISABLED_STATE = "defeated";
+export const GOOMBA_STOMP_RADIUS = 0.95;
+export const GOOMBA_STOMP_MIN_FALL_SPEED = 1.2;
+export const GOOMBA_FIREBALL_HIT_RADIUS = 0.85;
+export const GOOMBA_HIT_RETRY_COOLDOWN_MS = 500;

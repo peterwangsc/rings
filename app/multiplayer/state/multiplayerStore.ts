@@ -6,6 +6,7 @@ import type {
   ChatMessageEvent,
   ConnectionStatus,
   FireballSpawnEvent,
+  GoombaState,
   MultiplayerDiagnostics,
   MultiplayerState,
 } from "./multiplayerTypes";
@@ -16,6 +17,7 @@ const EMPTY_DIAGNOSTICS: MultiplayerDiagnostics = {
   fireballEventRowCount: 0,
   chatMessageRowCount: 0,
 };
+const DEFAULT_DAY_CYCLE_DURATION_SECONDS = 300;
 
 export interface MultiplayerStore {
   version: number;
@@ -32,6 +34,7 @@ function cloneState(state: MultiplayerState): MultiplayerState {
   return {
     ...state,
     remotePlayers: new Map(state.remotePlayers),
+    goombas: new Map(state.goombas),
     collectedRingIds: new Set(state.collectedRingIds),
     pendingRemoteFireballSpawns: [...state.pendingRemoteFireballSpawns],
     chatMessages: [...state.chatMessages],
@@ -73,8 +76,12 @@ export function createMultiplayerStore(
       connectionError: null,
       localIdentity: null,
       localDisplayName,
+      dayCycleAnchorMs: null,
+      dayCycleDurationSeconds: DEFAULT_DAY_CYCLE_DURATION_SECONDS,
+      serverTimeOffsetMs: null,
       authoritativeLocalPlayerState: null,
       remotePlayers: new Map(),
+      goombas: new Map(),
       collectedRingIds: new Set(),
       pendingRemoteFireballSpawns: [],
       chatMessages: [],
@@ -152,6 +159,46 @@ export function setLocalDisplayName(
   emitChanged(store);
 }
 
+export function setWorldDayCycleConfig(
+  store: MultiplayerStore,
+  dayCycleAnchorMs: number | null,
+  dayCycleDurationSeconds: number,
+) {
+  const normalizedDurationSeconds =
+    Number.isFinite(dayCycleDurationSeconds) && dayCycleDurationSeconds > 0
+      ? dayCycleDurationSeconds
+      : DEFAULT_DAY_CYCLE_DURATION_SECONDS;
+
+  if (
+    store.state.dayCycleAnchorMs === dayCycleAnchorMs &&
+    store.state.dayCycleDurationSeconds === normalizedDurationSeconds
+  ) {
+    return;
+  }
+
+  store.state = {
+    ...store.state,
+    dayCycleAnchorMs,
+    dayCycleDurationSeconds: normalizedDurationSeconds,
+  };
+  emitChanged(store);
+}
+
+export function setServerTimeOffsetMs(
+  store: MultiplayerStore,
+  serverTimeOffsetMs: number | null,
+) {
+  if (store.state.serverTimeOffsetMs === serverTimeOffsetMs) {
+    return;
+  }
+
+  store.state = {
+    ...store.state,
+    serverTimeOffsetMs,
+  };
+  emitChanged(store);
+}
+
 export function setAuthoritativeLocalPlayerState(
   store: MultiplayerStore,
   nextState: AuthoritativePlayerState | null,
@@ -177,6 +224,20 @@ export function setRemotePlayers(
 
   const nextState = cloneState(store.state);
   nextState.remotePlayers = new Map(remotePlayers);
+  store.state = nextState;
+  emitChanged(store);
+}
+
+export function setGoombas(
+  store: MultiplayerStore,
+  goombas: Map<string, GoombaState>,
+) {
+  if (!hasMapContentChanged(store.state.goombas, goombas)) {
+    return;
+  }
+
+  const nextState = cloneState(store.state);
+  nextState.goombas = new Map(goombas);
   store.state = nextState;
   emitChanged(store);
 }

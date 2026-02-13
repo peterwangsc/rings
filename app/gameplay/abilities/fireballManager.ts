@@ -151,6 +151,16 @@ export function enqueueFireballSpawnRequest(
   manager.pendingSpawnRequests.push(request);
 }
 
+export function markFireballDeadById(manager: FireballManager, fireballId: string) {
+  const state = manager.activeStates.find(
+    (candidate) => candidate.id === fireballId,
+  );
+  if (!state) {
+    return;
+  }
+  state.isDead = true;
+}
+
 function spawnFireball(
   manager: FireballManager,
   spawnRequest: FireballSpawnRequest,

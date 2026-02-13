@@ -66,6 +66,18 @@ export interface WorldRingEntity {
   id: string;
   position: readonly [number, number, number];
   collected: boolean;
+  source: "starter" | "drop";
+  spawnedAtMs?: number;
+}
+
+export interface WorldRingSnapshot {
+  id: string;
+  x: number;
+  y: number;
+  z: number;
+  collected: boolean;
+  source: "starter" | "drop";
+  spawnedAtMs?: number;
 }
 
 export interface WorldHudState {
@@ -100,14 +112,37 @@ function buildRingEntities() {
       xz[1],
     ] as const,
     collected: false,
+    source: "starter" as const,
+    spawnedAtMs: undefined,
   }));
 }
 
-function syncVisibleRingsAndHud(world: WorldEntityManager) {
+function syncVisibleRings(world: WorldEntityManager) {
   const visible = world.ringEntities.filter((ring) => !ring.collected);
   world.visibleRingEntities.splice(0, world.visibleRingEntities.length, ...visible);
-  world.hud.ringCount = world.ringEntities.length - visible.length;
-  setFireballManagerMaxActiveCount(world.fireballManager, world.hud.ringCount);
+}
+
+function applyRingCountToHudAndFireballManager(
+  world: WorldEntityManager,
+  ringCount: number,
+) {
+  const normalizedRingCount = Math.max(0, Math.floor(ringCount));
+  if (normalizedRingCount > world.hud.totalRings) {
+    world.hud.totalRings = normalizedRingCount;
+  }
+  if (
+    world.hud.ringCount === normalizedRingCount &&
+    world.fireballManager.maxActiveCount === normalizedRingCount
+  ) {
+    return false;
+  }
+
+  world.hud.ringCount = normalizedRingCount;
+  setFireballManagerMaxActiveCount(
+    world.fireballManager,
+    normalizedRingCount,
+  );
+  return true;
 }
 
 function upsertActiveChunkSlots(
@@ -214,7 +249,8 @@ export function createWorldEntityManager(): WorldEntityManager {
   };
 
   upsertActiveChunkSlots(world, centerChunk);
-  syncVisibleRingsAndHud(world);
+  syncVisibleRings(world);
+  applyRingCountToHudAndFireballManager(world, 0);
   scheduleChunkPrefetch(world, centerChunk);
   return world;
 }
@@ -275,7 +311,11 @@ export function collectWorldRing(world: WorldEntityManager, ringId: string) {
   }
 
   ring.collected = true;
-  syncVisibleRingsAndHud(world);
+  syncVisibleRings(world);
+  applyRingCountToHudAndFireballManager(
+    world,
+    world.ringEntities.length - world.visibleRingEntities.length,
+  );
   emitWorldManagerChanged(world);
 }
 
@@ -299,6 +339,73 @@ export function applyServerRingState(
     return;
   }
 
-  syncVisibleRingsAndHud(world);
+  syncVisibleRings(world);
+  emitWorldManagerChanged(world);
+}
+
+export function applyServerRingRows(
+  world: WorldEntityManager,
+  ringRows: readonly WorldRingSnapshot[],
+) {
+  const nextById = new Map(ringRows.map((ring) => [ring.id, ring]));
+  let didChange = false;
+
+  for (let index = world.ringEntities.length - 1; index >= 0; index -= 1) {
+    const existing = world.ringEntities[index];
+    if (nextById.has(existing.id)) {
+      continue;
+    }
+    world.ringEntities.splice(index, 1);
+    didChange = true;
+  }
+
+  for (const [id, snapshot] of nextById.entries()) {
+    const existing = world.ringEntities.find((candidate) => candidate.id === id);
+    if (!existing) {
+      world.ringEntities.push({
+        id,
+        position: [snapshot.x, snapshot.y, snapshot.z],
+        collected: snapshot.collected,
+        source: snapshot.source,
+        spawnedAtMs: snapshot.spawnedAtMs,
+      });
+      didChange = true;
+      continue;
+    }
+
+    const [x, y, z] = existing.position;
+    if (
+      x !== snapshot.x ||
+      y !== snapshot.y ||
+      z !== snapshot.z ||
+      existing.collected !== snapshot.collected ||
+      existing.source !== snapshot.source ||
+      existing.spawnedAtMs !== snapshot.spawnedAtMs
+    ) {
+      existing.position = [snapshot.x, snapshot.y, snapshot.z];
+      existing.collected = snapshot.collected;
+      existing.source = snapshot.source;
+      existing.spawnedAtMs = snapshot.spawnedAtMs;
+      didChange = true;
+    }
+  }
+
+  if (!didChange) {
+    return;
+  }
+
+  world.ringEntities.sort((a, b) => a.id.localeCompare(b.id));
+  syncVisibleRings(world);
+  emitWorldManagerChanged(world);
+}
+
+export function setWorldLocalRingCount(
+  world: WorldEntityManager,
+  ringCount: number,
+) {
+  if (!applyRingCountToHudAndFireballManager(world, ringCount)) {
+    return;
+  }
+
   emitWorldManagerChanged(world);
 }

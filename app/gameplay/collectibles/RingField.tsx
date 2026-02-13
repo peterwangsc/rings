@@ -36,6 +36,7 @@ export function RingField({
           key={ring.id}
           id={ring.id}
           position={ring.position}
+          spawnedAtMs={ring.spawnedAtMs}
           onCollect={handleCollect}
         />
       ))}

@@ -44,6 +44,8 @@ import CastFireballReducer from "./cast_fireball_reducer";
 export { CastFireballReducer };
 import CollectRingReducer from "./collect_ring_reducer";
 export { CollectRingReducer };
+import HitGoombaReducer from "./hit_goomba_reducer";
+export { HitGoombaReducer };
 import SendChatMessageReducer from "./send_chat_message_reducer";
 export { SendChatMessageReducer };
 
@@ -54,12 +56,20 @@ import ChatMessageEventRow from "./chat_message_event_table";
 export { ChatMessageEventRow };
 import FireballEventRow from "./fireball_event_table";
 export { FireballEventRow };
+import GoombaStateRow from "./goomba_state_table";
+export { GoombaStateRow };
+import PlayerInventoryRow from "./player_inventory_table";
+export { PlayerInventoryRow };
 import PlayerStateRow from "./player_state_table";
 export { PlayerStateRow };
+import RingDropStateRow from "./ring_drop_state_table";
+export { RingDropStateRow };
 import RingStateRow from "./ring_state_table";
 export { RingStateRow };
 import SessionRow from "./session_table";
 export { SessionRow };
+import WorldStateRow from "./world_state_table";
+export { WorldStateRow };
 
 // Import and reexport all types
 import CastFireball from "./cast_fireball_type";
@@ -70,14 +80,22 @@ import CollectRing from "./collect_ring_type";
 export { CollectRing };
 import FireballEvent from "./fireball_event_type";
 export { FireballEvent };
+import GoombaState from "./goomba_state_type";
+export { GoombaState };
+import HitGoomba from "./hit_goomba_type";
+export { HitGoomba };
 import Init from "./init_type";
 export { Init };
 import OnConnect from "./on_connect_type";
 export { OnConnect };
 import OnDisconnect from "./on_disconnect_type";
 export { OnDisconnect };
+import PlayerInventory from "./player_inventory_type";
+export { PlayerInventory };
 import PlayerState from "./player_state_type";
 export { PlayerState };
+import RingDropState from "./ring_drop_state_type";
+export { RingDropState };
 import RingState from "./ring_state_type";
 export { RingState };
 import SendChatMessage from "./send_chat_message_type";
@@ -86,6 +104,8 @@ import Session from "./session_type";
 export { Session };
 import UpsertPlayerState from "./upsert_player_state_type";
 export { UpsertPlayerState };
+import WorldState from "./world_state_type";
+export { WorldState };
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema(
@@ -112,6 +132,28 @@ const tablesSchema = __schema(
     ],
   }, FireballEventRow),
   __table({
+    name: 'goomba_state',
+    indexes: [
+      { name: 'goombaId', algorithm: 'btree', columns: [
+        'goombaId',
+      ] },
+    ],
+    constraints: [
+      { name: 'goomba_state_goombaId_key', constraint: 'unique', columns: ['goombaId'] },
+    ],
+  }, GoombaStateRow),
+  __table({
+    name: 'player_inventory',
+    indexes: [
+      { name: 'identity', algorithm: 'btree', columns: [
+        'identity',
+      ] },
+    ],
+    constraints: [
+      { name: 'player_inventory_identity_key', constraint: 'unique', columns: ['identity'] },
+    ],
+  }, PlayerInventoryRow),
+  __table({
     name: 'player_state',
     indexes: [
       { name: 'identity', algorithm: 'btree', columns: [
@@ -122,6 +164,17 @@ const tablesSchema = __schema(
       { name: 'player_state_identity_key', constraint: 'unique', columns: ['identity'] },
     ],
   }, PlayerStateRow),
+  __table({
+    name: 'ring_drop_state',
+    indexes: [
+      { name: 'ringId', algorithm: 'btree', columns: [
+        'ringId',
+      ] },
+    ],
+    constraints: [
+      { name: 'ring_drop_state_ringId_key', constraint: 'unique', columns: ['ringId'] },
+    ],
+  }, RingDropStateRow),
   __table({
     name: 'ring_state',
     indexes: [
@@ -144,6 +197,17 @@ const tablesSchema = __schema(
       { name: 'session_connectionId_key', constraint: 'unique', columns: ['connectionId'] },
     ],
   }, SessionRow),
+  __table({
+    name: 'world_state',
+    indexes: [
+      { name: 'id', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'world_state_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, WorldStateRow),
 );
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
@@ -151,6 +215,7 @@ const reducersSchema = __reducers(
   __reducerSchema("upsert_player_state", UpsertPlayerStateReducer),
   __reducerSchema("cast_fireball", CastFireballReducer),
   __reducerSchema("collect_ring", CollectRingReducer),
+  __reducerSchema("hit_goomba", HitGoombaReducer),
   __reducerSchema("send_chat_message", SendChatMessageReducer),
 );
 

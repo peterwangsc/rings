@@ -3,14 +3,22 @@ import type { MotionState } from "../../lib/CharacterActor";
 import {
   ChatMessageEventRow,
   FireballEventRow,
+  GoombaStateRow,
+  PlayerInventoryRow,
   PlayerStateRow,
+  RingDropStateRow,
   RingStateRow,
+  WorldStateRow,
 } from "../spacetime/bindings";
 
 export type NetPlayerRow = Infer<typeof PlayerStateRow>;
 export type NetFireballEventRow = Infer<typeof FireballEventRow>;
 export type NetChatMessageEventRow = Infer<typeof ChatMessageEventRow>;
 export type NetRingRow = Infer<typeof RingStateRow>;
+export type NetRingDropRow = Infer<typeof RingDropStateRow>;
+export type NetPlayerInventoryRow = Infer<typeof PlayerInventoryRow>;
+export type NetGoombaRow = Infer<typeof GoombaStateRow>;
+export type NetWorldStateRow = Infer<typeof WorldStateRow>;
 
 export type ConnectionStatus =
   | "connecting"
@@ -61,6 +69,15 @@ export interface ChatMessageEvent {
   expiresAtMs: number;
 }
 
+export interface GoombaState {
+  goombaId: string;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  state: "idle" | "charge" | "cooldown" | "defeated";
+}
+
 export interface MultiplayerDiagnostics {
   playerRowCount: number;
   ringRowCount: number;
@@ -73,8 +90,12 @@ export interface MultiplayerState {
   connectionError: string | null;
   localIdentity: string | null;
   localDisplayName: string;
+  dayCycleAnchorMs: number | null;
+  dayCycleDurationSeconds: number;
+  serverTimeOffsetMs: number | null;
   authoritativeLocalPlayerState: AuthoritativePlayerState | null;
   remotePlayers: Map<string, AuthoritativePlayerState>;
+  goombas: Map<string, GoombaState>;
   collectedRingIds: Set<string>;
   pendingRemoteFireballSpawns: FireballSpawnEvent[];
   chatMessages: ChatMessageEvent[];

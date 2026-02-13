@@ -8,8 +8,13 @@ import {
 import { useCallback, useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { MotionState } from "../../lib/CharacterActor";
+import { RING_HOVER_HEIGHT, RING_PLACEMENTS } from "../../utils/constants";
+import { sampleTerrainHeight } from "../../utils/terrain";
 import type { WorldEntityManager } from "../../scene/world/worldEntityManager";
-import { applyServerRingState } from "../../scene/world/worldEntityManager";
+import {
+  applyServerRingRows,
+  setWorldLocalRingCount,
+} from "../../scene/world/worldEntityManager";
 import { reducers, tables } from "../spacetime/bindings";
 import { persistMultiplayerToken } from "../spacetime/client";
 import {
@@ -18,23 +23,42 @@ import {
   setAuthoritativeLocalPlayerState,
   setChatMessages,
   setCollectedRingIds,
+  setGoombas,
   setMultiplayerConnectionStatus as setConnectionStatusInStore,
   setMultiplayerDiagnostics,
   setMultiplayerIdentity,
   setRemotePlayers,
+  setServerTimeOffsetMs,
+  setWorldDayCycleConfig,
   type MultiplayerStore,
 } from "./multiplayerStore";
 import type {
   AuthoritativePlayerState,
   ChatMessageEvent,
   FireballSpawnEvent,
+  GoombaState,
   NetChatMessageEventRow,
   NetFireballEventRow,
+  NetGoombaRow,
   NetPlayerRow,
   NetPlayerSnapshot,
+  NetWorldStateRow,
 } from "./multiplayerTypes";
 
 const MOTION_STATE_FALLBACK: MotionState = "idle";
+const DEFAULT_DAY_CYCLE_DURATION_SECONDS = 300;
+const SERVER_TIME_OFFSET_SMOOTHING = 0.2;
+const GOOMBA_STATE_FALLBACK: GoombaState["state"] = "idle";
+const STARTER_RING_POSITIONS = new Map(
+  RING_PLACEMENTS.map((placement, index) => [
+    `ring-${index}`,
+    {
+      x: placement[0],
+      y: sampleTerrainHeight(placement[0], placement[1]) + RING_HOVER_HEIGHT,
+      z: placement[1],
+    },
+  ]),
+);
 
 function toValidMotionState(value: string): MotionState {
   switch (value) {
@@ -101,6 +125,38 @@ function toChatMessageEvent(row: NetChatMessageEventRow): ChatMessageEvent {
   };
 }
 
+function toValidGoombaState(value: string): GoombaState["state"] {
+  switch (value) {
+    case "idle":
+    case "charge":
+    case "cooldown":
+    case "defeated":
+      return value;
+    default:
+      return GOOMBA_STATE_FALLBACK;
+  }
+}
+
+function toGoombaState(row: NetGoombaRow): GoombaState {
+  return {
+    goombaId: row.goombaId,
+    x: row.x,
+    y: row.y,
+    z: row.z,
+    yaw: row.yaw,
+    state: toValidGoombaState(row.state),
+  };
+}
+
+function pickWorldStateRow(
+  rows: readonly NetWorldStateRow[],
+): NetWorldStateRow | null {
+  if (rows.length <= 0) {
+    return null;
+  }
+  return rows.find((row) => row.id === "global") ?? rows[0];
+}
+
 function getConnectionErrorMessage(error: unknown) {
   if (!error) {
     return "unknown_connection_error";
@@ -140,17 +196,23 @@ export function useMultiplayerSync({
 }) {
   const connectionState = useSpacetimeDB();
   const [playerRows] = useTable(tables.playerState);
+  const [playerInventoryRows] = useTable(tables.playerInventory);
+  const [goombaRows] = useTable(tables.goombaState);
   const [ringRows] = useTable(tables.ringState);
+  const [ringDropRows] = useTable(tables.ringDropState);
+  const [worldStateRows] = useTable(tables.worldState);
   const [fireballRows] = useTable(tables.fireballEvent);
   const [chatMessageRows] = useTable(tables.chatMessageEvent);
 
   const sendUpsertPlayerState = useSpacetimeReducer(reducers.upsertPlayerState);
   const sendCastFireball = useSpacetimeReducer(reducers.castFireball);
   const sendCollectRing = useSpacetimeReducer(reducers.collectRing);
+  const sendHitGoomba = useSpacetimeReducer(reducers.hitGoomba);
   const sendChatMessageReducer = useSpacetimeReducer(reducers.sendChatMessage);
 
   const seenFireballEventsRef = useRef<Set<string>>(new Set());
   const hasConnectedOnceRef = useRef(false);
+  const serverTimeOffsetEstimateRef = useRef<number | null>(null);
 
   const localIdentity = connectionState.identity?.toHexString() ?? null;
 
@@ -159,6 +221,14 @@ export function useMultiplayerSync({
       persistMultiplayerToken(connectionState.token);
     }
   }, [connectionState.token]);
+
+  useEffect(() => {
+    if (connectionState.isActive) {
+      return;
+    }
+    serverTimeOffsetEstimateRef.current = null;
+    setServerTimeOffsetMs(store, null);
+  }, [connectionState.isActive, store]);
 
   useEffect(() => {
     setMultiplayerIdentity(store, localIdentity);
@@ -221,13 +291,14 @@ export function useMultiplayerSync({
   useEffect(() => {
     setMultiplayerDiagnostics(store, {
       playerRowCount: playerRows.length,
-      ringRowCount: ringRows.length,
+      ringRowCount: ringRows.length + ringDropRows.length,
       fireballEventRowCount: fireballRows.length,
       chatMessageRowCount: chatMessageRows.length,
     });
   }, [
     chatMessageRows.length,
     fireballRows.length,
+    ringDropRows.length,
     playerRows.length,
     ringRows.length,
     store,
@@ -236,8 +307,10 @@ export function useMultiplayerSync({
   useEffect(() => {
     const remotePlayers = new Map<string, AuthoritativePlayerState>();
     let authoritativeLocalPlayer: AuthoritativePlayerState | null = null;
+    let freshestUpdatedAtMs = -1;
 
     for (const row of playerRows) {
+      freshestUpdatedAtMs = Math.max(freshestUpdatedAtMs, row.updatedAtMs);
       const player = toAuthoritativePlayerState(row);
       if (localIdentity && player.identity === localIdentity) {
         authoritativeLocalPlayer = player;
@@ -248,19 +321,116 @@ export function useMultiplayerSync({
 
     setAuthoritativeLocalPlayerState(store, authoritativeLocalPlayer);
     setRemotePlayers(store, remotePlayers);
+
+    if (freshestUpdatedAtMs > 0) {
+      const sampledOffsetMs = freshestUpdatedAtMs - Date.now();
+      const previousOffsetMs = serverTimeOffsetEstimateRef.current;
+      const blendedOffsetMs =
+        previousOffsetMs === null
+          ? sampledOffsetMs
+          : previousOffsetMs +
+            (sampledOffsetMs - previousOffsetMs) * SERVER_TIME_OFFSET_SMOOTHING;
+      serverTimeOffsetEstimateRef.current = blendedOffsetMs;
+      setServerTimeOffsetMs(store, Math.round(blendedOffsetMs));
+    }
   }, [localIdentity, playerRows, store]);
 
   useEffect(() => {
-    const collectedRingIds = new Set<string>();
-    for (const ring of ringRows) {
-      if (ring.collected) {
-        collectedRingIds.add(ring.ringId);
-      }
+    const worldState = pickWorldStateRow(worldStateRows);
+    if (!worldState) {
+      setWorldDayCycleConfig(
+        store,
+        null,
+        DEFAULT_DAY_CYCLE_DURATION_SECONDS,
+      );
+      return;
     }
 
-    setCollectedRingIds(store, collectedRingIds);
-    applyServerRingState(worldEntityManager, collectedRingIds);
-  }, [ringRows, store, worldEntityManager]);
+    setWorldDayCycleConfig(
+      store,
+      worldState.dayCycleAnchorMs,
+      worldState.dayCycleDurationSeconds,
+    );
+  }, [store, worldStateRows]);
+
+  useEffect(() => {
+    if (!connectionState.isActive) {
+      return;
+    }
+
+    const collectedStarterRingIds = new Set<string>();
+    const projectedRings: {
+      id: string;
+      x: number;
+      y: number;
+      z: number;
+      collected: boolean;
+      source: "starter" | "drop";
+      spawnedAtMs?: number;
+    }[] = [];
+
+    for (const ring of ringRows) {
+      const starterPosition = STARTER_RING_POSITIONS.get(ring.ringId);
+      if (!starterPosition) {
+        continue;
+      }
+
+      if (ring.collected) {
+        collectedStarterRingIds.add(ring.ringId);
+      }
+
+      projectedRings.push({
+        id: ring.ringId,
+        x: starterPosition.x,
+        y: starterPosition.y,
+        z: starterPosition.z,
+        collected: ring.collected,
+        source: "starter",
+        spawnedAtMs: undefined,
+      });
+    }
+
+    for (const ringDrop of ringDropRows) {
+      projectedRings.push({
+        id: ringDrop.ringId,
+        x: ringDrop.x,
+        y: ringDrop.y,
+        z: ringDrop.z,
+        collected: ringDrop.collected,
+        source: "drop",
+        spawnedAtMs: ringDrop.spawnedAtMs,
+      });
+    }
+
+    let localRingCount = 0;
+    for (const inventoryRow of playerInventoryRows) {
+      if (inventoryRow.identity !== localIdentity) {
+        continue;
+      }
+      localRingCount = Math.max(0, Math.floor(inventoryRow.ringCount));
+      break;
+    }
+
+    setCollectedRingIds(store, collectedStarterRingIds);
+    applyServerRingRows(worldEntityManager, projectedRings);
+    setWorldLocalRingCount(worldEntityManager, localRingCount);
+  }, [
+    connectionState.isActive,
+    localIdentity,
+    playerInventoryRows,
+    ringDropRows,
+    ringRows,
+    store,
+    worldEntityManager,
+  ]);
+
+  useEffect(() => {
+    const goombas = new Map<string, GoombaState>();
+    for (const row of goombaRows) {
+      goombas.set(row.goombaId, toGoombaState(row));
+    }
+    setGoombas(store, goombas);
+  }, [goombaRows, store]);
 
   useEffect(() => {
     const seenIds = seenFireballEventsRef.current;
@@ -353,10 +523,21 @@ export function useMultiplayerSync({
     [connectionState.isActive, sendChatMessageReducer],
   );
 
+  const sendGoombaHit = useCallback(
+    (goombaId: string) => {
+      if (!connectionState.isActive) {
+        return;
+      }
+      sendHitGoomba({ goombaId });
+    },
+    [connectionState.isActive, sendHitGoomba],
+  );
+
   return {
     sendLocalPlayerSnapshot,
     sendLocalFireballCast,
     sendRingCollect,
     sendChatMessage,
+    sendGoombaHit,
   };
 }

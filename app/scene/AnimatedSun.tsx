@@ -30,8 +30,8 @@ import {
 } from "./world/terrainChunks";
 import type { WorldEntityManager } from "./world/worldEntityManager";
 
-/** Full cycle in seconds - sun rises, crosses the sky, and sets. */
-const SUN_CYCLE_DURATION = 300;
+const DEFAULT_SUN_CYCLE_DURATION_SECONDS = 300;
+const SUN_CYCLE_PHASE_OFFSET_RADIANS = Math.PI * 0.25;
 /** Radius of the sun's circular arc. */
 const SUN_ORBIT_RADIUS = 18;
 const SUN_ORBIT_Z_OFFSET = 6;
@@ -78,10 +78,34 @@ type SkyMaterialWithSunPosition = ShaderMaterial & {
   };
 };
 
+function getCycleAngleRadians({
+  dayCycleAnchorMs,
+  dayCycleDurationSeconds,
+  estimatedServerTimeOffsetMs,
+}: {
+  dayCycleAnchorMs: number;
+  dayCycleDurationSeconds: number;
+  estimatedServerTimeOffsetMs: number;
+}) {
+  const durationMs = Math.max(1, dayCycleDurationSeconds * 1000);
+  const estimatedServerNowMs = Date.now() + estimatedServerTimeOffsetMs;
+  const elapsedMs = estimatedServerNowMs - dayCycleAnchorMs;
+  const wrappedElapsedMs =
+    ((elapsedMs % durationMs) + durationMs) % durationMs;
+  const cycleProgress = wrappedElapsedMs / durationMs;
+  return cycleProgress * Math.PI * 2 + SUN_CYCLE_PHASE_OFFSET_RADIANS;
+}
+
 export function AnimatedSun({
   worldEntityManager,
+  dayCycleAnchorMs,
+  dayCycleDurationSeconds = DEFAULT_SUN_CYCLE_DURATION_SECONDS,
+  estimatedServerTimeOffsetMs = 0,
 }: {
   worldEntityManager: WorldEntityManager;
+  dayCycleAnchorMs?: number | null;
+  dayCycleDurationSeconds?: number;
+  estimatedServerTimeOffsetMs?: number | null;
 }) {
   const skyRef = useRef<ThreeSkyObject>(null);
   const lightRef = useRef<DirectionalLight>(null);
@@ -93,7 +117,7 @@ export function AnimatedSun({
   const starsRef = useRef<Points>(null);
   const hemisphereRef = useRef<HemisphereLight>(null);
   const ambientRef = useRef<AmbientLight>(null);
-  const angleRef = useRef(Math.PI * 0.25);
+  const fallbackDayCycleAnchorMsRef = useRef<number | null>(null);
   const lightAnchorRef = useRef(new Vector3());
   const sunOffsetRef = useRef(new Vector3());
   const sunVisualOffsetRef = useRef(new Vector3());
@@ -178,9 +202,17 @@ export function AnimatedSun({
     }
   }, []);
 
-  useFrame((state, delta) => {
-    angleRef.current += (delta / SUN_CYCLE_DURATION) * Math.PI * 2;
-    const angle = angleRef.current;
+  useFrame((state) => {
+    if (fallbackDayCycleAnchorMsRef.current === null) {
+      fallbackDayCycleAnchorMsRef.current = Date.now();
+    }
+    const cycleAnchorMs =
+      dayCycleAnchorMs ?? fallbackDayCycleAnchorMsRef.current;
+    const angle = getCycleAngleRadians({
+      dayCycleAnchorMs: cycleAnchorMs,
+      dayCycleDurationSeconds,
+      estimatedServerTimeOffsetMs: estimatedServerTimeOffsetMs ?? 0,
+    });
     const playerPosition = worldEntityManager.playerPosition;
     const cameraPosition = state.camera.position;
     const lightAnchor = lightAnchorRef.current.copy(playerPosition);

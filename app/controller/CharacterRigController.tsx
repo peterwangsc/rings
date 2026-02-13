@@ -19,6 +19,7 @@ import {
   createFireballManager,
   enqueueFireballSpawn,
   enqueueFireballSpawnRequest,
+  markFireballDeadById,
   stepFireballSimulation,
 } from "../gameplay/abilities/fireballManager";
 import type {
@@ -37,6 +38,11 @@ import {
   FIRST_PERSON_CAMERA_FOV,
   FIREBALL_MAX_ACTIVE_COUNT,
   FIREBALL_RADIUS,
+  GOOMBA_FIREBALL_HIT_RADIUS,
+  GOOMBA_HIT_RETRY_COOLDOWN_MS,
+  GOOMBA_INTERACT_DISABLED_STATE,
+  GOOMBA_STOMP_MIN_FALL_SPEED,
+  GOOMBA_STOMP_RADIUS,
   GROUNDED_GRACE_SECONDS,
   JUMP_INPUT_BUFFER_SECONDS,
   MAX_FRAME_DELTA_SECONDS,
@@ -98,6 +104,8 @@ export function CharacterRigController({
   fireballManager,
   onLocalPlayerSnapshot,
   onLocalFireballCast,
+  goombas,
+  onLocalGoombaHit,
   authoritativeLocalPlayerState,
   networkFireballSpawnQueueRef,
 }: CharacterRigControllerProps) {
@@ -125,6 +133,7 @@ export function CharacterRigController({
   const lastProcessedMobileFireballTriggerRef = useRef(0);
   const snapshotAccumulatorSecondsRef = useRef(0);
   const localInputSequenceRef = useRef(0);
+  const goombaHitTimestampsRef = useRef(new Map<string, number>());
   const motionStateRef = useRef<MotionState>("idle");
   const [actorMotionState, setActorMotionState] = useState<MotionState>("idle");
   const fallbackFireballManager = useMemo(
@@ -216,6 +225,13 @@ export function CharacterRigController({
     }
 
     const translation = body.translation();
+    const nowMs = performance.now();
+    const goombaHitTimestamps = goombaHitTimestampsRef.current;
+    for (const [goombaId, lastHitAtMs] of goombaHitTimestamps.entries()) {
+      if (nowMs - lastHitAtMs > GOOMBA_HIT_RETRY_COOLDOWN_MS) {
+        goombaHitTimestamps.delete(goombaId);
+      }
+    }
     const currentVelocity = body.linvel();
     const verticalSpeedAbs = Math.abs(currentVelocity.y);
     const groundingRay = new rapier.Ray(
@@ -343,6 +359,43 @@ export function CharacterRigController({
       { x: nextVelocityX, y: nextVelocityY, z: nextVelocityZ },
       true,
     );
+
+    if (goombas && onLocalGoombaHit && nextVelocityY < -GOOMBA_STOMP_MIN_FALL_SPEED) {
+      const playerFeetY =
+        translation.y - (PLAYER_CAPSULE_HALF_HEIGHT + PLAYER_CAPSULE_RADIUS);
+      for (let index = 0; index < goombas.length; index += 1) {
+        const goomba = goombas[index];
+        if (goomba.state === GOOMBA_INTERACT_DISABLED_STATE) {
+          continue;
+        }
+        if (goombaHitTimestamps.has(goomba.goombaId)) {
+          continue;
+        }
+
+        const planarDistance = Math.hypot(
+          translation.x - goomba.x,
+          translation.z - goomba.z,
+        );
+        if (planarDistance > GOOMBA_STOMP_RADIUS) {
+          continue;
+        }
+        if (playerFeetY < goomba.y + 0.08) {
+          continue;
+        }
+
+        goombaHitTimestamps.set(goomba.goombaId, nowMs);
+        onLocalGoombaHit(goomba.goombaId);
+        body.setLinvel(
+          {
+            x: nextVelocityX,
+            y: Math.max(6, PLAYER_JUMP_VELOCITY * 0.48),
+            z: nextVelocityZ,
+          },
+          true,
+        );
+        break;
+      }
+    }
 
     const planarVelocityMagnitude = Math.hypot(nextVelocityX, nextVelocityZ);
     if (planarVelocityMagnitude > 1e-4) {
@@ -552,6 +605,43 @@ export function CharacterRigController({
       castSolidHit,
       sampleTerrainHeight,
     });
+
+    if (goombas && onLocalGoombaHit) {
+      for (
+        let fireballIndex = 0;
+        fireballIndex < activeFireballManager.activeStates.length;
+        fireballIndex += 1
+      ) {
+        const fireball = activeFireballManager.activeStates[fireballIndex];
+        if (fireball.isDead) {
+          continue;
+        }
+
+        for (let goombaIndex = 0; goombaIndex < goombas.length; goombaIndex += 1) {
+          const goomba = goombas[goombaIndex];
+          if (goomba.state === GOOMBA_INTERACT_DISABLED_STATE) {
+            continue;
+          }
+          if (goombaHitTimestamps.has(goomba.goombaId)) {
+            continue;
+          }
+
+          const distance = Math.hypot(
+            fireball.x - goomba.x,
+            fireball.y - goomba.y,
+            fireball.z - goomba.z,
+          );
+          if (distance > GOOMBA_FIREBALL_HIT_RADIUS) {
+            continue;
+          }
+
+          markFireballDeadById(activeFireballManager, fireball.id);
+          goombaHitTimestamps.set(goomba.goombaId, nowMs);
+          onLocalGoombaHit(goomba.goombaId);
+          break;
+        }
+      }
+    }
     buildFireballRenderFrame(activeFireballManager);
 
     getLookDirection(
@@ -595,7 +685,7 @@ export function CharacterRigController({
       0,
       THIRD_PERSON_CAMERA_DISTANCE,
       true,
-      undefined,
+      rapier.QueryFilterFlags.EXCLUDE_SENSORS,
       undefined,
       undefined,
       body,

@@ -16,6 +16,7 @@ import type { CameraMode } from "../camera/cameraTypes";
 import { CharacterRigController } from "../controller/CharacterRigController";
 import type { MobileMoveInput } from "../controller/controllerTypes";
 import { RingField } from "../gameplay/collectibles/RingField";
+import { GoombaLayer } from "../gameplay/goombas/GoombaLayer";
 import { RemotePlayersLayer } from "../gameplay/multiplayer/RemotePlayersLayer";
 import { ChatOverlay } from "../hud/ChatOverlay";
 import { GameHUD } from "../hud/GameHUD";
@@ -121,6 +122,7 @@ function CharacterRigSceneContent({
     sendLocalFireballCast,
     sendRingCollect,
     sendChatMessage,
+    sendGoombaHit,
   } = useMultiplayerSync({
     store: multiplayerStore,
     worldEntityManager,
@@ -133,6 +135,10 @@ function CharacterRigSceneContent({
   const remotePlayers = useMemo(
     () => Array.from(multiplayerState.remotePlayers.values()),
     [multiplayerState.remotePlayers],
+  );
+  const goombas = useMemo(
+    () => Array.from(multiplayerState.goombas.values()),
+    [multiplayerState.goombas],
   );
   const activeChatMessages = useMemo(() => {
     const visible = multiplayerState.chatMessages.filter(
@@ -388,7 +394,12 @@ function CharacterRigSceneContent({
         }}
         className="h-full w-full touch-none"
       >
-        <AnimatedSun worldEntityManager={worldEntityManager} />
+        <AnimatedSun
+          worldEntityManager={worldEntityManager}
+          dayCycleAnchorMs={multiplayerState.dayCycleAnchorMs}
+          dayCycleDurationSeconds={multiplayerState.dayCycleDurationSeconds}
+          estimatedServerTimeOffsetMs={multiplayerState.serverTimeOffsetMs}
+        />
         {isFpsVisible ? <FrameRateProbe onUpdate={handleFpsUpdate} /> : null}
         <fog attach="fog" args={[HORIZON_COLOR, SKY_FOG_NEAR, SKY_FOG_FAR]} />
         <Physics gravity={[0, WORLD_GRAVITY_Y, 0]}>
@@ -400,6 +411,7 @@ function CharacterRigSceneContent({
                 hasAuthoritativeMultiplayer ? sendRingCollect : undefined
               }
             />
+            <GoombaLayer goombas={goombas} />
             <RemotePlayersLayer
               players={remotePlayers}
               activeChatByIdentity={activeChatByIdentity}
@@ -418,6 +430,8 @@ function CharacterRigSceneContent({
               fireballManager={worldEntityManager.fireballManager}
               onLocalPlayerSnapshot={sendLocalPlayerSnapshot}
               onLocalFireballCast={sendLocalFireballCast}
+              goombas={goombas}
+              onLocalGoombaHit={sendGoombaHit}
               authoritativeLocalPlayerState={
                 multiplayerState.authoritativeLocalPlayerState
               }
