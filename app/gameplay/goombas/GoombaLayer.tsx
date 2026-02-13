@@ -14,14 +14,27 @@ import {
 
 const POSITION_SMOOTHNESS = 14;
 const YAW_SMOOTHNESS = 14;
+const CHARGE_YAW_SMOOTHNESS = 24;
 const WALK_BLEND_SMOOTHNESS = 8;
 const WALK_CYCLE_IDLE_SPEED = 1.8;
 const WALK_CYCLE_MOVE_SPEED = 9.2;
 const LEG_SWING_ANGLE_RADIANS = 0.42;
 const ARM_SWING_ANGLE_RADIANS = 0.24;
 const HEAD_SWAY_ANGLE_RADIANS = 0.06;
+const IDLE_BOB_AMPLITUDE = 0.04;
+const CHARGE_BOB_AMPLITUDE = 0.12;
+const MOVEMENT_EPSILON_SQUARED = 1e-6;
+const DEATH_ANIM_DURATION_SECONDS = 1.05;
+const DEATH_HIDE_DELAY_SECONDS = 1.6;
+const DEATH_SINK_DISTANCE = 0.45;
+const DEATH_MAX_TILT_RADIANS = 1.35;
+const DEATH_SQUASH_XZ_SCALE = 1.22;
+const DEATH_SQUASH_Y_SCALE = 0.42;
+const DEATH_EYE_BLINK_HZ = 9.5;
+const DEATH_EYE_FINAL_CLOSE_PROGRESS = 0.72;
 const WALK_CLIP_PATTERN = /(walk|run|move)/i;
 const IDLE_CLIP_PATTERN = /(idle|stand|breathe)/i;
+const DAMAGE_EYE_NAME_PATTERN = /damageeye/i;
 
 type RigNode = {
   readonly node: THREE.Object3D;
@@ -43,6 +56,7 @@ type AnimationBundle = {
   readonly mixer: THREE.AnimationMixer | null;
   readonly walkAction: THREE.AnimationAction | null;
   readonly idleAction: THREE.AnimationAction | null;
+  readonly damageEyeNodes: readonly THREE.Object3D[];
   readonly rig: ProceduralRig;
 };
 
@@ -125,18 +139,37 @@ function applyRotationOffsets(
 
 function GoombaActor({ goomba }: { goomba: GoombaState }) {
   const rootRef = useRef<THREE.Group>(null);
+  const previousPositionRef = useRef(
+    new THREE.Vector3(goomba.x, goomba.y, goomba.z),
+  );
+  const deathAnchorPositionRef = useRef(
+    new THREE.Vector3(goomba.x, goomba.y, goomba.z),
+  );
   const targetPositionRef = useRef(
     new THREE.Vector3(goomba.x, goomba.y, goomba.z),
   );
   const targetYawRef = useRef(goomba.yaw);
   const animationBundleRef = useRef<AnimationBundle | null>(null);
+  const damageEyeNodesRef = useRef<readonly THREE.Object3D[]>([]);
+  const isDamageEyeVisibleRef = useRef(false);
+  const wasDefeatedRef = useRef(
+    goomba.state === GOOMBA_INTERACT_DISABLED_STATE,
+  );
+  const deathStartedAtSecondsRef = useRef<number | null>(
+    goomba.state === GOOMBA_INTERACT_DISABLED_STATE ? 0 : null,
+  );
   const walkCycleTimeRef = useRef(0);
   const walkBlendRef = useRef(0);
 
   const baseModel = useLoader(ColladaLoader, GOOMBA_MODEL_PATH);
   const animationBundle = useMemo<AnimationBundle>(() => {
     const cloned = cloneSkeleton(baseModel.scene) as THREE.Object3D;
+    const damageEyeNodes: THREE.Object3D[] = [];
     cloned.traverse((object) => {
+      if (DAMAGE_EYE_NAME_PATTERN.test(object.name)) {
+        damageEyeNodes.push(object);
+        object.visible = false;
+      }
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh) {
         return;
@@ -151,6 +184,7 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
         mixer: null,
         walkAction: null,
         idleAction: null,
+        damageEyeNodes,
         rig: buildProceduralRig(cloned),
       };
     }
@@ -185,6 +219,7 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
       mixer,
       walkAction,
       idleAction,
+      damageEyeNodes,
       rig: buildProceduralRig(cloned),
     };
   }, [baseModel]);
@@ -196,6 +231,8 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
 
   useEffect(() => {
     animationBundleRef.current = animationBundle;
+    damageEyeNodesRef.current = animationBundle.damageEyeNodes;
+    isDamageEyeVisibleRef.current = false;
   }, [animationBundle]);
 
   useEffect(() => {
@@ -211,30 +248,135 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
     };
   }, [animationBundle]);
 
-  useFrame((_, deltaSeconds) => {
+  useFrame((state, deltaSeconds) => {
     const root = rootRef.current;
     const bundle = animationBundleRef.current;
     if (!root || !bundle) {
       return;
     }
 
+    const setDamageEyeVisible = (visible: boolean) => {
+      if (isDamageEyeVisibleRef.current === visible) {
+        return;
+      }
+      for (const node of damageEyeNodesRef.current) {
+        node.visible = visible;
+      }
+      isDamageEyeVisibleRef.current = visible;
+    };
+
+    const isDefeated = goomba.state === GOOMBA_INTERACT_DISABLED_STATE;
+    if (!isDefeated) {
+      root.visible = true;
+      setDamageEyeVisible(false);
+      root.scale.set(1, 1, 1);
+      root.rotation.x = 0;
+      root.rotation.z = 0;
+      deathStartedAtSecondsRef.current = null;
+    } else {
+      if (!wasDefeatedRef.current) {
+        deathStartedAtSecondsRef.current = state.clock.getElapsedTime();
+        deathAnchorPositionRef.current.copy(root.position);
+      }
+      const deathStartedAt = deathStartedAtSecondsRef.current ?? state.clock.getElapsedTime();
+      const deathElapsedSeconds = Math.max(
+        0,
+        state.clock.getElapsedTime() - deathStartedAt,
+      );
+      const deathProgress = THREE.MathUtils.clamp(
+        deathElapsedSeconds / DEATH_ANIM_DURATION_SECONDS,
+        0,
+        1,
+      );
+      const deathEaseOut = 1 - Math.pow(1 - deathProgress, 3);
+      const wobble =
+        Math.sin(deathElapsedSeconds * Math.PI * 2 * 6.5) * (1 - deathProgress);
+
+      root.rotation.x = -DEATH_MAX_TILT_RADIANS * deathEaseOut + wobble * 0.08;
+      root.rotation.z = wobble * 0.18;
+      root.scale.set(
+        THREE.MathUtils.lerp(1, DEATH_SQUASH_XZ_SCALE, deathEaseOut),
+        THREE.MathUtils.lerp(1, DEATH_SQUASH_Y_SCALE, deathEaseOut),
+        THREE.MathUtils.lerp(1, DEATH_SQUASH_XZ_SCALE, deathEaseOut),
+      );
+      root.position.x = deathAnchorPositionRef.current.x;
+      root.position.z = deathAnchorPositionRef.current.z;
+      root.position.y =
+        deathAnchorPositionRef.current.y -
+        DEATH_SINK_DISTANCE * deathEaseOut +
+        Math.sin(deathElapsedSeconds * Math.PI * 2 * 3.2) *
+          (1 - deathProgress) *
+          0.05;
+
+      const damageEyeVisible =
+        deathProgress >= DEATH_EYE_FINAL_CLOSE_PROGRESS ||
+        Math.sin(deathElapsedSeconds * Math.PI * 2 * DEATH_EYE_BLINK_HZ) > 0;
+      setDamageEyeVisible(damageEyeVisible);
+      root.visible = deathElapsedSeconds < DEATH_HIDE_DELAY_SECONDS;
+
+      if (bundle.walkAction) {
+        bundle.walkAction.setEffectiveWeight(0);
+      }
+      if (bundle.idleAction) {
+        bundle.idleAction.setEffectiveWeight(1);
+      }
+      bundle.mixer?.update(deltaSeconds * 0.4);
+      wasDefeatedRef.current = true;
+      return;
+    }
+    wasDefeatedRef.current = false;
+
+    const previousPosition = previousPositionRef.current;
+    previousPosition.copy(root.position);
+
     const positionBlend = 1 - Math.exp(-POSITION_SMOOTHNESS * deltaSeconds);
     root.position.lerp(targetPositionRef.current, positionBlend);
 
-    const yawBlend = 1 - Math.exp(-YAW_SMOOTHNESS * deltaSeconds);
+    const moveDeltaX = root.position.x - previousPosition.x;
+    const moveDeltaZ = root.position.z - previousPosition.z;
+    const moveDeltaSquared = moveDeltaX * moveDeltaX + moveDeltaZ * moveDeltaZ;
+    const isCharging = goomba.state === "charge";
+
+    let nextYaw = targetYawRef.current;
+    if (isCharging) {
+      const toTargetX = targetPositionRef.current.x - root.position.x;
+      const toTargetZ = targetPositionRef.current.z - root.position.z;
+      const toTargetSquared = toTargetX * toTargetX + toTargetZ * toTargetZ;
+      if (toTargetSquared > MOVEMENT_EPSILON_SQUARED) {
+        nextYaw = Math.atan2(toTargetX, -toTargetZ);
+      } else if (moveDeltaSquared > MOVEMENT_EPSILON_SQUARED) {
+        nextYaw = Math.atan2(moveDeltaX, -moveDeltaZ);
+      }
+    }
+
+    const yawBlend = 1 - Math.exp(-(
+      isCharging ? CHARGE_YAW_SMOOTHNESS : YAW_SMOOTHNESS
+    ) * deltaSeconds);
     root.rotation.y = THREE.MathUtils.lerp(
       root.rotation.y,
-      targetYawRef.current,
+      nextYaw,
       yawBlend,
     );
 
-    const targetWalkBlend = goomba.state === "charge" ? 1 : 0;
+    const targetWalkBlend = isCharging ? 1 : 0;
     const walkBlend = THREE.MathUtils.lerp(
       walkBlendRef.current,
       targetWalkBlend,
       1 - Math.exp(-WALK_BLEND_SMOOTHNESS * deltaSeconds),
     );
     walkBlendRef.current = walkBlend;
+
+    walkCycleTimeRef.current += deltaSeconds * THREE.MathUtils.lerp(
+      WALK_CYCLE_IDLE_SPEED,
+      WALK_CYCLE_MOVE_SPEED,
+      walkBlend,
+    );
+    const bobOffset = THREE.MathUtils.lerp(
+      IDLE_BOB_AMPLITUDE * Math.sin(walkCycleTimeRef.current * 0.8),
+      CHARGE_BOB_AMPLITUDE * Math.sin(walkCycleTimeRef.current * 2),
+      walkBlend,
+    );
+    root.position.y += bobOffset;
 
     if (bundle.mixer) {
       if (bundle.walkAction) {
@@ -247,11 +389,6 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
       return;
     }
 
-    walkCycleTimeRef.current += deltaSeconds * THREE.MathUtils.lerp(
-      WALK_CYCLE_IDLE_SPEED,
-      WALK_CYCLE_MOVE_SPEED,
-      walkBlend,
-    );
     const cycleValue = Math.sin(walkCycleTimeRef.current);
     const legSwing = cycleValue * LEG_SWING_ANGLE_RADIANS * walkBlend;
     const armSwing = cycleValue * ARM_SWING_ANGLE_RADIANS * walkBlend;
@@ -269,7 +406,6 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
       ref={rootRef}
       position={[goomba.x, goomba.y, goomba.z]}
       rotation={[0, goomba.yaw, 0]}
-      visible={goomba.state !== GOOMBA_INTERACT_DISABLED_STATE}
     >
       <primitive object={animationBundle.model} scale={GOOMBA_MODEL_SCALE} />
     </group>
