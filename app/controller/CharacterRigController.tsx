@@ -19,7 +19,6 @@ import {
   createFireballManager,
   enqueueFireballSpawn,
   enqueueFireballSpawnRequest,
-  markFireballDeadById,
   stepFireballSimulation,
 } from "../gameplay/abilities/fireballManager";
 import type {
@@ -89,6 +88,45 @@ const IDENTITY_ROTATION = { x: 0, y: 0, z: 0, w: 1 } as const;
 const SNAPSHOT_INTERVAL_SECONDS = 1 / 20;
 const RECONCILIATION_SOFT_DISTANCE = 0.08;
 const RECONCILIATION_HARD_DISTANCE = 2.5;
+
+function getPointToSegmentDistanceSquared(
+  pointX: number,
+  pointY: number,
+  pointZ: number,
+  startX: number,
+  startY: number,
+  startZ: number,
+  endX: number,
+  endY: number,
+  endZ: number,
+) {
+  const segmentX = endX - startX;
+  const segmentY = endY - startY;
+  const segmentZ = endZ - startZ;
+  const segmentLengthSquared =
+    segmentX * segmentX + segmentY * segmentY + segmentZ * segmentZ;
+  if (segmentLengthSquared <= 1e-8) {
+    const dx = pointX - startX;
+    const dy = pointY - startY;
+    const dz = pointZ - startZ;
+    return dx * dx + dy * dy + dz * dz;
+  }
+
+  const pointOffsetX = pointX - startX;
+  const pointOffsetY = pointY - startY;
+  const pointOffsetZ = pointZ - startZ;
+  const projection =
+    (pointOffsetX * segmentX + pointOffsetY * segmentY + pointOffsetZ * segmentZ) /
+    segmentLengthSquared;
+  const clampedProjection = THREE.MathUtils.clamp(projection, 0, 1);
+  const closestX = startX + segmentX * clampedProjection;
+  const closestY = startY + segmentY * clampedProjection;
+  const closestZ = startZ + segmentZ * clampedProjection;
+  const dx = pointX - closestX;
+  const dy = pointY - closestY;
+  const dz = pointZ - closestZ;
+  return dx * dx + dy * dy + dz * dz;
+}
 
 export function CharacterRigController({
   cameraMode,
@@ -604,19 +642,13 @@ export function CharacterRigController({
       buildSpawnRequest,
       castSolidHit,
       sampleTerrainHeight,
-    });
-
-    if (goombas && onLocalGoombaHit) {
-      for (
-        let fireballIndex = 0;
-        fireballIndex < activeFireballManager.activeStates.length;
-        fireballIndex += 1
-      ) {
-        const fireball = activeFireballManager.activeStates[fireballIndex];
-        if (fireball.isDead) {
-          continue;
+      onAfterSimulateFireballStep: (fireballState) => {
+        if (!goombas || !onLocalGoombaHit || fireballState.phase !== "active") {
+          return;
         }
 
+        const fireballHitRadius = GOOMBA_FIREBALL_HIT_RADIUS + FIREBALL_RADIUS;
+        const fireballHitRadiusSquared = fireballHitRadius * fireballHitRadius;
         for (let goombaIndex = 0; goombaIndex < goombas.length; goombaIndex += 1) {
           const goomba = goombas[goombaIndex];
           if (goomba.state === GOOMBA_INTERACT_DISABLED_STATE) {
@@ -626,22 +658,28 @@ export function CharacterRigController({
             continue;
           }
 
-          const distance = Math.hypot(
-            fireball.x - goomba.x,
-            fireball.y - goomba.y,
-            fireball.z - goomba.z,
+          const distanceSquared = getPointToSegmentDistanceSquared(
+            goomba.x,
+            goomba.y,
+            goomba.z,
+            fireballState.prevX,
+            fireballState.prevY,
+            fireballState.prevZ,
+            fireballState.x,
+            fireballState.y,
+            fireballState.z,
           );
-          if (distance > GOOMBA_FIREBALL_HIT_RADIUS) {
+          if (distanceSquared > fireballHitRadiusSquared) {
             continue;
           }
 
-          markFireballDeadById(activeFireballManager, fireball.id);
+          fireballState.isDead = true;
           goombaHitTimestamps.set(goomba.goombaId, nowMs);
           onLocalGoombaHit(goomba.goombaId);
           break;
         }
-      }
-    }
+      },
+    });
     buildFireballRenderFrame(activeFireballManager);
 
     getLookDirection(

@@ -36,6 +36,7 @@ export interface FireballManagerStepParams {
   buildSpawnRequest: () => FireballSpawnRequest;
   castSolidHit: FireballCastSolidHitFn;
   sampleTerrainHeight: FireballTerrainHeightFn;
+  onAfterSimulateFireballStep?: (state: FireballRuntimeState) => void;
 }
 
 function createRenderSlot(): FireballRenderSlot {
@@ -151,16 +152,6 @@ export function enqueueFireballSpawnRequest(
   manager.pendingSpawnRequests.push(request);
 }
 
-export function markFireballDeadById(manager: FireballManager, fireballId: string) {
-  const state = manager.activeStates.find(
-    (candidate) => candidate.id === fireballId,
-  );
-  if (!state) {
-    return;
-  }
-  state.isDead = true;
-}
-
 function spawnFireball(
   manager: FireballManager,
   spawnRequest: FireballSpawnRequest,
@@ -221,11 +212,15 @@ export function stepFireballSimulation(
 
     // Pass 3 - run deterministic simulation step.
     for (let index = 0; index < manager.activeStates.length; index += 1) {
-      simulateFireballStep(manager.activeStates[index], {
+      const state = manager.activeStates[index];
+      simulateFireballStep(state, {
         dt: FIREBALL_FIXED_STEP_SECONDS,
         castSolidHit: params.castSolidHit,
         sampleTerrainHeight: params.sampleTerrainHeight,
       });
+      if (!state.isDead) {
+        params.onAfterSimulateFireballStep?.(state);
+      }
     }
 
     // Pass 4 - deactivate and compact dead entries.

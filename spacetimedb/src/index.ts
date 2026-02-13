@@ -28,7 +28,8 @@ const GOOMBA_CHARGE_DURATION_MS = 900;
 const GOOMBA_CHARGE_COOLDOWN_MS = 2800;
 const GOOMBA_PLAYER_HIT_RADIUS = 1.1;
 const GOOMBA_RESPAWN_MS = 6000;
-const GOOMBA_INTERACT_RADIUS = 9;
+// Supports ranged fireball hits (spawn distance + travel distance + hit radius buffer).
+const GOOMBA_HIT_VALIDATION_RADIUS = 28;
 
 const WORLD_STATE_ROW_ID = 'global';
 const WORLD_DAY_CYCLE_DURATION_SECONDS = 300;
@@ -1184,13 +1185,12 @@ spacetimedb.reducer(
       return { tag: 'ok' };
     }
 
-    const distanceToGoomba = Math.hypot(
+    const planarDistanceToGoomba = Math.hypot(
       player.x - goomba.x,
-      player.y - goomba.y,
       player.z - goomba.z,
     );
 
-    if (distanceToGoomba > GOOMBA_INTERACT_RADIUS) {
+    if (planarDistanceToGoomba > GOOMBA_HIT_VALIDATION_RADIUS) {
       return { tag: 'err', value: 'goomba_out_of_range' };
     }
 
