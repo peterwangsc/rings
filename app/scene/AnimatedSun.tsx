@@ -1,8 +1,8 @@
 "use client";
 
-import { Sky, Stars } from "@react-three/drei";
+import { Stars } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
-import { type MutableRefObject, useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   AdditiveBlending,
   AmbientLight,
@@ -21,32 +21,47 @@ import {
   SpriteMaterial,
   Vector3,
 } from "three";
-import type { Sky as SkyImpl } from "three-stdlib";
 import { HORIZON_COLOR, SKY_FOG_FAR, SKY_FOG_NEAR } from "../utils/constants";
+import { InfiniteSky } from "./sky/InfiniteSky";
+import type { ThreeSkyObject } from "./sky/ThreeSkyObject";
+import {
+  ACTIVE_TERRAIN_CHUNK_RADIUS,
+  TERRAIN_CHUNK_SIZE,
+} from "./world/terrainChunks";
+import type { WorldEntityManager } from "./world/worldEntityManager";
 
 /** Full cycle in seconds - sun rises, crosses the sky, and sets. */
-const SUN_CYCLE_DURATION = 180;
+const SUN_CYCLE_DURATION = 300;
 /** Radius of the sun's circular arc. */
 const SUN_ORBIT_RADIUS = 18;
 const SUN_ORBIT_Z_OFFSET = 6;
+const SUN_VISUAL_ORBIT_RADIUS = 74;
+const ACTIVE_CHUNK_GRID_SIZE = ACTIVE_TERRAIN_CHUNK_RADIUS * 2 + 1;
+const ACTIVE_CHUNK_GRID_WORLD_SPAN =
+  ACTIVE_CHUNK_GRID_SIZE * TERRAIN_CHUNK_SIZE;
+const SKY_DOME_DISTANCE = ACTIVE_CHUNK_GRID_WORLD_SPAN;
 /** Moon orbits at the same radius, opposite the sun. */
 const MOON_ORBIT_RADIUS = 80;
 const MOON_ORBIT_Z_OFFSET = -10;
-const MOON_VISUAL_RADIUS = 1.8;
+const MOON_VISUAL_ORBIT_RADIUS = SKY_DOME_DISTANCE * 0.92;
+const MOON_VISUAL_RADIUS = 5.8;
 const MOON_HALO_BASE_SIZE = 11;
 const MOON_HALO_PULSE_SIZE = 13.5;
-const MOON_HALO_MAX_OPACITY = 0.36;
+const MOON_HALO_MAX_OPACITY = 0.52;
+const MOON_LIGHT_MAX_INTENSITY = 0.55;
 const SUN_LIGHT_DAY_INTENSITY = 1.35;
 const SUN_SHADOW_ENABLE_THRESHOLD = 0.12;
+const SUN_SET_FALLOFF_POWER = 1.5;
+const SKY_CAMERA_Y_OFFSET = -14;
 const NIGHT_SKY_COLOR = "#071634";
-const SKY_FADE_START = 0.15;
-const SKY_FADE_END = 0.65;
 const HEMISPHERE_LIGHT_DAY_INTENSITY = 0.75;
 const HEMISPHERE_LIGHT_NIGHT_INTENSITY = 0.0;
 const AMBIENT_LIGHT_DAY_INTENSITY = 0.75;
 const AMBIENT_LIGHT_NIGHT_INTENSITY = 0.2;
-const NIGHT_FOG_NEAR = 1000;
-const NIGHT_FOG_FAR = 1100;
+const NIGHT_FOG_NEAR = 30;
+const NIGHT_FOG_FAR = 100;
+const NIGHT_FACTOR_DAY_END_HEIGHT = 0.12;
+const NIGHT_FACTOR_NIGHT_START_HEIGHT = -0.08;
 
 type SkyMaterialWithSunPosition = ShaderMaterial & {
   uniforms: {
@@ -54,6 +69,7 @@ type SkyMaterialWithSunPosition = ShaderMaterial & {
     rayleigh: { value: number };
     mieCoefficient: { value: number };
     mieDirectionalG: { value: number };
+    sunsetFalloffPower: { value: number };
     sunPosition: {
       value: {
         set: (x: number, y: number, z: number) => void;
@@ -63,11 +79,11 @@ type SkyMaterialWithSunPosition = ShaderMaterial & {
 };
 
 export function AnimatedSun({
-  followPositionRef,
+  worldEntityManager,
 }: {
-  followPositionRef: MutableRefObject<Vector3>;
+  worldEntityManager: WorldEntityManager;
 }) {
-  const skyRef = useRef<SkyImpl>(null);
+  const skyRef = useRef<ThreeSkyObject>(null);
   const lightRef = useRef<DirectionalLight>(null);
   const sunTargetRef = useRef<Object3D>(null);
   const moonRef = useRef<Mesh>(null);
@@ -78,8 +94,11 @@ export function AnimatedSun({
   const hemisphereRef = useRef<HemisphereLight>(null);
   const ambientRef = useRef<AmbientLight>(null);
   const angleRef = useRef(Math.PI * 0.25);
+  const lightAnchorRef = useRef(new Vector3());
   const sunOffsetRef = useRef(new Vector3());
+  const sunVisualOffsetRef = useRef(new Vector3());
   const moonOffsetRef = useRef(new Vector3());
+  const moonVisualOffsetRef = useRef(new Vector3());
   const daySkyColor = useMemo(() => new Color(HORIZON_COLOR), []);
   const nightSkyColor = useMemo(() => new Color(NIGHT_SKY_COLOR), []);
   const blendedSkyColor = useMemo(() => new Color(HORIZON_COLOR), []);
@@ -138,14 +157,6 @@ export function AnimatedSun({
   }, []);
 
   useEffect(() => {
-    if (skyRef.current) {
-      skyRef.current.renderOrder = -10;
-      skyRef.current.frustumCulled = false;
-      const skyMaterial = skyRef.current.material;
-      if (!Array.isArray(skyMaterial)) {
-        skyMaterial.depthWrite = false;
-      }
-    }
     if (starsRef.current) {
       starsRef.current.frustumCulled = false;
       starsRef.current.renderOrder = 1;
@@ -156,12 +167,23 @@ export function AnimatedSun({
         starsMaterial.toneMapped = false;
       }
     }
+    if (skyRef.current) {
+      skyRef.current.renderOrder = -10;
+      skyRef.current.frustumCulled = false;
+      const skyMaterial = skyRef.current.material;
+      if (!Array.isArray(skyMaterial)) {
+        skyMaterial.depthWrite = false;
+        skyMaterial.depthTest = false;
+      }
+    }
   }, []);
 
   useFrame((state, delta) => {
     angleRef.current += (delta / SUN_CYCLE_DURATION) * Math.PI * 2;
     const angle = angleRef.current;
-    const followPosition = followPositionRef.current;
+    const playerPosition = worldEntityManager.playerPosition;
+    const cameraPosition = state.camera.position;
+    const lightAnchor = lightAnchorRef.current.copy(playerPosition);
 
     const sunOffset = sunOffsetRef.current.set(
       SUN_ORBIT_RADIUS * Math.cos(angle),
@@ -170,17 +192,31 @@ export function AnimatedSun({
     );
     const sunHeight = sunOffset.y / SUN_ORBIT_RADIUS;
     const sunLightFactor = MathUtils.smoothstep(sunHeight, -0.04, 0.08);
-    const nightFactor = MathUtils.clamp((-sunHeight - 0.08) / 0.42, 0, 1);
+    const sunLightIntensityFactor = Math.pow(
+      Math.max(0, sunLightFactor),
+      SUN_SET_FALLOFF_POWER,
+    );
+    const nightFactor =
+      1 -
+      MathUtils.smoothstep(
+        sunHeight,
+        NIGHT_FACTOR_NIGHT_START_HEIGHT,
+        NIGHT_FACTOR_DAY_END_HEIGHT,
+      );
+    const sunVisualOffset = sunVisualOffsetRef.current
+      .copy(sunOffset)
+      .normalize()
+      .multiplyScalar(SUN_VISUAL_ORBIT_RADIUS);
 
     if (skyRef.current) {
-      skyRef.current.position.copy(followPosition);
+      skyRef.current.position.copy(lightAnchor);
       const skyMaterial = skyRef.current.material;
       if (!Array.isArray(skyMaterial)) {
         const typedSkyMaterial = skyMaterial as SkyMaterialWithSunPosition;
         typedSkyMaterial.uniforms.sunPosition.value.set(
-          sunOffset.x,
-          sunOffset.y,
-          sunOffset.z,
+          sunVisualOffset.x,
+          sunVisualOffset.y,
+          sunVisualOffset.z,
         );
         typedSkyMaterial.uniforms.turbidity.value = MathUtils.lerp(
           0.8,
@@ -202,13 +238,10 @@ export function AnimatedSun({
           0.0,
           nightFactor,
         );
-        const skyFade = MathUtils.smoothstep(
-          nightFactor,
-          SKY_FADE_START,
-          SKY_FADE_END,
-        );
-        typedSkyMaterial.transparent = true;
-        typedSkyMaterial.opacity = 1 - skyFade;
+        typedSkyMaterial.uniforms.sunsetFalloffPower.value =
+          SUN_SET_FALLOFF_POWER;
+        typedSkyMaterial.transparent = false;
+        typedSkyMaterial.opacity = 1;
       }
     }
 
@@ -218,17 +251,22 @@ export function AnimatedSun({
       MOON_ORBIT_RADIUS * Math.sin(moonAngle),
       MOON_ORBIT_Z_OFFSET,
     );
+    const moonVisualOffset = moonVisualOffsetRef.current
+      .copy(moonOffset)
+      .normalize()
+      .multiplyScalar(MOON_VISUAL_ORBIT_RADIUS);
     const sceneFog = state.scene.fog;
     blendedSkyColor.lerpColors(daySkyColor, nightSkyColor, nightFactor);
     state.scene.background = blendedSkyColor;
 
     if (lightRef.current) {
-      lightRef.current.position.copy(followPosition).add(sunOffset);
-      lightRef.current.target.position.copy(followPosition);
+      lightRef.current.position.copy(lightAnchor).add(sunOffset);
+      lightRef.current.target.position.copy(lightAnchor);
       lightRef.current.target.updateMatrixWorld();
-      lightRef.current.intensity = SUN_LIGHT_DAY_INTENSITY * sunLightFactor;
+      lightRef.current.intensity =
+        SUN_LIGHT_DAY_INTENSITY * sunLightIntensityFactor;
       lightRef.current.castShadow =
-        sunLightFactor > SUN_SHADOW_ENABLE_THRESHOLD;
+        sunLightIntensityFactor > SUN_SHADOW_ENABLE_THRESHOLD;
     }
 
     if (sceneFog instanceof ThreeFog) {
@@ -238,17 +276,18 @@ export function AnimatedSun({
     }
 
     if (moonRef.current) {
-      moonRef.current.position.copy(followPosition).add(moonOffset);
+      moonRef.current.position.copy(cameraPosition).add(moonVisualOffset);
     }
     if (moonLightRef.current) {
-      moonLightRef.current.position.copy(followPosition).add(moonOffset);
-      moonLightRef.current.target.position.copy(followPosition);
+      moonLightRef.current.position.copy(lightAnchor).add(moonOffset);
+      moonLightRef.current.target.position.copy(lightAnchor);
       moonLightRef.current.target.updateMatrixWorld();
       const moonElevation = Math.max(0, moonOffset.y / MOON_ORBIT_RADIUS);
-      moonLightRef.current.intensity = moonElevation * 0.3 * nightFactor;
+      moonLightRef.current.intensity =
+        moonElevation * MOON_LIGHT_MAX_INTENSITY * nightFactor;
       if (moonHaloRef.current) {
         const moonGlowFactor = moonElevation * nightFactor;
-        moonHaloRef.current.position.copy(followPosition).add(moonOffset);
+        moonHaloRef.current.position.copy(cameraPosition).add(moonVisualOffset);
         const haloSize = MathUtils.lerp(
           MOON_HALO_BASE_SIZE,
           MOON_HALO_PULSE_SIZE,
@@ -263,7 +302,7 @@ export function AnimatedSun({
       }
     }
     if (starsRef.current) {
-      starsRef.current.position.copy(state.camera.position);
+      starsRef.current.position.copy(lightAnchor);
       starsRef.current.visible = nightFactor > 0.01;
       const starsMaterial = starsRef.current.material;
       if (!Array.isArray(starsMaterial)) {
@@ -300,17 +339,41 @@ export function AnimatedSun({
         fade
         speed={0.08}
       />
-      <Sky
+      <InfiniteSky
         ref={skyRef}
         sunPosition={[8, 14, 6]}
         turbidity={0.8}
         rayleigh={0.2}
         mieCoefficient={0.0002}
         mieDirectionalG={0.999}
-        distance={50}
+        distance={SKY_DOME_DISTANCE}
         inclination={0.3}
         azimuth={0.5}
+        sunsetFalloffPower={SUN_SET_FALLOFF_POWER}
+        cameraOffsetY={SKY_CAMERA_Y_OFFSET}
+        follow="none"
       />
+      <mesh ref={moonRef} position={[-80, 0, -10]}>
+        <sphereGeometry args={[MOON_VISUAL_RADIUS, 32, 32]} />
+        <meshBasicMaterial color="#F1F6FF" toneMapped={false} fog={false} />
+      </mesh>
+      {moonGlowTexture ? (
+        <sprite
+          ref={moonHaloRef}
+          position={[-80, 0, -10]}
+          scale={[MOON_HALO_BASE_SIZE, MOON_HALO_BASE_SIZE, 1]}
+        >
+          <spriteMaterial
+            map={moonGlowTexture}
+            color="#A7C3FF"
+            transparent
+            opacity={0}
+            blending={AdditiveBlending}
+            depthWrite={false}
+            fog={false}
+          />
+        </sprite>
+      ) : null}
       <directionalLight
         ref={lightRef}
         castShadow
@@ -327,26 +390,6 @@ export function AnimatedSun({
         shadow-bias={-0.0004}
         shadow-normalBias={0.03}
       />
-      <mesh ref={moonRef} position={[-80, 0, -10]}>
-        <sphereGeometry args={[MOON_VISUAL_RADIUS, 32, 32]} />
-        <meshBasicMaterial color="#DCE4FF" />
-      </mesh>
-      {moonGlowTexture ? (
-        <sprite
-          ref={moonHaloRef}
-          position={[-80, 0, -10]}
-          scale={[MOON_HALO_BASE_SIZE, MOON_HALO_BASE_SIZE, 1]}
-        >
-          <spriteMaterial
-            map={moonGlowTexture}
-            color="#A7C3FF"
-            transparent
-            opacity={0}
-            blending={AdditiveBlending}
-            depthWrite={false}
-          />
-        </sprite>
-      ) : null}
       <directionalLight
         ref={moonLightRef}
         color="#B0C4DE"

@@ -2,20 +2,23 @@
 
 import { Physics } from "@react-three/rapier";
 import { Canvas } from "@react-three/fiber";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { PCFShadowMap, Vector3 } from "three";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { PCFShadowMap } from "three";
 import type { CameraMode } from "../camera/cameraTypes";
 import { CharacterRigController } from "../controller/CharacterRigController";
-import type {
-  MobileEmoteRequest,
-  MobileMoveInput,
-} from "../controller/controllerTypes";
+import type { MobileMoveInput } from "../controller/controllerTypes";
 import { RingField } from "../gameplay/collectibles/RingField";
 import { GameHUD } from "../hud/GameHUD";
 import {
   FPS_TOGGLE_KEY,
   HORIZON_COLOR,
-  RING_PLACEMENTS,
   SKY_FOG_FAR,
   SKY_FOG_NEAR,
   THIRD_PERSON_CAMERA_FOV,
@@ -26,11 +29,23 @@ import { FrameRateProbe } from "./FrameRateProbe";
 import { MobileControlsOverlay } from "./MobileControlsOverlay";
 import { DesktopSplashOverlay, MobileOrientationOverlay } from "./SceneOverlays";
 import { WorldGeometry } from "./WorldGeometry";
+import {
+  ACTIVE_TERRAIN_CHUNK_RADIUS,
+  TERRAIN_CHUNK_SIZE,
+} from "./world/terrainChunks";
+import {
+  createWorldEntityManager,
+  disposeWorldEntityManager,
+  updateWorldPlayerPosition,
+} from "./world/worldEntityManager";
 
 const CAMERA_MODE_CYCLE: readonly CameraMode[] = [
   "third_person",
   "first_person",
 ];
+const ACTIVE_CHUNK_GRID_SIZE = ACTIVE_TERRAIN_CHUNK_RADIUS * 2 + 1;
+const ACTIVE_CHUNK_GRID_WORLD_SPAN = ACTIVE_CHUNK_GRID_SIZE * TERRAIN_CHUNK_SIZE;
+const CAMERA_FAR_DISTANCE = ACTIVE_CHUNK_GRID_WORLD_SPAN * 1.5;
 
 export function CharacterRigScene() {
   const [cameraMode, setCameraMode] = useState<CameraMode>("third_person");
@@ -40,13 +55,13 @@ export function CharacterRigScene() {
   const [isSplashDismissedByTouch, setIsSplashDismissedByTouch] =
     useState(false);
   const [fps, setFps] = useState<number | null>(null);
-  const [collectedRingIds, setCollectedRingIds] = useState<ReadonlySet<string>>(
-    new Set(),
+  const worldEntityManager = useMemo(
+    () => createWorldEntityManager(),
+    [],
   );
-  const playerWorldPositionRef = useRef(new Vector3());
   const mobileMoveInputRef = useRef<MobileMoveInput>({ x: 0, y: 0 });
   const mobileJumpPressedRef = useRef(false);
-  const mobileEmoteRequestRef = useRef<MobileEmoteRequest>(null);
+  const mobileFireballTriggerRef = useRef(0);
 
   const handleToggleCameraMode = useCallback(() => {
     setCameraMode((currentMode) => {
@@ -75,23 +90,18 @@ export function CharacterRigScene() {
     setIsFpsVisible((isVisible) => !isVisible);
   }, []);
 
-  const handleRingCollected = useCallback((ringId: string) => {
-    setCollectedRingIds((prev) => {
-      if (prev.has(ringId)) {
-        return prev;
-      }
-      const next = new Set(prev);
-      next.add(ringId);
-      return next;
-    });
-  }, []);
-
   const handlePlayerPositionUpdate = useCallback(
     (x: number, y: number, z: number) => {
-      playerWorldPositionRef.current.set(x, y, z);
+      updateWorldPlayerPosition(worldEntityManager, x, y, z);
     },
-    [],
+    [worldEntityManager],
   );
+
+  useEffect(() => {
+    return () => {
+      disposeWorldEntityManager(worldEntityManager);
+    };
+  }, [worldEntityManager]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -130,21 +140,18 @@ export function CharacterRigScene() {
         camera={{
           fov: THIRD_PERSON_CAMERA_FOV,
           near: 0.1,
-          far: 200,
+          far: CAMERA_FAR_DISTANCE,
           position: [0, 2.2, 6],
         }}
         className="h-full w-full touch-none"
       >
-        <AnimatedSun followPositionRef={playerWorldPositionRef} />
+        <AnimatedSun worldEntityManager={worldEntityManager} />
         {isFpsVisible ? <FrameRateProbe onUpdate={handleFpsUpdate} /> : null}
         <fog attach="fog" args={[HORIZON_COLOR, SKY_FOG_NEAR, SKY_FOG_FAR]} />
         <Physics gravity={[0, WORLD_GRAVITY_Y, 0]}>
           <Suspense fallback={null}>
-            <WorldGeometry playerPositionRef={playerWorldPositionRef} />
-            <RingField
-              collectedIds={collectedRingIds}
-              onCollect={handleRingCollected}
-            />
+            <WorldGeometry worldEntityManager={worldEntityManager} />
+            <RingField worldEntityManager={worldEntityManager} />
             <CharacterRigController
               cameraMode={cameraMode}
               onToggleCameraMode={handleToggleCameraMode}
@@ -154,15 +161,13 @@ export function CharacterRigScene() {
               onPlayerPositionUpdate={handlePlayerPositionUpdate}
               mobileMoveInputRef={mobileMoveInputRef}
               mobileJumpPressedRef={mobileJumpPressedRef}
-              mobileEmoteRequestRef={mobileEmoteRequestRef}
+              mobileFireballTriggerRef={mobileFireballTriggerRef}
+              fireballManager={worldEntityManager.fireballManager}
             />
           </Suspense>
         </Physics>
       </Canvas>
-      <GameHUD
-        ringCount={collectedRingIds.size}
-        totalRings={RING_PLACEMENTS.length}
-      />
+      <GameHUD worldEntityManager={worldEntityManager} />
       {isFpsVisible ? (
         <div className="pointer-events-none absolute right-4 top-4 z-20 rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
           <p className="font-semibold tracking-wide text-white">FPS</p>
@@ -176,7 +181,7 @@ export function CharacterRigScene() {
       <MobileControlsOverlay
         moveInputRef={mobileMoveInputRef}
         jumpPressedRef={mobileJumpPressedRef}
-        emoteRequestRef={mobileEmoteRequestRef}
+        fireballTriggerRef={mobileFireballTriggerRef}
         onToggleCameraMode={handleToggleCameraMode}
       />
       <MobileOrientationOverlay />
