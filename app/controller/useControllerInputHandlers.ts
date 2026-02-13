@@ -3,13 +3,10 @@
 import { useEffect, type MutableRefObject } from "react";
 import * as THREE from "three";
 import { updateLookAngles } from "../camera/cameraRig";
-import { type EmoteState } from "../lib/CharacterActor";
 import {
   CAMERA_MODE_TOGGLE_KEY,
   DEFAULT_INPUT_STATE,
-  HAPPY_EMOTE_KEY,
   JUMP_INPUT_BUFFER_SECONDS,
-  SAD_EMOTE_KEY,
 } from "../utils/constants";
 import type { CharacterInputState } from "./controllerTypes";
 
@@ -21,8 +18,7 @@ export function useControllerInputHandlers({
   onToggleDefaultGait,
   inputStateRef,
   jumpIntentTimerRef,
-  emoteRequestRef,
-  activeEmoteRef,
+  fireballRequestCountRef,
   mobileJumpWasPressedRef,
   isPointerLockedRef,
   activeTouchPointerIdRef,
@@ -37,8 +33,7 @@ export function useControllerInputHandlers({
   onToggleDefaultGait: () => void;
   inputStateRef: MutableRefObject<CharacterInputState>;
   jumpIntentTimerRef: MutableRefObject<number>;
-  emoteRequestRef: MutableRefObject<EmoteState | null>;
-  activeEmoteRef: MutableRefObject<EmoteState | null>;
+  fireballRequestCountRef: MutableRefObject<number>;
   mobileJumpWasPressedRef: MutableRefObject<boolean>;
   isPointerLockedRef: MutableRefObject<boolean>;
   activeTouchPointerIdRef: MutableRefObject<number | null>;
@@ -76,8 +71,6 @@ export function useControllerInputHandlers({
     const resetInputState = () => {
       inputStateRef.current = { ...DEFAULT_INPUT_STATE };
       jumpIntentTimerRef.current = 0;
-      emoteRequestRef.current = null;
-      activeEmoteRef.current = null;
       mobileJumpWasPressedRef.current = false;
       clearActiveTouchPointer();
     };
@@ -122,16 +115,6 @@ export function useControllerInputHandlers({
 
       if (event.code === "Space" && !event.repeat) {
         jumpIntentTimerRef.current = JUMP_INPUT_BUFFER_SECONDS;
-      }
-
-      if (event.code === HAPPY_EMOTE_KEY && !event.repeat) {
-        emoteRequestRef.current = "happy";
-        return;
-      }
-
-      if (event.code === SAD_EMOTE_KEY && !event.repeat) {
-        emoteRequestRef.current = "sad";
-        return;
       }
 
       setInputState(event.code, true);
@@ -191,6 +174,11 @@ export function useControllerInputHandlers({
         return;
       }
       if (event.button !== 0) {
+        return;
+      }
+      if (isPointerLockedRef.current) {
+        fireballRequestCountRef.current += 1;
+        event.preventDefault();
         return;
       }
       requestPointerLock();
@@ -353,13 +341,12 @@ export function useControllerInputHandlers({
       resetInputState();
     };
   }, [
-    activeEmoteRef,
     activeTouchPointerIdRef,
     activeTouchPositionRef,
     camera,
     cameraPitchRef,
     cameraYawRef,
-    emoteRequestRef,
+    fireballRequestCountRef,
     gl,
     inputStateRef,
     isPointerLockedRef,

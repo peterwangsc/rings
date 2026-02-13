@@ -206,8 +206,8 @@ body {
 }
 
 .mobile-jump-button {
-  min-width: 112px;
-  height: 112px;
+  min-width: 90px;
+  height: 90px;
   border-radius: 999px;
   border: 1px solid rgba(204, 244, 255, 0.74);
   background:
@@ -230,13 +230,13 @@ body {
 
 .mobile-jump-cluster {
   position: relative;
-  width: 204px;
-  height: 168px;
+  width: 198px;
+  height: 128px;
 }
 
 .mobile-jump-cluster__jump {
   position: absolute;
-  top: 28px;
+  top: 12px;
   right: 0;
 }
 
@@ -250,9 +250,9 @@ body {
 }
 
 .mobile-jump-button__label {
-  font-size: 0.88rem;
+  font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   color: #0d3f60;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
@@ -273,65 +273,52 @@ body {
   filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.28));
 }
 
-.mobile-control-icon--emote {
-  width: 1.22rem;
-  height: 1.22rem;
-}
-
 .mobile-control-icon--camera {
   width: 1.24rem;
   height: 1.24rem;
 }
 
-.mobile-emote-button {
+.mobile-control-icon--fireball {
+  width: 1.34rem;
+  height: 1.34rem;
+}
+
+.mobile-fireball-button {
   position: absolute;
-  width: 52px;
-  height: 52px;
+  left: 30px;
+  bottom: 0;
+  width: 76px;
+  height: 76px;
   border-radius: 999px;
-  border: 1px solid rgba(200, 241, 255, 0.66);
+  border: 1px solid rgba(255, 214, 149, 0.72);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  background:
+    radial-gradient(
+      circle at 30% 24%,
+      rgba(255, 245, 225, 0.92),
+      rgba(255, 151, 77, 0.54)
+    ),
+    rgba(213, 86, 28, 0.76);
   box-shadow:
-    0 14px 22px -18px rgba(0, 0, 0, 0.8),
-    inset 0 1px 0 rgba(255, 255, 255, 0.54),
-    inset 0 -6px 10px -8px rgba(10, 56, 84, 0.66);
-  color: #12384d;
+    0 14px 24px -16px rgba(0, 0, 0, 0.82),
+    inset 0 1px 0 rgba(255, 238, 208, 0.62),
+    inset 0 -8px 12px -8px rgba(124, 42, 8, 0.72);
+  color: #6a2105;
   transition:
     transform 0.08s ease,
     filter 0.12s ease,
     box-shadow 0.12s ease;
 }
 
-.mobile-emote-button:active {
+.mobile-fireball-button--active {
   transform: translateY(1px) scale(0.97);
-  filter: brightness(0.95);
-}
-
-.mobile-emote-button--happy {
-  left: 48px;
-  top: 11px;
-  color: #0f4a3d;
-  background:
-    radial-gradient(
-      circle at 30% 24%,
-      rgba(247, 255, 250, 0.86),
-      rgba(112, 223, 183, 0.45)
-    ),
-    rgba(28, 124, 103, 0.68);
-}
-
-.mobile-emote-button--sad {
-  left: 48px;
-  bottom: 11px;
-  color: #163d60;
-  background:
-    radial-gradient(
-      circle at 30% 24%,
-      rgba(247, 252, 255, 0.84),
-      rgba(132, 193, 241, 0.44)
-    ),
-    rgba(38, 98, 152, 0.68);
+  filter: brightness(0.92);
+  box-shadow:
+    0 9px 16px -14px rgba(0, 0, 0, 0.82),
+    inset 0 1px 0 rgba(255, 238, 208, 0.52),
+    inset 0 -12px 16px -8px rgba(124, 42, 8, 0.78);
 }
 
 .mobile-view-toggle-button {

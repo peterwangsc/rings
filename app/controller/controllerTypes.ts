@@ -1,4 +1,5 @@
 import type { CameraMode } from "../camera/cameraTypes";
+import type { FireballManager } from "../gameplay/abilities/fireballManager";
 import type { MutableRefObject } from "react";
 
 export interface CharacterInputState {
@@ -15,8 +16,6 @@ export interface MobileMoveInput {
   y: number;
 }
 
-export type MobileEmoteRequest = "happy" | "sad" | null;
-
 export interface CharacterRigControllerProps {
   readonly cameraMode: CameraMode;
   readonly onToggleCameraMode: () => void;
@@ -26,5 +25,6 @@ export interface CharacterRigControllerProps {
   readonly onPlayerPositionUpdate?: (x: number, y: number, z: number) => void;
   readonly mobileMoveInputRef?: MutableRefObject<MobileMoveInput>;
   readonly mobileJumpPressedRef?: MutableRefObject<boolean>;
-  readonly mobileEmoteRequestRef?: MutableRefObject<MobileEmoteRequest>;
+  readonly mobileFireballTriggerRef?: MutableRefObject<number>;
+  readonly fireballManager?: FireballManager;
 }

@@ -7,17 +7,24 @@ import {
   type RapierRigidBody,
 } from "@react-three/rapier";
 import { useFrame, useThree } from "@react-three/fiber";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import {
   applyFirstPersonCamera,
   applyThirdPersonCamera,
 } from "../camera/cameraRig";
+import { FireballRenderLayer } from "../gameplay/abilities/FireballRenderLayer";
 import {
-  CharacterActor,
-  type EmoteState,
-  type MotionState,
-} from "../lib/CharacterActor";
+  buildFireballRenderFrame,
+  createFireballManager,
+  enqueueFireballSpawn,
+  stepFireballSimulation,
+} from "../gameplay/abilities/fireballManager";
+import type {
+  FireballCastQuery,
+  FireballSpawnRequest,
+} from "../gameplay/abilities/fireballTypes";
+import { CharacterActor, type MotionState } from "../lib/CharacterActor";
 import type {
   CharacterInputState,
   CharacterRigControllerProps,
@@ -27,6 +34,8 @@ import {
   CHARACTER_MODEL_YAW_OFFSET,
   DEFAULT_INPUT_STATE,
   FIRST_PERSON_CAMERA_FOV,
+  FIREBALL_MAX_ACTIVE_COUNT,
+  FIREBALL_RADIUS,
   GROUNDED_GRACE_SECONDS,
   JUMP_INPUT_BUFFER_SECONDS,
   MAX_FRAME_DELTA_SECONDS,
@@ -66,6 +75,7 @@ import {
   setMotionStateIfChanged,
   updateUngroundedTimer,
 } from "../utils/physics";
+import { sampleTerrainHeight } from "../utils/terrain";
 import { useControllerInputHandlers } from "./useControllerInputHandlers";
 
 const IDENTITY_ROTATION = { x: 0, y: 0, z: 0, w: 1 } as const;
@@ -79,7 +89,8 @@ export function CharacterRigController({
   onPlayerPositionUpdate,
   mobileMoveInputRef,
   mobileJumpPressedRef,
-  mobileEmoteRequestRef,
+  mobileFireballTriggerRef,
+  fireballManager,
 }: CharacterRigControllerProps) {
   const { camera, gl } = useThree();
   const { rapier, world } = useRapier();
@@ -100,10 +111,16 @@ export function CharacterRigController({
   const characterYawRef = useRef(0);
   const smoothedPlanarSpeedRef = useRef(0);
   const mobileJumpWasPressedRef = useRef(false);
-  const emoteRequestRef = useRef<EmoteState | null>(null);
-  const activeEmoteRef = useRef<EmoteState | null>(null);
+  const fireballRequestCountRef = useRef(0);
+  const lastProcessedFireballRequestCountRef = useRef(0);
+  const lastProcessedMobileFireballTriggerRef = useRef(0);
   const motionStateRef = useRef<MotionState>("idle");
   const [actorMotionState, setActorMotionState] = useState<MotionState>("idle");
+  const fallbackFireballManager = useMemo(
+    () => createFireballManager(FIREBALL_MAX_ACTIVE_COUNT),
+    [],
+  );
+  const activeFireballManager = fireballManager ?? fallbackFireballManager;
 
   const moveDirectionRef = useRef(new THREE.Vector3());
   const forwardRef = useRef(new THREE.Vector3());
@@ -117,16 +134,15 @@ export function CharacterRigController({
   const lookTargetRef = useRef(new THREE.Vector3());
   const visualQuaternionRef = useRef(new THREE.Quaternion());
   const cameraCollisionDirectionRef = useRef(new THREE.Vector3());
+  const fireballLaunchDirectionRef = useRef(new THREE.Vector3());
+  const fireballPlanarDirectionRef = useRef(new THREE.Vector3());
+  const fireballSpawnPositionRef = useRef(new THREE.Vector3());
   const perspectiveCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const cameraCollisionShape = useMemo(
     () => new rapier.Ball(THIRD_PERSON_CAMERA_COLLISION_RADIUS),
     [rapier],
   );
-  const handleEmoteFinished = useCallback((emoteState: EmoteState) => {
-    if (activeEmoteRef.current === emoteState) {
-      activeEmoteRef.current = null;
-    }
-  }, []);
+  const fireballCastShape = useMemo(() => new rapier.Ball(FIREBALL_RADIUS), [rapier]);
 
   useEffect(() => {
     perspectiveCameraRef.current =
@@ -154,8 +170,7 @@ export function CharacterRigController({
     onToggleDefaultGait,
     inputStateRef,
     jumpIntentTimerRef,
-    emoteRequestRef,
-    activeEmoteRef,
+    fireballRequestCountRef,
     mobileJumpWasPressedRef,
     isPointerLockedRef,
     activeTouchPointerIdRef,
@@ -177,16 +192,22 @@ export function CharacterRigController({
     const input = inputStateRef.current;
     const mobileMoveInput = mobileMoveInputRef?.current;
     const mobileJumpPressed = mobileJumpPressedRef?.current ?? false;
-    const mobileEmoteRequest = mobileEmoteRequestRef?.current ?? null;
+    const mobileFireballTriggerCount = mobileFireballTriggerRef?.current ?? 0;
     if (mobileJumpPressed && !mobileJumpWasPressedRef.current) {
       jumpIntentTimerRef.current = JUMP_INPUT_BUFFER_SECONDS;
     }
     mobileJumpWasPressedRef.current = mobileJumpPressed;
-    if (mobileEmoteRequest) {
-      emoteRequestRef.current = mobileEmoteRequest;
-      if (mobileEmoteRequestRef) {
-        mobileEmoteRequestRef.current = null;
-      }
+    if (mobileFireballTriggerCount > lastProcessedMobileFireballTriggerRef.current) {
+      fireballRequestCountRef.current +=
+        mobileFireballTriggerCount - lastProcessedMobileFireballTriggerRef.current;
+      lastProcessedMobileFireballTriggerRef.current = mobileFireballTriggerCount;
+    }
+
+    const pendingFireballRequests =
+      fireballRequestCountRef.current - lastProcessedFireballRequestCountRef.current;
+    if (pendingFireballRequests > 0) {
+      enqueueFireballSpawn(activeFireballManager, pendingFireballRequests);
+      lastProcessedFireballRequestCountRef.current += pendingFireballRequests;
     }
 
     const translation = body.translation();
@@ -313,20 +334,6 @@ export function CharacterRigController({
       groundedRecoveryLatchRef.current = false;
     }
 
-    const canPlayEmote = isGroundedStable && !hasMoveIntent && !didJump;
-    if (emoteRequestRef.current) {
-      const nextEmote = emoteRequestRef.current;
-      emoteRequestRef.current = null;
-      if (canPlayEmote) {
-        // Replace any currently playing emote immediately; do not queue.
-        activeEmoteRef.current = nextEmote;
-      }
-    }
-
-    if (activeEmoteRef.current !== null && !canPlayEmote) {
-      activeEmoteRef.current = null;
-    }
-
     body.setLinvel(
       { x: nextVelocityX, y: nextVelocityY, z: nextVelocityZ },
       true,
@@ -363,7 +370,7 @@ export function CharacterRigController({
     smoothedPlanarSpeedRef.current +=
       (planarSpeed - smoothedPlanarSpeedRef.current) * speedBlend;
 
-    let targetMotionState = resolveTargetMotionState({
+    const targetMotionState = resolveTargetMotionState({
       didJump,
       isGroundedStable,
       verticalSpeed: nextVelocityY,
@@ -373,14 +380,90 @@ export function CharacterRigController({
       previousState: motionStateRef.current,
     });
 
-    if (activeEmoteRef.current && canPlayEmote) {
-      targetMotionState = activeEmoteRef.current;
-    }
-
     setMotionStateIfChanged(targetMotionState, motionStateRef, setActorMotionState);
 
     playerPositionRef.current.set(translation.x, translation.y, translation.z);
     onPlayerPositionUpdate?.(translation.x, translation.y, translation.z);
+
+    const buildSpawnRequest = (): FireballSpawnRequest => {
+      getLookDirection(
+        cameraYawRef.current,
+        cameraPitchRef.current,
+        fireballLaunchDirectionRef.current,
+      );
+
+      fireballPlanarDirectionRef.current.set(
+        fireballLaunchDirectionRef.current.x,
+        0,
+        fireballLaunchDirectionRef.current.z,
+      );
+      if (fireballPlanarDirectionRef.current.lengthSq() < 1e-6) {
+        getForwardFromYaw(cameraYawRef.current, fireballPlanarDirectionRef.current);
+      }
+      fireballPlanarDirectionRef.current.normalize();
+
+      fireballSpawnPositionRef.current
+        .set(
+          translation.x,
+          translation.y + PLAYER_EYE_HEIGHT_OFFSET * 0.7 + FIREBALL_RADIUS * 0.5,
+          translation.z,
+        )
+        .addScaledVector(
+          fireballPlanarDirectionRef.current,
+          PLAYER_CAPSULE_RADIUS + FIREBALL_RADIUS + 0.24,
+        );
+
+      return {
+        originX: fireballSpawnPositionRef.current.x,
+        originY: fireballSpawnPositionRef.current.y,
+        originZ: fireballSpawnPositionRef.current.z,
+        directionX: fireballPlanarDirectionRef.current.x,
+        directionY: fireballPlanarDirectionRef.current.y,
+        directionZ: fireballPlanarDirectionRef.current.z,
+      };
+    };
+
+    const castSolidHit = (query: FireballCastQuery) => {
+      const hit = world.castShape(
+        { x: query.x, y: query.y, z: query.z },
+        IDENTITY_ROTATION,
+        { x: query.dirX, y: query.dirY, z: query.dirZ },
+        fireballCastShape,
+        0,
+        query.distance,
+        true,
+        rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+        undefined,
+        undefined,
+        body,
+        (collider) => {
+          const parentBody = collider.parent();
+          const userData = parentBody?.userData as
+            | { kind?: string }
+            | undefined;
+          return userData?.kind !== "terrain";
+        },
+      );
+      if (!hit) {
+        return null;
+      }
+
+      const toiCandidate = hit as {
+        time_of_impact?: number;
+        timeOfImpact?: number;
+      };
+      const timeOfImpact =
+        toiCandidate.time_of_impact ?? toiCandidate.timeOfImpact;
+      return typeof timeOfImpact === "number" ? timeOfImpact : null;
+    };
+
+    stepFireballSimulation(activeFireballManager, {
+      deltaSeconds: dt,
+      buildSpawnRequest,
+      castSolidHit,
+      sampleTerrainHeight,
+    });
+    buildFireballRenderFrame(activeFireballManager);
 
     getLookDirection(
       cameraYawRef.current,
@@ -448,30 +531,32 @@ export function CharacterRigController({
       lookTargetRef.current,
       resolvedCameraDistance,
     );
-  });
+  }, -100);
 
   return (
-    <RigidBody
-      ref={bodyRef}
-      colliders={false}
-      canSleep={false}
-      enabledRotations={[false, false, false]}
-      linearDamping={PLAYER_LINEAR_DAMPING}
-      position={PLAYER_START_POSITION.toArray()}
-      userData={{ kind: "player" }}
-    >
-      <CapsuleCollider
-        args={[PLAYER_CAPSULE_HALF_HEIGHT, PLAYER_CAPSULE_RADIUS]}
-        friction={1}
-      />
-      <group ref={visualRootRef} position={[0, PLAYER_VISUAL_Y_OFFSET, 0]}>
-        <CharacterActor
-          motionState={actorMotionState}
-          planarSpeedRef={smoothedPlanarSpeedRef}
-          onEmoteFinished={handleEmoteFinished}
-          hidden={cameraMode === "first_person"}
+    <>
+      <RigidBody
+        ref={bodyRef}
+        colliders={false}
+        canSleep={false}
+        enabledRotations={[false, false, false]}
+        linearDamping={PLAYER_LINEAR_DAMPING}
+        position={PLAYER_START_POSITION.toArray()}
+        userData={{ kind: "player" }}
+      >
+        <CapsuleCollider
+          args={[PLAYER_CAPSULE_HALF_HEIGHT, PLAYER_CAPSULE_RADIUS]}
+          friction={1}
         />
-      </group>
-    </RigidBody>
+        <group ref={visualRootRef} position={[0, PLAYER_VISUAL_Y_OFFSET, 0]}>
+          <CharacterActor
+            motionState={actorMotionState}
+            planarSpeedRef={smoothedPlanarSpeedRef}
+            hidden={cameraMode === "first_person"}
+          />
+        </group>
+      </RigidBody>
+      <FireballRenderLayer renderFrame={activeFireballManager.renderFrame} />
+    </>
   );
 }

@@ -1,9 +1,9 @@
 "use client";
 
-interface GameHUDProps {
-  readonly ringCount: number;
-  readonly totalRings: number;
-}
+import {
+  type WorldEntityManager,
+  useWorldEntityVersion,
+} from "../scene/world/worldEntityManager";
 
 function RingIcon() {
   return (
@@ -35,7 +35,17 @@ function RingIcon() {
   );
 }
 
-export function GameHUD({ ringCount, totalRings }: GameHUDProps) {
+export function GameHUD({
+  worldEntityManager,
+}: {
+  worldEntityManager: WorldEntityManager;
+}) {
+  const worldVersion = useWorldEntityVersion(worldEntityManager);
+  void worldVersion;
+
+  const ringCount = worldEntityManager.hud.ringCount;
+  const totalRings = worldEntityManager.hud.totalRings;
+
   return (
     <div className="pointer-events-none absolute left-4 top-4 z-20">
       <div className="flex items-center gap-2 rounded-lg border border-yellow-400/35 bg-black/40 px-3 py-2 backdrop-blur-sm">

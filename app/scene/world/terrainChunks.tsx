@@ -135,7 +135,12 @@ export function TerrainChunk({
   }, [terrainGeometry]);
 
   return (
-    <RigidBody type="fixed" colliders={false} position={chunkPosition}>
+    <RigidBody
+      type="fixed"
+      colliders={false}
+      position={chunkPosition}
+      userData={{ kind: "terrain" }}
+    >
       <MeshCollider type="trimesh">
         <mesh geometry={terrainGeometry} material={terrainMaterial} receiveShadow />
       </MeshCollider>

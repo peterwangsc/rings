@@ -207,3 +207,22 @@ export const RING_PLACEMENTS: ReadonlyArray<readonly [number, number]> = [
   [-6.5, 1],
   [1.5, -6],
 ];
+
+// --- Fireball ability ---
+export const FIREBALL_COOLDOWN_SECONDS = 0.2;
+export const FIREBALL_MAX_ACTIVE_COUNT = 8;
+export const FIREBALL_RADIUS = 0.2;
+export const FIREBALL_SPEED = 11.5;
+export const FIREBALL_LAUNCH_VERTICAL_VELOCITY = 4.1;
+export const FIREBALL_GRAVITY_Y = -24;
+export const FIREBALL_BOUNCE_RESTITUTION = 0.88;
+export const FIREBALL_BOUNCE_HORIZONTAL_RETAIN = 0.97;
+export const FIREBALL_MIN_BOUNCE_Y_SPEED = 3.7;
+export const FIREBALL_MAX_TRAVEL_DISTANCE = 24;
+export const FIREBALL_DISTANCE_FADE_DECAY = 5.2;
+export const FIREBALL_DISTANCE_FADE_MAX_SECONDS = 0.8;
+export const FIREBALL_DISTANCE_FADE_VELOCITY_DAMP = 4.5;
+export const FIREBALL_HIT_FADE_DECAY = 13;
+export const FIREBALL_HIT_FADE_MAX_SECONDS = 0.25;
+export const FIREBALL_EMISSIVE_INTENSITY = 2.8;
+export const FIREBALL_LIGHT_INTENSITY = 2.1;

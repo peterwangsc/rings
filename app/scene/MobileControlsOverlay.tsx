@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Frown, Smile } from "lucide-react";
+import { Camera, Flame } from "lucide-react";
 import {
   type MutableRefObject,
   type PointerEvent as ReactPointerEvent,
@@ -9,10 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type {
-  MobileEmoteRequest,
-  MobileMoveInput,
-} from "../controller/controllerTypes";
+import type { MobileMoveInput } from "../controller/controllerTypes";
 
 const MOBILE_JOYSTICK_RADIUS_PX = 44;
 const MOBILE_JOYSTICK_DEADZONE = 0.08;
@@ -20,19 +17,21 @@ const MOBILE_JOYSTICK_DEADZONE = 0.08;
 export function MobileControlsOverlay({
   moveInputRef,
   jumpPressedRef,
-  emoteRequestRef,
+  fireballTriggerRef,
   onToggleCameraMode,
 }: {
   moveInputRef: MutableRefObject<MobileMoveInput>;
   jumpPressedRef: MutableRefObject<boolean>;
-  emoteRequestRef: MutableRefObject<MobileEmoteRequest>;
+  fireballTriggerRef: MutableRefObject<number>;
   onToggleCameraMode: () => void;
 }) {
   const joystickPointerIdRef = useRef<number | null>(null);
   const jumpPointerIdRef = useRef<number | null>(null);
+  const fireballPointerIdRef = useRef<number | null>(null);
   const [joystickOffset, setJoystickOffset] = useState({ x: 0, y: 0 });
   const [isJoystickActive, setIsJoystickActive] = useState(false);
   const [isJumpActive, setIsJumpActive] = useState(false);
+  const [isFireballActive, setIsFireballActive] = useState(false);
 
   const setMoveInput = useCallback(
     (x: number, y: number) => {
@@ -103,6 +102,17 @@ export function MobileControlsOverlay({
       setIsJumpActive(false);
     },
     [jumpPressedRef],
+  );
+
+  const releaseFireballButton = useCallback(
+    (element: HTMLButtonElement, pointerId: number) => {
+      if (element.hasPointerCapture(pointerId)) {
+        element.releasePointerCapture(pointerId);
+      }
+      fireballPointerIdRef.current = null;
+      setIsFireballActive(false);
+    },
+    [],
   );
 
   const handleJoystickPointerDown = useCallback(
@@ -199,26 +209,51 @@ export function MobileControlsOverlay({
     [jumpPressedRef],
   );
 
-  const handleEmotePointerDown = useCallback(
-    (
-      event: ReactPointerEvent<HTMLButtonElement>,
-      emoteState: "happy" | "sad",
-    ) => {
-      emoteRequestRef.current = emoteState;
+  const handleFireballPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (fireballPointerIdRef.current !== null) {
+        return;
+      }
+      fireballPointerIdRef.current = event.pointerId;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setIsFireballActive(true);
+      fireballTriggerRef.current += 1;
       event.preventDefault();
     },
-    [emoteRequestRef],
+    [fireballTriggerRef],
+  );
+
+  const handleFireballPointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (fireballPointerIdRef.current !== event.pointerId) {
+        return;
+      }
+      releaseFireballButton(event.currentTarget, event.pointerId);
+      event.preventDefault();
+    },
+    [releaseFireballButton],
+  );
+
+  const handleFireballLostPointerCapture = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (fireballPointerIdRef.current !== event.pointerId) {
+        return;
+      }
+      fireballPointerIdRef.current = null;
+      setIsFireballActive(false);
+    },
+    [],
   );
 
   useEffect(() => {
     return () => {
       setMoveInput(0, 0);
       jumpPressedRef.current = false;
-      emoteRequestRef.current = null;
       joystickPointerIdRef.current = null;
       jumpPointerIdRef.current = null;
+      fireballPointerIdRef.current = null;
     };
-  }, [emoteRequestRef, jumpPressedRef, setMoveInput]);
+  }, [jumpPressedRef, setMoveInput]);
 
   return (
     <div className="mobile-game-controls pointer-events-none absolute inset-x-0 bottom-0 z-40 items-end justify-between px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-6">
@@ -254,24 +289,16 @@ export function MobileControlsOverlay({
         <div className="mobile-jump-cluster">
           <button
             type="button"
-            aria-label="Happy emote"
-            className="mobile-emote-button mobile-emote-button--happy pointer-events-auto touch-none select-none"
-            onPointerDown={(event) => handleEmotePointerDown(event, "happy")}
+            aria-label="Fireball"
+            className={`mobile-fireball-button pointer-events-auto touch-none select-none ${isFireballActive ? "mobile-fireball-button--active" : ""}`}
+            onPointerDown={handleFireballPointerDown}
+            onPointerUp={handleFireballPointerUp}
+            onPointerCancel={handleFireballPointerUp}
+            onLostPointerCapture={handleFireballLostPointerCapture}
           >
-            <Smile
+            <Flame
               aria-hidden="true"
-              className="mobile-control-icon mobile-control-icon--emote"
-            />
-          </button>
-          <button
-            type="button"
-            aria-label="Sad emote"
-            className="mobile-emote-button mobile-emote-button--sad pointer-events-auto touch-none select-none"
-            onPointerDown={(event) => handleEmotePointerDown(event, "sad")}
-          >
-            <Frown
-              aria-hidden="true"
-              className="mobile-control-icon mobile-control-icon--emote"
+              className="mobile-control-icon mobile-control-icon--fireball"
             />
           </button>
           <button

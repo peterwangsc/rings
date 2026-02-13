@@ -8,10 +8,10 @@ const SPLASH_CONTROLS: ReadonlyArray<{
 }> = [
   { keys: ["W", "A", "S", "D"], action: "Move" },
   { keys: ["Space"], action: "Jump" },
+  { keys: ["Click"], action: "Fireball (while locked)" },
   { keys: ["Shift"], action: "Hold for walk/run" },
   { keys: ["CapsLock"], action: "Toggle walk/run" },
   { keys: ["V"], action: "Toggle camera mode" },
-  { keys: ["H", "J"], action: "Happy and sad emotes" },
   { keys: ["F"], action: "Toggle FPS overlay" },
   { keys: ["Esc"], action: "Unlock pointer" },
 ];

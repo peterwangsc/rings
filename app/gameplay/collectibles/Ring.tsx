@@ -55,7 +55,7 @@ export function Ring({ id, position, onCollect }: RingProps) {
       }}
     >
       <BallCollider args={[RING_SENSOR_RADIUS]} sensor />
-      <mesh ref={meshRef}>
+      <mesh ref={meshRef} castShadow receiveShadow>
         <torusGeometry
           args={[
             RING_MAJOR_RADIUS,
