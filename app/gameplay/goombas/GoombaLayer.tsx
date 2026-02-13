@@ -32,9 +32,22 @@ const DEATH_SQUASH_XZ_SCALE = 1.22;
 const DEATH_SQUASH_Y_SCALE = 0.42;
 const DEATH_EYE_BLINK_HZ = 9.5;
 const DEATH_EYE_FINAL_CLOSE_PROGRESS = 0.72;
+const ALIVE_BLINK_INTERVAL_MIN_SECONDS = 2.2;
+const ALIVE_BLINK_INTERVAL_MAX_SECONDS = 5.1;
+const ALIVE_BLINK_DURATION_MIN_SECONDS = 0.06;
+const ALIVE_BLINK_DURATION_MAX_SECONDS = 0.14;
 const WALK_CLIP_PATTERN = /(walk|run|move)/i;
 const IDLE_CLIP_PATTERN = /(idle|stand|breathe)/i;
 const DAMAGE_EYE_NAME_PATTERN = /damageeye/i;
+
+function hashStringToUint32(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
 
 type RigNode = {
   readonly node: THREE.Object3D;
@@ -152,6 +165,11 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
   const animationBundleRef = useRef<AnimationBundle | null>(null);
   const damageEyeNodesRef = useRef<readonly THREE.Object3D[]>([]);
   const isDamageEyeVisibleRef = useRef(false);
+  const blinkRandomStateRef = useRef(
+    hashStringToUint32(goomba.goombaId) || 1,
+  );
+  const blinkEndsAtSecondsRef = useRef(0);
+  const nextBlinkAtSecondsRef = useRef<number | null>(null);
   const wasDefeatedRef = useRef(
     goomba.state === GOOMBA_INTERACT_DISABLED_STATE,
   );
@@ -264,15 +282,50 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
       }
       isDamageEyeVisibleRef.current = visible;
     };
+    const nextBlinkRandom = () => {
+      const next =
+        (Math.imul(blinkRandomStateRef.current, 1664525) + 1013904223) >>> 0;
+      blinkRandomStateRef.current = next;
+      return next / 4294967295;
+    };
+    const sampleAliveBlinkIntervalSeconds = () =>
+      THREE.MathUtils.lerp(
+        ALIVE_BLINK_INTERVAL_MIN_SECONDS,
+        ALIVE_BLINK_INTERVAL_MAX_SECONDS,
+        nextBlinkRandom(),
+      );
+    const sampleAliveBlinkDurationSeconds = () =>
+      THREE.MathUtils.lerp(
+        ALIVE_BLINK_DURATION_MIN_SECONDS,
+        ALIVE_BLINK_DURATION_MAX_SECONDS,
+        nextBlinkRandom(),
+      );
 
     const isDefeated = goomba.state === GOOMBA_INTERACT_DISABLED_STATE;
     if (!isDefeated) {
       root.visible = true;
-      setDamageEyeVisible(false);
       root.scale.set(1, 1, 1);
       root.rotation.x = 0;
       root.rotation.z = 0;
       deathStartedAtSecondsRef.current = null;
+
+      const nowSeconds = state.clock.getElapsedTime();
+      if (wasDefeatedRef.current || nextBlinkAtSecondsRef.current === null) {
+        blinkEndsAtSecondsRef.current = 0;
+        nextBlinkAtSecondsRef.current =
+          nowSeconds + sampleAliveBlinkIntervalSeconds();
+      }
+
+      const nextBlinkAtSeconds = nextBlinkAtSecondsRef.current;
+      if (nowSeconds >= nextBlinkAtSeconds) {
+        blinkEndsAtSecondsRef.current =
+          nowSeconds + sampleAliveBlinkDurationSeconds();
+        nextBlinkAtSecondsRef.current =
+          blinkEndsAtSecondsRef.current + sampleAliveBlinkIntervalSeconds();
+      }
+
+      const isAliveBlinkActive = nowSeconds < blinkEndsAtSecondsRef.current;
+      setDamageEyeVisible(isAliveBlinkActive);
     } else {
       if (!wasDefeatedRef.current) {
         deathStartedAtSecondsRef.current = state.clock.getElapsedTime();
