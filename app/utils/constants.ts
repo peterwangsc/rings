@@ -195,6 +195,8 @@ export const RING_SENSOR_RADIUS = 0.9;
 export const RING_TORUS_SEGMENTS = 24;
 export const RING_TUBE_SEGMENTS = 12;
 export const RING_DROP_SENSOR_RADIUS = 1.2;
+// Keep in sync with spacetimedb/src/index.ts (RING_COLLECT_RADIUS).
+export const RING_COLLECT_RADIUS = 1.35;
 export const RING_DROP_FALL_START_HEIGHT = 2.2;
 export const RING_DROP_FALL_DURATION_MS = 650;
 export const RING_DROP_LIFETIME_MS = 12_000;

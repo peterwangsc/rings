@@ -12,7 +12,8 @@ const FIREBALL_MIN_DIR_LENGTH = 0.5;
 const FIREBALL_MAX_DIR_LENGTH = 1.5;
 const FIREBALL_MIN_SPAWN_DISTANCE = 0.2;
 const FIREBALL_MAX_SPAWN_DISTANCE = 2.8;
-const RING_SERVER_COLLECT_RADIUS = 1.35;
+// Keep in sync with app/utils/constants.ts (RING_COLLECT_RADIUS).
+const RING_COLLECT_RADIUS = 1.35;
 const RING_HOVER_HEIGHT = 1.2;
 const RING_DROP_HOVER_HEIGHT = 0.9;
 // Keep in sync with app/utils/constants.ts (RING_DROP_LIFETIME_MS).
@@ -1097,7 +1098,7 @@ spacetimedb.reducer(
           player.z - ringPosition.z,
         );
 
-        if (distanceToRing > RING_SERVER_COLLECT_RADIUS) {
+        if (distanceToRing > RING_COLLECT_RADIUS) {
           return { tag: 'err', value: 'ring_out_of_range' };
         }
 
@@ -1139,7 +1140,7 @@ spacetimedb.reducer(
       player.z - dropRing.z,
     );
 
-    if (distanceToRing > RING_SERVER_COLLECT_RADIUS) {
+    if (distanceToRing > RING_COLLECT_RADIUS) {
       return { tag: 'err', value: 'ring_out_of_range' };
     }
 
