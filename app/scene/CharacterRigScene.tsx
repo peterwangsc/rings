@@ -20,6 +20,7 @@ import { RemotePlayersLayer } from "../gameplay/multiplayer/RemotePlayersLayer";
 import { GameHUD } from "../hud/GameHUD";
 import {
   createMultiplayerStore,
+  setLocalDisplayName,
   useMultiplayerStoreSnapshot,
   type MultiplayerStore,
 } from "../multiplayer/state/multiplayerStore";
@@ -28,6 +29,7 @@ import { useMultiplayerSync } from "../multiplayer/state/useMultiplayerSync";
 import {
   createSpacetimeConnectionBuilder,
   getOrCreateGuestDisplayName,
+  setStoredGuestDisplayName,
 } from "../multiplayer/spacetime/client";
 import {
   FPS_TOGGLE_KEY,
@@ -126,6 +128,17 @@ function CharacterRigSceneContent({
     setIsFpsVisible((isVisible) => !isVisible);
   }, []);
 
+  const handleSetLocalDisplayName = useCallback(
+    (nextDisplayName: string) => {
+      const storedDisplayName = setStoredGuestDisplayName(nextDisplayName);
+      if (!storedDisplayName) {
+        return;
+      }
+      setLocalDisplayName(multiplayerStore, storedDisplayName);
+    },
+    [multiplayerStore],
+  );
+
   const handlePlayerPositionUpdate = useCallback(
     (x: number, y: number, z: number) => {
       updateWorldPlayerPosition(worldEntityManager, x, y, z);
@@ -217,6 +230,7 @@ function CharacterRigSceneContent({
       </Canvas>
       <GameHUD
         worldEntityManager={worldEntityManager}
+        localDisplayName={multiplayerState.localDisplayName}
         connectionStatus={multiplayerState.connectionStatus}
         remotePlayerCount={remotePlayers.length}
       />
@@ -229,6 +243,8 @@ function CharacterRigSceneContent({
       <DesktopSplashOverlay
         isPointerLocked={isPointerLocked}
         isSplashDismissedByTouch={isSplashDismissedByTouch}
+        localDisplayName={multiplayerState.localDisplayName}
+        onSetLocalDisplayName={handleSetLocalDisplayName}
       />
       <MobileControlsOverlay
         moveInputRef={mobileMoveInputRef}
@@ -236,7 +252,10 @@ function CharacterRigSceneContent({
         fireballTriggerRef={mobileFireballTriggerRef}
         onToggleCameraMode={handleToggleCameraMode}
       />
-      <MobileOrientationOverlay />
+      <MobileOrientationOverlay
+        localDisplayName={multiplayerState.localDisplayName}
+        onSetLocalDisplayName={handleSetLocalDisplayName}
+      />
     </div>
   );
 }

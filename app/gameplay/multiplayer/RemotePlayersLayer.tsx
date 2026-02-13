@@ -55,8 +55,13 @@ function RemotePlayerActor({
           planarSpeedRef={planarSpeedRef}
         />
       </group>
-      <Html position={[0, 1.9, 0]} center transform distanceFactor={15}>
-        <div className="rounded-full border border-cyan-200/55 bg-black/55 px-2 py-1 text-[10px] font-semibold tracking-wide text-cyan-100 shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
+      <Html
+        position={[-0.12, 1.12, -0.2]}
+        center
+        transform
+        distanceFactor={15}
+      >
+        <div className="pointer-events-none rounded-sm border border-cyan-200/45 bg-black/50 px-1 py-0 text-[6px] font-semibold uppercase tracking-tight text-cyan-100 shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
           {player.displayName}
         </div>
       </Html>

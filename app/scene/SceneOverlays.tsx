@@ -1,6 +1,7 @@
 "use client";
 
 import { RotateCw } from "lucide-react";
+import { useEffect, useState } from "react";
 
 const SPLASH_CONTROLS: ReadonlyArray<{
   keys: readonly string[];
@@ -19,10 +20,33 @@ const SPLASH_CONTROLS: ReadonlyArray<{
 export function DesktopSplashOverlay({
   isPointerLocked,
   isSplashDismissedByTouch,
+  localDisplayName,
+  onSetLocalDisplayName,
 }: {
   isPointerLocked: boolean;
   isSplashDismissedByTouch: boolean;
+  localDisplayName: string;
+  onSetLocalDisplayName: (displayName: string) => void;
 }) {
+  const [draftDisplayName, setDraftDisplayName] = useState(localDisplayName);
+
+  useEffect(() => {
+    setDraftDisplayName(localDisplayName);
+  }, [localDisplayName]);
+
+  useEffect(() => {
+    const normalized = draftDisplayName.trim();
+    if (normalized.length === 0 || normalized === localDisplayName) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      onSetLocalDisplayName(normalized);
+    }, 350);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [draftDisplayName, localDisplayName, onSetLocalDisplayName]);
+
   if (isPointerLocked || isSplashDismissedByTouch) {
     return null;
   }
@@ -33,7 +57,7 @@ export function DesktopSplashOverlay({
       <div className="jump-splash absolute inset-0" />
       <div className="relative flex h-full w-full items-center justify-center p-4 sm:p-8">
         <div className="jump-splash-panel w-full max-w-5xl rounded-3xl p-6 sm:p-8 lg:p-10">
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-2xl">
               <p className="text-xs font-medium uppercase tracking-[0.28em] text-cyan-100/90 sm:text-sm">
                 Character Rig Sandbox
@@ -46,12 +70,25 @@ export function DesktopSplashOverlay({
                   Jump Man
                 </h1>
               </div>
-              <p className="mt-5 max-w-xl text-sm leading-relaxed text-cyan-50 sm:text-base">
-                Click anywhere to lock in and drop into the scene.
-              </p>
-              <div className="mt-7 inline-flex items-center gap-3 rounded-full border border-cyan-100/65 bg-cyan-100/14 px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-cyan-50">
-                <span className="jump-cta-pulse inline-block h-2.5 w-2.5 rounded-full bg-cyan-200 shadow-[0_0_12px_rgba(149,242,255,0.9)]" />
-                Click to start
+              <div className="mt-7 pointer-events-auto mb-5 ml-auto w-full rounded-2xl border border-cyan-100/35 bg-black/20 p-3">
+                <label
+                  htmlFor="splash-display-name"
+                  className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-100/85"
+                >
+                  Your Name Tag
+                </label>
+                <input
+                  id="splash-display-name"
+                  name="displayName"
+                  type="text"
+                  maxLength={24}
+                  value={draftDisplayName}
+                  onChange={(event) => {
+                    setDraftDisplayName(event.currentTarget.value);
+                  }}
+                  placeholder="Guest Name"
+                  className="h-9 w-full rounded-lg border border-cyan-100/40 bg-black/35 px-3 text-xs font-medium text-cyan-50 outline-none transition focus:border-cyan-100/70 focus:bg-black/45"
+                />
               </div>
             </div>
             <div className="w-full max-w-xl">
@@ -88,7 +125,32 @@ export function DesktopSplashOverlay({
   );
 }
 
-export function MobileOrientationOverlay() {
+export function MobileOrientationOverlay({
+  localDisplayName,
+  onSetLocalDisplayName,
+}: {
+  localDisplayName: string;
+  onSetLocalDisplayName: (displayName: string) => void;
+}) {
+  const [draftDisplayName, setDraftDisplayName] = useState(localDisplayName);
+
+  useEffect(() => {
+    setDraftDisplayName(localDisplayName);
+  }, [localDisplayName]);
+
+  useEffect(() => {
+    const normalized = draftDisplayName.trim();
+    if (normalized.length === 0 || normalized === localDisplayName) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      onSetLocalDisplayName(normalized);
+    }, 350);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [draftDisplayName, localDisplayName, onSetLocalDisplayName]);
+
   return (
     <div className="mobile-portrait-lock jump-overlay-copy absolute inset-0 z-50 items-center justify-center px-5 py-8 text-center">
       <div className="mobile-portrait-lock__scrim absolute inset-0" />
@@ -112,6 +174,26 @@ export function MobileOrientationOverlay() {
           This experience is optimized for a wide screen. Rotate your device to
           continue.
         </p>
+        <div className="mt-5 rounded-xl border border-cyan-100/35 bg-black/20 p-3 text-left">
+          <label
+            htmlFor="mobile-orientation-display-name"
+            className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-100/85"
+          >
+            Name Tag (Auto-save)
+          </label>
+          <input
+            id="mobile-orientation-display-name"
+            name="displayName"
+            type="text"
+            maxLength={24}
+            value={draftDisplayName}
+            onChange={(event) => {
+              setDraftDisplayName(event.currentTarget.value);
+            }}
+            placeholder="Guest Name"
+            className="h-9 w-full rounded-lg border border-cyan-100/40 bg-black/35 px-3 text-xs font-medium text-cyan-50 outline-none transition focus:border-cyan-100/70 focus:bg-black/45"
+          />
+        </div>
       </div>
     </div>
   );

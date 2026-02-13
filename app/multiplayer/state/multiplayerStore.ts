@@ -133,6 +133,21 @@ export function setMultiplayerIdentity(
   emitChanged(store);
 }
 
+export function setLocalDisplayName(
+  store: MultiplayerStore,
+  localDisplayName: string,
+) {
+  if (store.state.localDisplayName === localDisplayName) {
+    return;
+  }
+
+  store.state = {
+    ...store.state,
+    localDisplayName,
+  };
+  emitChanged(store);
+}
+
 export function setAuthoritativeLocalPlayerState(
   store: MultiplayerStore,
   nextState: AuthoritativePlayerState | null,

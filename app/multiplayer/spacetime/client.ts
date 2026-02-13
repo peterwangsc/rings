@@ -7,6 +7,7 @@ const DEFAULT_SPACETIMEDB_MODULE = "rings-multiplayer";
 const LEGACY_MULTIPLAYER_TOKEN_STORAGE_KEY = "rings.multiplayer.token";
 const MULTIPLAYER_TOKEN_STORAGE_KEY_PREFIX = "rings.multiplayer.token";
 const MULTIPLAYER_DISPLAY_NAME_STORAGE_KEY = "rings.multiplayer.display_name";
+const MAX_DISPLAY_NAME_LENGTH = 24;
 
 function resolveSpacetimeUri(rawUri: string) {
   const trimmed = rawUri.trim();
@@ -42,6 +43,11 @@ function readStoredToken(uri: string, moduleName: string) {
   return scopedToken && scopedToken.length > 0 ? scopedToken : undefined;
 }
 
+export function sanitizeMultiplayerDisplayName(rawDisplayName: string) {
+  const normalizedWhitespace = rawDisplayName.replace(/\s+/g, " ");
+  return normalizedWhitespace.trim().slice(0, MAX_DISPLAY_NAME_LENGTH);
+}
+
 export function persistMultiplayerToken(token: string) {
   if (typeof window === "undefined") {
     return;
@@ -68,8 +74,17 @@ export function getOrCreateGuestDisplayName() {
   const existing = window.localStorage.getItem(
     MULTIPLAYER_DISPLAY_NAME_STORAGE_KEY,
   );
-  if (existing && existing.trim().length > 0) {
-    return existing.trim();
+  if (existing) {
+    const sanitizedExisting = sanitizeMultiplayerDisplayName(existing);
+    if (sanitizedExisting.length > 0) {
+      if (sanitizedExisting !== existing) {
+        window.localStorage.setItem(
+          MULTIPLAYER_DISPLAY_NAME_STORAGE_KEY,
+          sanitizedExisting,
+        );
+      }
+      return sanitizedExisting;
+    }
   }
 
   const suffix = globalThis.crypto
@@ -80,6 +95,20 @@ export function getOrCreateGuestDisplayName() {
   const displayName = `Guest-${suffix}`;
   window.localStorage.setItem(MULTIPLAYER_DISPLAY_NAME_STORAGE_KEY, displayName);
   return displayName;
+}
+
+export function setStoredGuestDisplayName(rawDisplayName: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const sanitized = sanitizeMultiplayerDisplayName(rawDisplayName);
+  if (sanitized.length <= 0) {
+    return null;
+  }
+
+  window.localStorage.setItem(MULTIPLAYER_DISPLAY_NAME_STORAGE_KEY, sanitized);
+  return sanitized;
 }
 
 export function createSpacetimeConnectionBuilder() {
