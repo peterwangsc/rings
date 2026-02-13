@@ -6,6 +6,8 @@ const MAX_VERTICAL_DELTA = 18;
 const SNAPSHOT_POSITION_LEEWAY = 1.5;
 const PLAYER_CAST_COOLDOWN_MS = 200;
 const FIREBALL_EVENT_TTL_MS = 2400;
+const CHAT_MESSAGE_EVENT_TTL_MS = 10000;
+const CHAT_MESSAGE_MAX_LENGTH = 120;
 const FIREBALL_MIN_DIR_LENGTH = 0.5;
 const FIREBALL_MAX_DIR_LENGTH = 1.5;
 const FIREBALL_MIN_SPAWN_DISTANCE = 0.2;
@@ -166,6 +168,18 @@ const fireballEvent = table(
   },
 );
 
+const chatMessageEvent = table(
+  { name: 'chat_message_event', public: true },
+  {
+    messageId: t.string().primaryKey(),
+    ownerIdentity: t.string(),
+    ownerDisplayName: t.string(),
+    messageText: t.string(),
+    createdAtMs: t.f64(),
+    expiresAtMs: t.f64(),
+  },
+);
+
 const session = table(
   { name: 'session' },
   {
@@ -175,7 +189,13 @@ const session = table(
   },
 );
 
-export const spacetimedb = schema(playerState, ringState, fireballEvent, session);
+export const spacetimedb = schema(
+  playerState,
+  ringState,
+  fireballEvent,
+  chatMessageEvent,
+  session,
+);
 
 function nowMs(ctx: { timestamp: { toMillis(): bigint } }) {
   return Number(ctx.timestamp.toMillis());
@@ -208,11 +228,19 @@ type FireballEventRow = {
   expiresAtMs: number;
 };
 
+type ChatMessageEventRow = {
+  expiresAtMs: number;
+};
+
 type FireballPruneContext = {
   db: {
     fireballEvent: {
       iter(): IteratorObject<FireballEventRow, undefined>;
       delete(row: FireballEventRow): boolean;
+    };
+    chatMessageEvent: {
+      iter(): IteratorObject<ChatMessageEventRow, undefined>;
+      delete(row: ChatMessageEventRow): boolean;
     };
   };
 };
@@ -224,6 +252,12 @@ function pruneExpiredFireballEvents(
   for (const event of ctx.db.fireballEvent.iter()) {
     if (event.expiresAtMs <= timestampMs) {
       ctx.db.fireballEvent.delete(event);
+    }
+  }
+
+  for (const chatMessage of ctx.db.chatMessageEvent.iter()) {
+    if (chatMessage.expiresAtMs <= timestampMs) {
+      ctx.db.chatMessageEvent.delete(chatMessage);
     }
   }
 }
@@ -539,6 +573,43 @@ spacetimedb.reducer(
       collected: true,
       collectedBy: identity,
       collectedAtMs: timestampMs,
+    });
+
+    return { tag: 'ok' };
+  },
+);
+
+spacetimedb.reducer(
+  'send_chat_message',
+  {
+    messageText: t.string(),
+  },
+  (ctx, payload) => {
+    const identity = ctx.sender.toHexString();
+    const timestampMs = nowMs(ctx);
+    const player = ctx.db.playerState.identity.find(identity);
+    if (!player) {
+      return { tag: 'err', value: 'player_missing' };
+    }
+
+    const messageText = payload.messageText.replace(/\s+/g, ' ').trim();
+    if (messageText.length <= 0) {
+      return { tag: 'err', value: 'message_empty' };
+    }
+    if (messageText.length > CHAT_MESSAGE_MAX_LENGTH) {
+      return { tag: 'err', value: 'message_too_long' };
+    }
+
+    pruneExpiredFireballEvents(ctx, timestampMs);
+
+    const messageId = `${identity}-${Math.floor(timestampMs)}-${ctx.newUuidV4().toString()}`;
+    ctx.db.chatMessageEvent.insert({
+      messageId,
+      ownerIdentity: identity,
+      ownerDisplayName: player.displayName,
+      messageText,
+      createdAtMs: timestampMs,
+      expiresAtMs: timestampMs + CHAT_MESSAGE_EVENT_TTL_MS,
     });
 
     return { tag: 'ok' };

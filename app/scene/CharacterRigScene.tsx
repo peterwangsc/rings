@@ -17,14 +17,19 @@ import { CharacterRigController } from "../controller/CharacterRigController";
 import type { MobileMoveInput } from "../controller/controllerTypes";
 import { RingField } from "../gameplay/collectibles/RingField";
 import { RemotePlayersLayer } from "../gameplay/multiplayer/RemotePlayersLayer";
+import { ChatOverlay } from "../hud/ChatOverlay";
 import { GameHUD } from "../hud/GameHUD";
+import { GlobalChatFeed } from "../hud/GlobalChatFeed";
 import {
   createMultiplayerStore,
   setLocalDisplayName,
   useMultiplayerStoreSnapshot,
   type MultiplayerStore,
 } from "../multiplayer/state/multiplayerStore";
-import type { FireballSpawnEvent } from "../multiplayer/state/multiplayerTypes";
+import type {
+  ChatMessageEvent,
+  FireballSpawnEvent,
+} from "../multiplayer/state/multiplayerTypes";
 import { useMultiplayerSync } from "../multiplayer/state/useMultiplayerSync";
 import {
   createSpacetimeConnectionBuilder,
@@ -61,6 +66,25 @@ const CAMERA_MODE_CYCLE: readonly CameraMode[] = [
 const ACTIVE_CHUNK_GRID_SIZE = ACTIVE_TERRAIN_CHUNK_RADIUS * 2 + 1;
 const ACTIVE_CHUNK_GRID_WORLD_SPAN = ACTIVE_CHUNK_GRID_SIZE * TERRAIN_CHUNK_SIZE;
 const CAMERA_FAR_DISTANCE = ACTIVE_CHUNK_GRID_WORLD_SPAN * 1.5;
+const CHAT_MESSAGE_MAX_LENGTH = 120;
+const CHAT_CLOCK_TICK_MS = 250;
+const CHAT_LOG_MAX_MESSAGES = 32;
+const CHAT_RESUME_CLOSE_DELAY_MS = 120;
+const CHAT_SESSION_HISTORY_MAX_MESSAGES = 512;
+
+function isEditableEventTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.isContentEditable) {
+    return true;
+  }
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  );
+}
 
 function CharacterRigSceneContent({
   multiplayerStore,
@@ -74,7 +98,16 @@ function CharacterRigSceneContent({
   const [isSplashDismissedByTouch, setIsSplashDismissedByTouch] =
     useState(false);
   const [fps, setFps] = useState<number | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isResumingFromChat, setIsResumingFromChat] = useState(false);
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatNowMs, setChatNowMs] = useState(() => Date.now());
+  const [chatSessionHistory, setChatSessionHistory] = useState<ChatMessageEvent[]>(
+    [],
+  );
   const worldEntityManager = useMemo(() => createWorldEntityManager(), []);
+  const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
+  const resumeFromChatTimeoutRef = useRef<number | null>(null);
   const mobileMoveInputRef = useRef<MobileMoveInput>({ x: 0, y: 0 });
   const mobileJumpPressedRef = useRef(false);
   const mobileFireballTriggerRef = useRef(0);
@@ -87,6 +120,7 @@ function CharacterRigSceneContent({
     sendLocalPlayerSnapshot,
     sendLocalFireballCast,
     sendRingCollect,
+    sendChatMessage,
   } = useMultiplayerSync({
     store: multiplayerStore,
     worldEntityManager,
@@ -100,6 +134,22 @@ function CharacterRigSceneContent({
     () => Array.from(multiplayerState.remotePlayers.values()),
     [multiplayerState.remotePlayers],
   );
+  const activeChatMessages = useMemo(() => {
+    const visible = multiplayerState.chatMessages.filter(
+      (message) => message.expiresAtMs > chatNowMs,
+    );
+    if (visible.length <= CHAT_LOG_MAX_MESSAGES) {
+      return visible;
+    }
+    return visible.slice(visible.length - CHAT_LOG_MAX_MESSAGES);
+  }, [chatNowMs, multiplayerState.chatMessages]);
+  const activeChatByIdentity = useMemo(() => {
+    const next = new Map<string, string>();
+    for (const message of activeChatMessages) {
+      next.set(message.ownerIdentity, message.messageText);
+    }
+    return next;
+  }, [activeChatMessages]);
 
   const handleToggleCameraMode = useCallback(() => {
     setCameraMode((currentMode) => {
@@ -115,6 +165,15 @@ function CharacterRigSceneContent({
 
   const handlePointerLockChange = useCallback((isLocked: boolean) => {
     setIsPointerLocked(isLocked);
+    if (!isLocked) {
+      return;
+    }
+    if (resumeFromChatTimeoutRef.current !== null) {
+      window.clearTimeout(resumeFromChatTimeoutRef.current);
+      resumeFromChatTimeoutRef.current = null;
+    }
+    setIsResumingFromChat(false);
+    setIsChatOpen(false);
   }, []);
 
   const handleFpsUpdate = useCallback((nextFps: number) => {
@@ -139,6 +198,40 @@ function CharacterRigSceneContent({
     [multiplayerStore],
   );
 
+  const handleSendChatMessage = useCallback(() => {
+    const normalized = chatDraft.replace(/\s+/g, " ").trim().slice(0, CHAT_MESSAGE_MAX_LENGTH);
+    if (normalized.length > 0) {
+      sendChatMessage(normalized);
+    }
+    setChatDraft("");
+  }, [chatDraft, sendChatMessage]);
+
+  const requestGameplayPointerLock = useCallback(() => {
+    const canvas = canvasElementRef.current;
+    if (!canvas) {
+      return;
+    }
+    if (document.pointerLockElement === canvas) {
+      return;
+    }
+    if (typeof canvas.requestPointerLock === "function") {
+      canvas.requestPointerLock();
+    }
+  }, []);
+
+  const handleResumeGameplayFromChat = useCallback(() => {
+    setIsResumingFromChat(true);
+    requestGameplayPointerLock();
+    if (resumeFromChatTimeoutRef.current !== null) {
+      window.clearTimeout(resumeFromChatTimeoutRef.current);
+    }
+    resumeFromChatTimeoutRef.current = window.setTimeout(() => {
+      setIsChatOpen(false);
+      setIsResumingFromChat(false);
+      resumeFromChatTimeoutRef.current = null;
+    }, CHAT_RESUME_CLOSE_DELAY_MS);
+  }, [requestGameplayPointerLock]);
+
   const handlePlayerPositionUpdate = useCallback(
     (x: number, y: number, z: number) => {
       updateWorldPlayerPosition(worldEntityManager, x, y, z);
@@ -157,13 +250,41 @@ function CharacterRigSceneContent({
       if (event.code === FPS_TOGGLE_KEY && !event.repeat) {
         handleToggleFpsOverlay();
       }
+
+      if (event.code === "Escape" && isChatOpen) {
+        event.preventDefault();
+        handleResumeGameplayFromChat();
+        return;
+      }
+
+      if (event.code === "Enter" && !event.repeat) {
+        if (isEditableEventTarget(event.target)) {
+          return;
+        }
+        event.preventDefault();
+        if (resumeFromChatTimeoutRef.current !== null) {
+          window.clearTimeout(resumeFromChatTimeoutRef.current);
+          resumeFromChatTimeoutRef.current = null;
+        }
+        setIsResumingFromChat(false);
+        setIsChatOpen(true);
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleToggleFpsOverlay]);
+  }, [handleResumeGameplayFromChat, handleToggleFpsOverlay, isChatOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (resumeFromChatTimeoutRef.current !== null) {
+        window.clearTimeout(resumeFromChatTimeoutRef.current);
+        resumeFromChatTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
@@ -180,6 +301,76 @@ function CharacterRigSceneContent({
     };
   }, []);
 
+  useEffect(() => {
+    const persistedDisplayName = getOrCreateGuestDisplayName();
+    setLocalDisplayName(multiplayerStore, persistedDisplayName);
+  }, [multiplayerStore]);
+
+  useEffect(() => {
+    if (!isChatOpen || isResumingFromChat) {
+      return;
+    }
+    if (document.pointerLockElement) {
+      document.exitPointerLock();
+    }
+  }, [isChatOpen, isResumingFromChat]);
+
+  useEffect(() => {
+    if (multiplayerState.chatMessages.length === 0) {
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      setChatNowMs(Date.now());
+    }, CHAT_CLOCK_TICK_MS);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [multiplayerState.chatMessages.length]);
+
+  useEffect(() => {
+    if (multiplayerState.chatMessages.length === 0) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setChatSessionHistory((currentHistory) => {
+        const nextHistory = [...currentHistory];
+        const knownIds = new Set(
+          nextHistory.map((message) => message.messageId),
+        );
+        const incoming = [...multiplayerState.chatMessages].sort(
+          (a, b) => a.createdAtMs - b.createdAtMs,
+        );
+        let didChange = false;
+
+        for (const message of incoming) {
+          if (knownIds.has(message.messageId)) {
+            continue;
+          }
+          knownIds.add(message.messageId);
+          nextHistory.push(message);
+          didChange = true;
+        }
+
+        if (!didChange) {
+          return currentHistory;
+        }
+
+        if (nextHistory.length > CHAT_SESSION_HISTORY_MAX_MESSAGES) {
+          return nextHistory.slice(
+            nextHistory.length - CHAT_SESSION_HISTORY_MAX_MESSAGES,
+          );
+        }
+
+        return nextHistory;
+      });
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [multiplayerState.chatMessages]);
+
   return (
     <div className="relative h-full w-full">
       <Canvas
@@ -191,6 +382,9 @@ function CharacterRigSceneContent({
           near: 0.1,
           far: CAMERA_FAR_DISTANCE,
           position: [0, 2.2, 6],
+        }}
+        onCreated={({ gl }) => {
+          canvasElementRef.current = gl.domElement;
         }}
         className="h-full w-full touch-none"
       >
@@ -206,13 +400,17 @@ function CharacterRigSceneContent({
                 hasAuthoritativeMultiplayer ? sendRingCollect : undefined
               }
             />
-            <RemotePlayersLayer players={remotePlayers} />
+            <RemotePlayersLayer
+              players={remotePlayers}
+              activeChatByIdentity={activeChatByIdentity}
+            />
             <CharacterRigController
               cameraMode={cameraMode}
               onToggleCameraMode={handleToggleCameraMode}
               isWalkDefault={isWalkDefault}
               onToggleDefaultGait={handleToggleDefaultGait}
               onPointerLockChange={handlePointerLockChange}
+              isInputSuspended={isChatOpen || isResumingFromChat}
               onPlayerPositionUpdate={handlePlayerPositionUpdate}
               mobileMoveInputRef={mobileMoveInputRef}
               mobileJumpPressedRef={mobileJumpPressedRef}
@@ -234,6 +432,19 @@ function CharacterRigSceneContent({
         connectionStatus={multiplayerState.connectionStatus}
         remotePlayerCount={remotePlayers.length}
       />
+      <GlobalChatFeed
+        messages={activeChatMessages}
+        localIdentity={multiplayerState.localIdentity}
+      />
+      <ChatOverlay
+        isOpen={isChatOpen}
+        messages={chatSessionHistory}
+        draftMessage={chatDraft}
+        localIdentity={multiplayerState.localIdentity}
+        onDraftMessageChange={setChatDraft}
+        onSendMessage={handleSendChatMessage}
+        onResumeGameplay={handleResumeGameplayFromChat}
+      />
       {isFpsVisible ? (
         <div className="pointer-events-none absolute right-4 top-4 z-20 rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
           <p className="font-semibold tracking-wide text-white">FPS</p>
@@ -243,6 +454,7 @@ function CharacterRigSceneContent({
       <DesktopSplashOverlay
         isPointerLocked={isPointerLocked}
         isSplashDismissedByTouch={isSplashDismissedByTouch}
+        isChatOpen={isChatOpen || isResumingFromChat}
         localDisplayName={multiplayerState.localDisplayName}
         onSetLocalDisplayName={handleSetLocalDisplayName}
       />
@@ -263,7 +475,7 @@ function CharacterRigSceneContent({
 export function CharacterRigScene() {
   const connectionBuilder = useMemo(() => createSpacetimeConnectionBuilder(), []);
   const multiplayerStore = useMemo(
-    () => createMultiplayerStore(getOrCreateGuestDisplayName()),
+    () => createMultiplayerStore("Guest-local"),
     [],
   );
 

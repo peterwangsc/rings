@@ -44,10 +44,14 @@ import CastFireballReducer from "./cast_fireball_reducer";
 export { CastFireballReducer };
 import CollectRingReducer from "./collect_ring_reducer";
 export { CollectRingReducer };
+import SendChatMessageReducer from "./send_chat_message_reducer";
+export { SendChatMessageReducer };
 
 // Import and reexport all procedure arg types
 
 // Import and reexport all table handle types
+import ChatMessageEventRow from "./chat_message_event_table";
+export { ChatMessageEventRow };
 import FireballEventRow from "./fireball_event_table";
 export { FireballEventRow };
 import PlayerStateRow from "./player_state_table";
@@ -60,6 +64,8 @@ export { SessionRow };
 // Import and reexport all types
 import CastFireball from "./cast_fireball_type";
 export { CastFireball };
+import ChatMessageEvent from "./chat_message_event_type";
+export { ChatMessageEvent };
 import CollectRing from "./collect_ring_type";
 export { CollectRing };
 import FireballEvent from "./fireball_event_type";
@@ -74,6 +80,8 @@ import PlayerState from "./player_state_type";
 export { PlayerState };
 import RingState from "./ring_state_type";
 export { RingState };
+import SendChatMessage from "./send_chat_message_type";
+export { SendChatMessage };
 import Session from "./session_type";
 export { Session };
 import UpsertPlayerState from "./upsert_player_state_type";
@@ -81,6 +89,17 @@ export { UpsertPlayerState };
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema(
+  __table({
+    name: 'chat_message_event',
+    indexes: [
+      { name: 'messageId', algorithm: 'btree', columns: [
+        'messageId',
+      ] },
+    ],
+    constraints: [
+      { name: 'chat_message_event_messageId_key', constraint: 'unique', columns: ['messageId'] },
+    ],
+  }, ChatMessageEventRow),
   __table({
     name: 'fireball_event',
     indexes: [
@@ -132,6 +151,7 @@ const reducersSchema = __reducers(
   __reducerSchema("upsert_player_state", UpsertPlayerStateReducer),
   __reducerSchema("cast_fireball", CastFireballReducer),
   __reducerSchema("collect_ring", CollectRingReducer),
+  __reducerSchema("send_chat_message", SendChatMessageReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */

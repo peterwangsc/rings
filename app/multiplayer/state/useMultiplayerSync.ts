@@ -16,6 +16,7 @@ import {
   consumeRemoteFireballSpawns,
   enqueueRemoteFireballSpawns,
   setAuthoritativeLocalPlayerState,
+  setChatMessages,
   setCollectedRingIds,
   setMultiplayerConnectionStatus as setConnectionStatusInStore,
   setMultiplayerDiagnostics,
@@ -25,7 +26,9 @@ import {
 } from "./multiplayerStore";
 import type {
   AuthoritativePlayerState,
+  ChatMessageEvent,
   FireballSpawnEvent,
+  NetChatMessageEventRow,
   NetFireballEventRow,
   NetPlayerRow,
   NetPlayerSnapshot,
@@ -87,6 +90,17 @@ function toFireballSpawnEvent(
   };
 }
 
+function toChatMessageEvent(row: NetChatMessageEventRow): ChatMessageEvent {
+  return {
+    messageId: row.messageId,
+    ownerIdentity: row.ownerIdentity,
+    ownerDisplayName: row.ownerDisplayName,
+    messageText: row.messageText,
+    createdAtMs: row.createdAtMs,
+    expiresAtMs: row.expiresAtMs,
+  };
+}
+
 function getConnectionErrorMessage(error: unknown) {
   if (!error) {
     return "unknown_connection_error";
@@ -128,10 +142,12 @@ export function useMultiplayerSync({
   const [playerRows] = useTable(tables.playerState);
   const [ringRows] = useTable(tables.ringState);
   const [fireballRows] = useTable(tables.fireballEvent);
+  const [chatMessageRows] = useTable(tables.chatMessageEvent);
 
   const sendUpsertPlayerState = useSpacetimeReducer(reducers.upsertPlayerState);
   const sendCastFireball = useSpacetimeReducer(reducers.castFireball);
   const sendCollectRing = useSpacetimeReducer(reducers.collectRing);
+  const sendChatMessageReducer = useSpacetimeReducer(reducers.sendChatMessage);
 
   const seenFireballEventsRef = useRef<Set<string>>(new Set());
   const hasConnectedOnceRef = useRef(false);
@@ -207,8 +223,15 @@ export function useMultiplayerSync({
       playerRowCount: playerRows.length,
       ringRowCount: ringRows.length,
       fireballEventRowCount: fireballRows.length,
+      chatMessageRowCount: chatMessageRows.length,
     });
-  }, [fireballRows.length, playerRows.length, ringRows.length, store]);
+  }, [
+    chatMessageRows.length,
+    fireballRows.length,
+    playerRows.length,
+    ringRows.length,
+    store,
+  ]);
 
   useEffect(() => {
     const remotePlayers = new Map<string, AuthoritativePlayerState>();
@@ -271,6 +294,13 @@ export function useMultiplayerSync({
     }
   }, [fireballRows, localIdentity, networkFireballSpawnQueueRef, store]);
 
+  useEffect(() => {
+    const chatMessages = chatMessageRows
+      .map(toChatMessageEvent)
+      .sort((a, b) => a.createdAtMs - b.createdAtMs);
+    setChatMessages(store, chatMessages);
+  }, [chatMessageRows, store]);
+
   const localDisplayName = store.state.localDisplayName;
 
   const sendLocalPlayerSnapshot = useCallback(
@@ -313,9 +343,20 @@ export function useMultiplayerSync({
     [connectionState.isActive, sendCollectRing],
   );
 
+  const sendChatMessage = useCallback(
+    (messageText: string) => {
+      if (!connectionState.isActive) {
+        return;
+      }
+      sendChatMessageReducer({ messageText });
+    },
+    [connectionState.isActive, sendChatMessageReducer],
+  );
+
   return {
     sendLocalPlayerSnapshot,
     sendLocalFireballCast,
     sendRingCollect,
+    sendChatMessage,
   };
 }

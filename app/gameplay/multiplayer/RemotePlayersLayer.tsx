@@ -14,8 +14,10 @@ import type { AuthoritativePlayerState } from "../../multiplayer/state/multiplay
 
 function RemotePlayerActor({
   player,
+  activeChatMessage,
 }: {
   player: AuthoritativePlayerState;
+  activeChatMessage: string | null;
 }) {
   const rootRef = useRef<THREE.Group>(null);
   const planarSpeedRef = useRef(player.planarSpeed);
@@ -61,8 +63,15 @@ function RemotePlayerActor({
         transform
         distanceFactor={15}
       >
-        <div className="pointer-events-none rounded-sm border border-cyan-200/45 bg-black/50 px-1 py-0 text-[6px] font-semibold uppercase tracking-tight text-cyan-100 shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
-          {player.displayName}
+        <div
+          className={
+            activeChatMessage
+              ? "pointer-events-none max-w-[7.5rem] truncate rounded-sm border border-cyan-100/55 bg-black/60 px-1 py-0 text-[6px] font-semibold tracking-tight text-cyan-50 shadow-[0_2px_8px_rgba(0,0,0,0.3)]"
+              : "pointer-events-none rounded-sm border border-cyan-200/45 bg-black/50 px-1 py-0 text-[6px] font-semibold uppercase tracking-tight text-cyan-100 shadow-[0_2px_8px_rgba(0,0,0,0.3)]"
+          }
+          title={activeChatMessage ?? player.displayName}
+        >
+          {activeChatMessage ?? player.displayName}
         </div>
       </Html>
     </group>
@@ -71,13 +80,19 @@ function RemotePlayerActor({
 
 export function RemotePlayersLayer({
   players,
+  activeChatByIdentity,
 }: {
   players: readonly AuthoritativePlayerState[];
+  activeChatByIdentity: ReadonlyMap<string, string>;
 }) {
   return (
     <>
       {players.map((player) => (
-        <RemotePlayerActor key={player.identity} player={player} />
+        <RemotePlayerActor
+          key={player.identity}
+          player={player}
+          activeChatMessage={activeChatByIdentity.get(player.identity) ?? null}
+        />
       ))}
     </>
   );

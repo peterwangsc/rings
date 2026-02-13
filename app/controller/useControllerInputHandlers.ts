@@ -14,6 +14,7 @@ export function useControllerInputHandlers({
   camera,
   gl,
   onPointerLockChange,
+  isInputSuspended = false,
   onToggleCameraMode,
   onToggleDefaultGait,
   inputStateRef,
@@ -29,6 +30,7 @@ export function useControllerInputHandlers({
   camera: THREE.Camera;
   gl: THREE.WebGLRenderer;
   onPointerLockChange?: (isLocked: boolean) => void;
+  isInputSuspended?: boolean;
   onToggleCameraMode: () => void;
   onToggleDefaultGait: () => void;
   inputStateRef: MutableRefObject<CharacterInputState>;
@@ -103,6 +105,10 @@ export function useControllerInputHandlers({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (isInputSuspended) {
+        return;
+      }
+
       if (event.code === CAMERA_MODE_TOGGLE_KEY && !event.repeat) {
         onToggleCameraMode();
         return;
@@ -121,6 +127,9 @@ export function useControllerInputHandlers({
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
+      if (isInputSuspended) {
+        return;
+      }
       setInputState(event.code, false);
     };
 
@@ -152,6 +161,9 @@ export function useControllerInputHandlers({
     };
 
     const requestPointerLock = () => {
+      if (isInputSuspended) {
+        return;
+      }
       if (
         document.pointerLockElement !== domElement &&
         typeof domElement.requestPointerLock === "function"
@@ -161,6 +173,10 @@ export function useControllerInputHandlers({
     };
 
     const handleCanvasPointerDown = (event: PointerEvent) => {
+      if (isInputSuspended) {
+        return;
+      }
+
       if (event.pointerType === "touch") {
         event.preventDefault();
         if (activeTouchPointerIdRef.current === null) {
@@ -185,6 +201,10 @@ export function useControllerInputHandlers({
     };
 
     const handleCanvasPointerMove = (event: PointerEvent) => {
+      if (isInputSuspended) {
+        return;
+      }
+
       if (
         event.pointerType !== "touch" ||
         activeTouchPointerIdRef.current !== event.pointerId ||
@@ -225,6 +245,9 @@ export function useControllerInputHandlers({
     };
 
     const handleCanvasTouchStart = (event: TouchEvent) => {
+      if (isInputSuspended) {
+        return;
+      }
       if (activeTouchPointerIdRef.current !== null) {
         return;
       }
@@ -238,6 +261,9 @@ export function useControllerInputHandlers({
     };
 
     const handleCanvasTouchMove = (event: TouchEvent) => {
+      if (isInputSuspended) {
+        return;
+      }
       if (
         activeTouchPointerIdRef.current === null ||
         activeTouchPositionRef.current === null
@@ -265,6 +291,9 @@ export function useControllerInputHandlers({
     };
 
     const handleCanvasTouchEndOrCancel = (event: TouchEvent) => {
+      if (isInputSuspended) {
+        return;
+      }
       if (activeTouchPointerIdRef.current === null) {
         return;
       }
@@ -304,6 +333,13 @@ export function useControllerInputHandlers({
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", resetInputState);
+
+    if (isInputSuspended) {
+      if (document.pointerLockElement === domElement) {
+        document.exitPointerLock();
+      }
+      resetInputState();
+    }
 
     return () => {
       if (supportsPointerEvents) {
@@ -353,6 +389,7 @@ export function useControllerInputHandlers({
     jumpIntentTimerRef,
     mobileJumpWasPressedRef,
     onPointerLockChange,
+    isInputSuspended,
     onToggleCameraMode,
     onToggleDefaultGait,
   ]);

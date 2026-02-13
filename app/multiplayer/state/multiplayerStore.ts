@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import type {
   AuthoritativePlayerState,
+  ChatMessageEvent,
   ConnectionStatus,
   FireballSpawnEvent,
   MultiplayerDiagnostics,
@@ -13,6 +14,7 @@ const EMPTY_DIAGNOSTICS: MultiplayerDiagnostics = {
   playerRowCount: 0,
   ringRowCount: 0,
   fireballEventRowCount: 0,
+  chatMessageRowCount: 0,
 };
 
 export interface MultiplayerStore {
@@ -32,6 +34,7 @@ function cloneState(state: MultiplayerState): MultiplayerState {
     remotePlayers: new Map(state.remotePlayers),
     collectedRingIds: new Set(state.collectedRingIds),
     pendingRemoteFireballSpawns: [...state.pendingRemoteFireballSpawns],
+    chatMessages: [...state.chatMessages],
   };
 }
 
@@ -74,6 +77,7 @@ export function createMultiplayerStore(
       remotePlayers: new Map(),
       collectedRingIds: new Set(),
       pendingRemoteFireballSpawns: [],
+      chatMessages: [],
       diagnostics: { ...EMPTY_DIAGNOSTICS },
     },
   };
@@ -199,7 +203,8 @@ export function setMultiplayerDiagnostics(
   if (
     current.playerRowCount === diagnostics.playerRowCount &&
     current.ringRowCount === diagnostics.ringRowCount &&
-    current.fireballEventRowCount === diagnostics.fireballEventRowCount
+    current.fireballEventRowCount === diagnostics.fireballEventRowCount &&
+    current.chatMessageRowCount === diagnostics.chatMessageRowCount
   ) {
     return;
   }
@@ -208,6 +213,30 @@ export function setMultiplayerDiagnostics(
     ...store.state,
     diagnostics,
   };
+  emitChanged(store);
+}
+
+export function setChatMessages(
+  store: MultiplayerStore,
+  chatMessages: readonly ChatMessageEvent[],
+) {
+  const currentMessages = store.state.chatMessages;
+  if (currentMessages.length === chatMessages.length) {
+    let hasDiff = false;
+    for (let index = 0; index < currentMessages.length; index += 1) {
+      if (currentMessages[index] !== chatMessages[index]) {
+        hasDiff = true;
+        break;
+      }
+    }
+    if (!hasDiff) {
+      return;
+    }
+  }
+
+  const nextState = cloneState(store.state);
+  nextState.chatMessages = [...chatMessages];
+  store.state = nextState;
   emitChanged(store);
 }
 

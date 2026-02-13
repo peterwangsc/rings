@@ -1,6 +1,7 @@
 import type { Infer } from "spacetimedb";
 import type { MotionState } from "../../lib/CharacterActor";
 import {
+  ChatMessageEventRow,
   FireballEventRow,
   PlayerStateRow,
   RingStateRow,
@@ -8,6 +9,7 @@ import {
 
 export type NetPlayerRow = Infer<typeof PlayerStateRow>;
 export type NetFireballEventRow = Infer<typeof FireballEventRow>;
+export type NetChatMessageEventRow = Infer<typeof ChatMessageEventRow>;
 export type NetRingRow = Infer<typeof RingStateRow>;
 
 export type ConnectionStatus =
@@ -50,10 +52,20 @@ export interface FireballSpawnEvent {
   expiresAtMs: number;
 }
 
+export interface ChatMessageEvent {
+  messageId: string;
+  ownerIdentity: string;
+  ownerDisplayName: string;
+  messageText: string;
+  createdAtMs: number;
+  expiresAtMs: number;
+}
+
 export interface MultiplayerDiagnostics {
   playerRowCount: number;
   ringRowCount: number;
   fireballEventRowCount: number;
+  chatMessageRowCount: number;
 }
 
 export interface MultiplayerState {
@@ -65,6 +77,7 @@ export interface MultiplayerState {
   remotePlayers: Map<string, AuthoritativePlayerState>;
   collectedRingIds: Set<string>;
   pendingRemoteFireballSpawns: FireballSpawnEvent[];
+  chatMessages: ChatMessageEvent[];
   diagnostics: MultiplayerDiagnostics;
 }
 
@@ -78,5 +91,6 @@ export interface MultiplayerReducerFns {
     directionY: number;
     directionZ: number;
   }) => void;
+  sendChatMessage: (request: { messageText: string }) => void;
   collectRing: (ringId: string) => void;
 }
