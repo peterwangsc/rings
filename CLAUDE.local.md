@@ -40,18 +40,25 @@ No test framework is configured.
 
 ```
 page.tsx → CharacterRigScene → Canvas (R3F)
+  ├── AnimatedSun + SceneCloudLayer (sky, day/night cycle, and atmosphere)
   ├── Physics (Rapier world)
-  ├── WorldGeometry (terrain, grass, rocks, campfire, and forest tree placement)
-  │     └── SingleTree (handcrafted conifer-style trunk + layered canopy)
-  └── CharacterRigController (input, physics loop, camera)
-        └── CharacterActor (model loading, animation mixer)
+  │     ├── WorldGeometry (scene composition)
+  │     │     ├── terrainChunks (chunk terrain mesh + trimesh colliders)
+  │     │     ├── grassField (instanced blades + shader customization)
+  │     │     ├── placements (rock/tree/campfire placement generation)
+  │     │     └── SingleTree (handcrafted conifer-style trunk + layered canopy)
+  │     └── CharacterRigController (simulation loop)
+  │           ├── useControllerInputHandlers (keyboard, pointer-lock, touch look)
+  │           └── CharacterActor (model loading, animation mixer)
+  ├── RingField (collectible rings)
+  └── HUD + overlays (GameHUD, splash panels, mobile controls)
 ```
 
 - All components under `app/` are client components (`"use client"`).
 - State is managed via React hooks only — no global state library. `useRef` for per-frame mutable state (input, timers), `useState` for render-triggering state (camera mode, gait).
 - The gameplay loop runs in `useFrame` inside `CharacterRigController.tsx` — the central orchestrator for input → physics → camera → animation each frame.
 - Vertical movement is fully physics-driven (Rapier gravity); horizontal intent is on the XZ plane.
-- Player is a capsule rigid body; ground uses a trimesh collider; rocks use cuboid colliders.
+- Player is a capsule rigid body; ground uses trimesh colliders; rocks use hull mesh colliders by default (cuboid fallback mode is available).
 
 ---
 
@@ -143,18 +150,18 @@ The character has seven motion states: `idle`, `walk`, `running`, `jump`, `jump_
 
 The mood of the scene — sky color, fog, sun direction, ambient tone.
 
-**Files:** `app/utils/constants.ts` for colors and fog range. `app/scene/CharacterRigScene.tsx` for light positions and intensities.
+**Files:** `app/utils/constants.ts` for colors and fog range. `app/scene/AnimatedSun.tsx` for sky/day-night lighting behavior and shadow settings. `app/scene/SceneCloudLayer.tsx` for cloud placement.
 
 | What you're shaping | Where | What it does |
 |---|---|---|
 | Sky color | `SKY_BACKGROUND_COLOR` in constants | Background and fog color (currently pale blue `#CFE9FF`) |
 | Fog start | `SKY_FOG_NEAR` in constants | How close fog begins (currently 35 units) |
 | Fog end | `SKY_FOG_FAR` in constants | Where fog becomes fully opaque (currently 135 units) — closer = more enclosed, farther = more open |
-| Sky/ground ambient tint | `hemisphereLight` in CharacterRigScene | Two-tone ambient: sky tint `#EAF6FF` from above, ground tint `#8AA36D` from below |
-| Fill light | `ambientLight` in CharacterRigScene | Flat overall brightness (currently 0.95) |
-| Sun color and power | `directionalLight` in CharacterRigScene | Warm key light `#FFF4D6` at intensity 1.35 |
-| Sun direction | `directionalLight position` in CharacterRigScene | Where shadows fall from — currently `[8, 14, 6]` (high and slightly behind-right) |
-| Shadow quality | `shadow-mapSize` in CharacterRigScene | Shadow map resolution (currently 2048x2048) |
+| Sky/ground ambient tint | `hemisphereLight` in `AnimatedSun.tsx` | Two-tone ambient: sky tint `#EAF6FF` from above, ground tint `#8AA36D` from below |
+| Fill light | `ambientLight` in `AnimatedSun.tsx` | Base ambient intensity for day/night blend (currently 0.75 by day, 0.2 by night) |
+| Sun color and power | `directionalLight` in `AnimatedSun.tsx` | Warm key light `#FFF4D6` at peak daytime intensity 1.35 |
+| Sun path / direction | `SUN_ORBIT_*` constants in `AnimatedSun.tsx` | Orbits the light around the player to drive dynamic day/night shading |
+| Shadow quality | `shadow-mapSize` in `AnimatedSun.tsx` | Shadow map resolution (currently 1024x1024) |
 
 The hemisphere light is the main tool for overall color mood — its sky tint washes the tops of everything, its ground tint washes the undersides. The directional light adds shape through shadows. Fog distance dramatically affects how intimate or vast the world feels.
 
@@ -162,7 +169,7 @@ The hemisphere light is the main tool for overall color mood — its sky tint wa
 
 Trees are currently built from a single handcrafted conifer profile (trunk + layered cone canopies) and instanced across the terrain with deterministic placement.
 
-**Primary files:** `app/vegetation/trees/SingleTree.tsx`, `app/scene/WorldGeometry.tsx`
+**Primary files:** `app/vegetation/trees/SingleTree.tsx`, `app/scene/world/placements.ts`, `app/scene/WorldGeometry.tsx`
 
 | What you're shaping | Where | What it does |
 |---|---|---|
@@ -170,9 +177,9 @@ Trees are currently built from a single handcrafted conifer profile (trunk + lay
 | Canopy twist | `CANOPY_MAX_TWIST_RADIANS` in `SingleTree.tsx` | Rotates higher canopy layers further around trunk for spiral structure |
 | Tree height variance | `heightScale` prop on `SingleTree` | Scales trunk + canopy proportions while preserving silhouette relationship |
 | Trunk thickness scaling | `trunkRadiusScale` in `SingleTree.tsx` | Keeps trunk believable as tree height changes |
-| Forest density | `LANDSCAPE_TREE_TARGET_COUNT` in `WorldGeometry.tsx` | Number of trees placed in the world |
-| Forest coverage | `LANDSCAPE_TREE_FIELD_RADIUS`, `LANDSCAPE_TREE_CLEARING_RADIUS` in `WorldGeometry.tsx` | Outer tree band and central player clearing |
-| Spacing and collision avoidance | `LANDSCAPE_TREE_MIN_SPACING`, `LANDSCAPE_TREE_ROCK_CLEARANCE` in `WorldGeometry.tsx` | Prevents trees from clumping or intersecting rocks |
+| Forest density | `LANDSCAPE_TREE_TARGET_COUNT` in `app/scene/world/placements.ts` | Number of trees placed in the world |
+| Forest coverage | `LANDSCAPE_TREE_FIELD_RADIUS`, `LANDSCAPE_TREE_CLEARING_RADIUS` in `app/scene/world/placements.ts` | Outer tree band and central player clearing |
+| Spacing and collision avoidance | `LANDSCAPE_TREE_MIN_SPACING`, `LANDSCAPE_TREE_ROCK_CLEARANCE` in `app/scene/world/placements.ts` | Prevents trees from clumping or intersecting rocks |
 
 ### 6. Rock surfaces — the shader palette
 
@@ -301,7 +308,7 @@ Rings use Rapier sensor colliders for pickup detection. Only the player's dynami
 ### For adding new visual elements
 
 1. State what the element is and where it should appear.
-2. Follow existing patterns: new world objects go in `WorldGeometry.tsx` with a `RigidBody` wrapper. New shader effects extend the existing `onBeforeCompile` pipeline in `shaders.ts`. New constants go in `constants.ts`.
+2. Follow existing patterns: compose new world objects in `WorldGeometry.tsx` with `RigidBody` wrappers, and put generation/helpers in `app/scene/world/*`. New shader effects extend the existing `onBeforeCompile` pipeline in `shaders.ts`. New constants go in `constants.ts`.
 3. Keep shader work inside the `MeshStandardMaterial` customization pattern — don't replace it with a raw `ShaderMaterial` unless the standard pipeline can't do what you need.
 
 ### Implementation order when building a new feature
@@ -354,14 +361,16 @@ When changing camera, movement, coordinate-space, or animation coupling behavior
 | Layer | Primary file |
 |---|---|
 | Movement, camera, timing, layout, colors | `app/utils/constants.ts` |
-| Lighting, shadows, fog, canvas setup | `app/scene/CharacterRigScene.tsx` |
-| Ground plane, grass, rock placement, campfire, forest tree placement | `app/scene/WorldGeometry.tsx` |
+| Lighting, shadows, sky/fog behavior, cloud layer | `app/scene/CharacterRigScene.tsx`, `app/scene/AnimatedSun.tsx`, `app/scene/SceneCloudLayer.tsx` |
+| Ground plane, grass, rock placement, campfire, forest tree placement | `app/scene/WorldGeometry.tsx`, `app/scene/world/terrainChunks.tsx`, `app/scene/world/grassField.ts`, `app/scene/world/placements.ts` |
 | Handcrafted conifer tree mesh | `app/vegetation/trees/SingleTree.tsx` |
 | Rock surface shader effects | `app/utils/shaders.ts` |
 | Rock procedural shape | `app/utils/rockGeometry.ts` |
 | Character model, animation playback | `app/lib/CharacterActor.tsx` |
 | Animation helpers, clip processing | `app/lib/characterAnimation.ts` |
 | Input and per-frame gameplay loop | `app/controller/CharacterRigController.tsx` |
+| Input event wiring (keyboard, pointer-lock, touch look) | `app/controller/useControllerInputHandlers.ts` |
+| Mobile joystick and splash/orientation overlays | `app/scene/MobileControlsOverlay.tsx`, `app/scene/SceneOverlays.tsx` |
 | Camera application logic | `app/camera/cameraRig.ts` |
 | Terrain height and noise sampling | `app/utils/terrain.ts` |
 | Direction and angle math | `app/utils/math.ts` |
