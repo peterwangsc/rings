@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import {
+  CHUNK_GRASS_BLADE_COUNT,
+  CHUNK_SPAWN_CLEARING_RADIUS,
   GRASS_BLADE_BASE_HEIGHT,
   GRASS_BLADE_BASE_WIDTH,
   GRASS_BLADE_COUNT,
@@ -27,7 +29,8 @@ import {
   valueNoise2D,
 } from "../../utils/terrain";
 import { isNearRock } from "./placements";
-import type { RockPlacement } from "./worldTypes";
+import { TERRAIN_CHUNK_SIZE } from "./terrainChunks";
+import type { ChunkRockPlacement, RockPlacement } from "./worldTypes";
 
 const GRASS_SHADER_CACHE_KEY = "grass-blades-v1";
 const TAU = Math.PI * 2;
@@ -273,6 +276,117 @@ export function applyGrassFieldToMesh(
     mesh.setMatrixAt(i, grassField.bladeMatrices[i]);
   }
   mesh.instanceMatrix.needsUpdate = true;
+}
+
+function chunkGrassHash(chunkX: number, chunkZ: number, index: number, salt: number) {
+  return hash1D(chunkX * 191.3 + chunkZ * 271.7 + index * salt);
+}
+
+export function createChunkGrassField(
+  chunkX: number,
+  chunkZ: number,
+  rockPlacements: readonly ChunkRockPlacement[],
+): GrassFieldData {
+  const bladeGeometry = new THREE.PlaneGeometry(1, 1, 1, 4);
+  bladeGeometry.translate(0, 0.5, 0);
+
+  const chunkCenterX = chunkX * TERRAIN_CHUNK_SIZE;
+  const chunkCenterZ = chunkZ * TERRAIN_CHUNK_SIZE;
+  const isOriginChunk = chunkX === 0 && chunkZ === 0;
+
+  const bladeMatrices: THREE.Matrix4[] = [];
+  const bladeDataRaw = new Float32Array(CHUNK_GRASS_BLADE_COUNT * 4);
+
+  const basePosition = new THREE.Vector3();
+  const rotation = new THREE.Euler(0, 0, 0, "YXZ");
+  const quaternion = new THREE.Quaternion();
+  const bladeScale = new THREE.Vector3();
+
+  const maxAttempts = CHUNK_GRASS_BLADE_COUNT * 26;
+  let bladeCount = 0;
+  for (let attempt = 0; attempt < maxAttempts && bladeCount < CHUNK_GRASS_BLADE_COUNT; attempt++) {
+    const hx = chunkGrassHash(chunkX, chunkZ, attempt, 17.13);
+    const hz = chunkGrassHash(chunkX, chunkZ, attempt, 19.31);
+    const x = chunkCenterX + (hx - 0.5) * TERRAIN_CHUNK_SIZE;
+    const z = chunkCenterZ + (hz - 0.5) * TERRAIN_CHUNK_SIZE;
+
+    if (isOriginChunk && Math.hypot(x, z) < CHUNK_SPAWN_CLEARING_RADIUS * 0.5) {
+      continue;
+    }
+
+    const slope = sampleTerrainSlope(x, z);
+    const slopeMask = 1 - smoothstep(0.45, 1.45, slope);
+    if (slopeMask < 0.18) {
+      continue;
+    }
+
+    const macroDensity = valueNoise2D(
+      x * GRASS_DENSITY_NOISE_SCALE,
+      z * GRASS_DENSITY_NOISE_SCALE,
+    );
+    const patchDensity = valueNoise2D(
+      (x + 41.7) * GRASS_DENSITY_NOISE_SCALE * 0.58,
+      (z - 17.3) * GRASS_DENSITY_NOISE_SCALE * 0.58,
+    );
+    const density = THREE.MathUtils.clamp(
+      (macroDensity * 0.72 + patchDensity * 0.28) * slopeMask,
+      0,
+      1,
+    );
+    const densityThreshold = GRASS_DENSITY_MIN + chunkGrassHash(chunkX, chunkZ, attempt, 7.7) * 0.18;
+    if (density < densityThreshold) {
+      continue;
+    }
+    if (isNearRock(x, z, GRASS_ROCK_CLEARANCE, rockPlacements)) {
+      continue;
+    }
+
+    const widthNoise =
+      1 -
+      GRASS_BLADE_WIDTH_VARIANCE * 0.5 +
+      chunkGrassHash(chunkX, chunkZ, attempt, 5.3) * GRASS_BLADE_WIDTH_VARIANCE;
+    const heightNoise =
+      1 -
+      GRASS_BLADE_HEIGHT_VARIANCE * 0.5 +
+      chunkGrassHash(chunkX, chunkZ, attempt, 6.1) * GRASS_BLADE_HEIGHT_VARIANCE;
+    const width = GRASS_BLADE_BASE_WIDTH * widthNoise;
+    const height =
+      GRASS_BLADE_BASE_HEIGHT *
+      heightNoise *
+      THREE.MathUtils.lerp(0.85, 1.18, density);
+
+    const yaw = chunkGrassHash(chunkX, chunkZ, attempt, 9.1) * TAU;
+    const leanX = (chunkGrassHash(chunkX, chunkZ, attempt, 11.7) - 0.5) * 0.1;
+    const leanZ = (chunkGrassHash(chunkX, chunkZ, attempt, 12.4) - 0.5) * 0.1;
+    rotation.set(leanX, yaw, leanZ);
+    quaternion.setFromEuler(rotation);
+
+    basePosition.set(x, sampleTerrainHeight(x, z) + GRASS_BASE_Y, z);
+    bladeScale.set(width, height, 1);
+
+    const matrix = new THREE.Matrix4();
+    matrix.compose(basePosition, quaternion, bladeScale);
+    bladeMatrices.push(matrix);
+
+    const dataIndex = bladeCount * 4;
+    bladeDataRaw[dataIndex] = chunkGrassHash(chunkX, chunkZ, attempt, 13.4);
+    bladeDataRaw[dataIndex + 1] = density;
+    bladeDataRaw[dataIndex + 2] = chunkGrassHash(chunkX, chunkZ, attempt, 15.2);
+    bladeDataRaw[dataIndex + 3] = chunkGrassHash(chunkX, chunkZ, attempt, 3.8) * 2 - 1;
+    bladeCount += 1;
+  }
+
+  const bladeData = bladeDataRaw.subarray(0, bladeCount * 4);
+  bladeGeometry.setAttribute(
+    "aBladeData",
+    new THREE.InstancedBufferAttribute(bladeData, 4),
+  );
+
+  return {
+    bladeGeometry,
+    bladeMatrices,
+    bladeCount,
+  };
 }
 
 export function updateGrassMaterialTime(

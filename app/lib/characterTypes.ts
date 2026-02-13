@@ -1,4 +1,5 @@
 import type { AnimationAction } from "three";
+import type { MutableRefObject } from "react";
 
 export type EmoteState = "happy" | "sad";
 
@@ -14,6 +15,7 @@ export type MotionActionMap = Record<MotionState, AnimationAction | null>;
 
 export interface CharacterActorProps {
   readonly motionState: MotionState;
+  readonly planarSpeedRef?: MutableRefObject<number>;
   readonly targetHeight?: number;
   readonly hidden?: boolean;
   readonly onEmoteFinished?: (emoteState: EmoteState) => void;

@@ -24,7 +24,6 @@ import {
 import { AnimatedSun } from "./AnimatedSun";
 import { FrameRateProbe } from "./FrameRateProbe";
 import { MobileControlsOverlay } from "./MobileControlsOverlay";
-import { SceneCloudLayer } from "./SceneCloudLayer";
 import { DesktopSplashOverlay, MobileOrientationOverlay } from "./SceneOverlays";
 import { WorldGeometry } from "./WorldGeometry";
 
@@ -139,7 +138,6 @@ export function CharacterRigScene() {
         <AnimatedSun followPositionRef={playerWorldPositionRef} />
         {isFpsVisible ? <FrameRateProbe onUpdate={handleFpsUpdate} /> : null}
         <fog attach="fog" args={[HORIZON_COLOR, SKY_FOG_NEAR, SKY_FOG_FAR]} />
-        <SceneCloudLayer />
         <Physics gravity={[0, WORLD_GRAVITY_Y, 0]}>
           <Suspense fallback={null}>
             <WorldGeometry playerPositionRef={playerWorldPositionRef} />

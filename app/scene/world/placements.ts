@@ -1,25 +1,38 @@
 import * as THREE from "three";
 import {
   CAMPFIRE_POSITION,
-  GROUND_HALF_EXTENT,
+  CHUNK_CLOUD_COUNT,
+  CHUNK_CLOUD_FADE,
+  CHUNK_CLOUD_MAX_HEIGHT,
+  CHUNK_CLOUD_MAX_OPACITY,
+  CHUNK_CLOUD_MAX_SEGMENTS,
+  CHUNK_CLOUD_MAX_SPEED,
+  CHUNK_CLOUD_MIN_HEIGHT,
+  CHUNK_CLOUD_MIN_OPACITY,
+  CHUNK_CLOUD_MIN_SEGMENTS,
+  CHUNK_CLOUD_MIN_SPEED,
+  CHUNK_ROCK_COUNT,
+  CHUNK_ROCK_MIN_SPACING,
+  CHUNK_ROCK_SCALE_MAX,
+  CHUNK_ROCK_SCALE_MIN,
+  CHUNK_SPAWN_CLEARING_RADIUS,
+  CHUNK_TREE_COUNT,
+  CHUNK_TREE_HEIGHT_SCALE_MAX,
+  CHUNK_TREE_HEIGHT_SCALE_MIN,
+  CHUNK_TREE_MIN_SPACING,
+  CHUNK_TREE_ROCK_CLEARANCE,
   ROCK_FORMATIONS,
 } from "../../utils/constants";
-import { hash1D, sampleTerrainHeight } from "../../utils/terrain";
+import { hash1D, sampleTerrainHeight, sampleTerrainSlope } from "../../utils/terrain";
 import {
   getSingleTreeTrunkCollider,
   type SingleTreeTrunkCollider,
 } from "../../vegetation/trees/SingleTree";
-import type { RockPlacement } from "./worldTypes";
+import { TERRAIN_CHUNK_SIZE } from "./terrainChunks";
+import type { ChunkCloudPlacement, ChunkRockPlacement } from "./worldTypes";
 
-const TAU = Math.PI * 2;
 const ROCK_COLLIDER_PADDING = 0.02;
-const LANDSCAPE_TREE_TARGET_COUNT = 54;
-const LANDSCAPE_TREE_FIELD_RADIUS = GROUND_HALF_EXTENT - 4;
-const LANDSCAPE_TREE_MIN_SPACING = 7.2;
-const LANDSCAPE_TREE_CLEARING_RADIUS = 7.5;
-const LANDSCAPE_TREE_ROCK_CLEARANCE = 4;
 const LANDSCAPE_TREE_GROUND_SINK = 0.35;
-const LANDSCAPE_TREE_MAX_ATTEMPTS = LANDSCAPE_TREE_TARGET_COUNT * 120;
 
 export type SingleTreePlacement = {
   id: string;
@@ -28,11 +41,17 @@ export type SingleTreePlacement = {
   trunkCollider: SingleTreeTrunkCollider;
 };
 
+type HasColliderShape = {
+  position: readonly [number, number, number];
+  colliderHalfExtents: readonly [number, number, number];
+  colliderOffset: readonly [number, number, number];
+};
+
 export function isNearRock(
   x: number,
   z: number,
   clearance: number,
-  rockPlacements: readonly RockPlacement[],
+  rockPlacements: readonly HasColliderShape[],
 ) {
   return rockPlacements.some((rock) => {
     const rockCenterX = rock.position[0] + rock.colliderOffset[0];
@@ -93,63 +112,197 @@ export function createCampfirePlacement() {
   ] as const;
 }
 
-export function createSingleTreePlacements(
-  rockPlacements: readonly RockPlacement[],
-): SingleTreePlacement[] {
-  const placements: SingleTreePlacement[] = [];
-  const points: THREE.Vector2[] = [];
+// --- Deterministic chunk hash ---
 
-  for (
-    let attempt = 0;
-    attempt < LANDSCAPE_TREE_MAX_ATTEMPTS &&
-    placements.length < LANDSCAPE_TREE_TARGET_COUNT;
-    attempt++
-  ) {
-    const radialSample = hash1D(attempt * 11.37 + 2.1);
-    const angleSample = hash1D(attempt * 17.89 + 4.6);
-    const radius = LANDSCAPE_TREE_FIELD_RADIUS * Math.sqrt(radialSample);
-    const angle = angleSample * TAU;
-    const x = Math.cos(angle) * radius;
-    const z = Math.sin(angle) * radius;
+function chunkHashN(chunkX: number, chunkZ: number, index: number, salt: number) {
+  return hash1D(chunkX * 127.3 + chunkZ * 311.7 + index * salt);
+}
 
-    if (Math.hypot(x, z) < LANDSCAPE_TREE_CLEARING_RADIUS) {
+// --- Per-chunk rock placement ---
+
+export function createChunkRockPlacements(
+  chunkX: number,
+  chunkZ: number,
+): ChunkRockPlacement[] {
+  const chunkCenterX = chunkX * TERRAIN_CHUNK_SIZE;
+  const chunkCenterZ = chunkZ * TERRAIN_CHUNK_SIZE;
+  const margin = 4;
+  const isOriginChunk = chunkX === 0 && chunkZ === 0;
+
+  const placements: ChunkRockPlacement[] = [];
+  const maxAttempts = CHUNK_ROCK_COUNT * 30;
+
+  for (let attempt = 0; attempt < maxAttempts && placements.length < CHUNK_ROCK_COUNT; attempt++) {
+    const hx = chunkHashN(chunkX, chunkZ, attempt, 17.31);
+    const hz = chunkHashN(chunkX, chunkZ, attempt, 23.47);
+    const x = chunkCenterX + (hx - 0.5) * (TERRAIN_CHUNK_SIZE - margin * 2);
+    const z = chunkCenterZ + (hz - 0.5) * (TERRAIN_CHUNK_SIZE - margin * 2);
+
+    // Skip spawn clearing on origin chunk
+    if (isOriginChunk && Math.hypot(x, z) < CHUNK_SPAWN_CLEARING_RADIUS) {
       continue;
     }
-    if (
-      Math.hypot(x - CAMPFIRE_POSITION[0], z - CAMPFIRE_POSITION[2]) <
-      LANDSCAPE_TREE_CLEARING_RADIUS * 1.05
-    ) {
-      continue;
-    }
-    if (isNearRock(x, z, LANDSCAPE_TREE_ROCK_CLEARANCE, rockPlacements)) {
+
+    // Skip steep slopes
+    const slope = sampleTerrainSlope(x, z);
+    if (slope > 1.2) {
       continue;
     }
 
-    const tooCloseToTree = points.some((point) => {
-      const dx = point.x - x;
-      const dz = point.y - z;
-      return (
-        dx * dx + dz * dz <
-        LANDSCAPE_TREE_MIN_SPACING * LANDSCAPE_TREE_MIN_SPACING
-      );
+    // Min spacing between rocks
+    const tooClose = placements.some((r) => {
+      const dx = r.position[0] - x;
+      const dz = r.position[2] - z;
+      return dx * dx + dz * dz < CHUNK_ROCK_MIN_SPACING * CHUNK_ROCK_MIN_SPACING;
     });
-    if (tooCloseToTree) {
+    if (tooClose) {
       continue;
     }
 
-    points.push(new THREE.Vector2(x, z));
+    const scaleSample = chunkHashN(chunkX, chunkZ, attempt, 31.19);
+    const baseScale = THREE.MathUtils.lerp(CHUNK_ROCK_SCALE_MIN, CHUNK_ROCK_SCALE_MAX, scaleSample);
+    const sx = baseScale * THREE.MathUtils.lerp(0.8, 1.2, chunkHashN(chunkX, chunkZ, attempt, 37.41));
+    const sy = baseScale * THREE.MathUtils.lerp(0.6, 1.0, chunkHashN(chunkX, chunkZ, attempt, 41.73));
+    const sz = baseScale * THREE.MathUtils.lerp(0.8, 1.2, chunkHashN(chunkX, chunkZ, attempt, 47.11));
+
+    const geometrySeed = Math.floor(chunkHashN(chunkX, chunkZ, attempt, 53.29) * 100000);
+    const terrainY = sampleTerrainHeight(x, z);
+
+    // Approximate collider from scale (before geometry is generated)
+    const colliderHalf: readonly [number, number, number] = [
+      Math.max(sx * 0.5 + ROCK_COLLIDER_PADDING, 0.01),
+      Math.max(sy * 0.5 + ROCK_COLLIDER_PADDING, 0.01),
+      Math.max(sz * 0.5 + ROCK_COLLIDER_PADDING, 0.01),
+    ];
+
+    placements.push({
+      position: [x, sy * 0.5, z] as const,
+      scale: [sx, sy, sz] as const,
+      collider: [sx * 0.5, sy * 0.5, sz * 0.5] as const,
+      geometrySeed,
+      terrainY,
+      colliderHalfExtents: colliderHalf,
+      colliderOffset: [0, 0, 0] as const,
+    });
+  }
+
+  return placements;
+}
+
+// --- Per-chunk tree placement ---
+
+export function createChunkTreePlacements(
+  chunkX: number,
+  chunkZ: number,
+  rockPlacements: readonly ChunkRockPlacement[],
+): SingleTreePlacement[] {
+  const chunkCenterX = chunkX * TERRAIN_CHUNK_SIZE;
+  const chunkCenterZ = chunkZ * TERRAIN_CHUNK_SIZE;
+  const margin = 3;
+  const isOriginChunk = chunkX === 0 && chunkZ === 0;
+
+  const placements: SingleTreePlacement[] = [];
+  const points: { x: number; z: number }[] = [];
+  const maxAttempts = CHUNK_TREE_COUNT * 30;
+
+  for (let attempt = 0; attempt < maxAttempts && placements.length < CHUNK_TREE_COUNT; attempt++) {
+    const hx = chunkHashN(chunkX, chunkZ, attempt, 61.37);
+    const hz = chunkHashN(chunkX, chunkZ, attempt, 67.53);
+    const x = chunkCenterX + (hx - 0.5) * (TERRAIN_CHUNK_SIZE - margin * 2);
+    const z = chunkCenterZ + (hz - 0.5) * (TERRAIN_CHUNK_SIZE - margin * 2);
+
+    // Skip spawn clearing and campfire area on origin chunk
+    if (isOriginChunk) {
+      if (Math.hypot(x, z) < CHUNK_SPAWN_CLEARING_RADIUS + 2) {
+        continue;
+      }
+      if (
+        Math.hypot(x - CAMPFIRE_POSITION[0], z - CAMPFIRE_POSITION[2]) < CHUNK_SPAWN_CLEARING_RADIUS
+      ) {
+        continue;
+      }
+    }
+
+    // Rock clearance
+    if (isNearRock(x, z, CHUNK_TREE_ROCK_CLEARANCE, rockPlacements)) {
+      continue;
+    }
+
+    // Tree spacing
+    const tooClose = points.some((p) => {
+      const dx = p.x - x;
+      const dz = p.z - z;
+      return dx * dx + dz * dz < CHUNK_TREE_MIN_SPACING * CHUNK_TREE_MIN_SPACING;
+    });
+    if (tooClose) {
+      continue;
+    }
+
+    points.push({ x, z });
     const y = sampleTerrainHeight(x, z) - LANDSCAPE_TREE_GROUND_SINK;
     const heightScale = THREE.MathUtils.lerp(
-      0.78,
-      1.42,
-      hash1D(attempt * 23.17 + 9.3),
+      CHUNK_TREE_HEIGHT_SCALE_MIN,
+      CHUNK_TREE_HEIGHT_SCALE_MAX,
+      chunkHashN(chunkX, chunkZ, attempt, 73.91),
     );
 
     placements.push({
-      id: `single-tree-${placements.length}`,
+      id: `chunk-tree-${chunkX}-${chunkZ}-${placements.length}`,
       position: [x, y, z] as const,
       heightScale,
       trunkCollider: getSingleTreeTrunkCollider(heightScale),
+    });
+  }
+
+  return placements;
+}
+
+// --- Per-chunk cloud placement ---
+
+export function createChunkCloudPlacements(
+  chunkX: number,
+  chunkZ: number,
+): ChunkCloudPlacement[] {
+  const chunkCenterX = chunkX * TERRAIN_CHUNK_SIZE;
+  const chunkCenterZ = chunkZ * TERRAIN_CHUNK_SIZE;
+  const placements: ChunkCloudPlacement[] = [];
+
+  for (let i = 0; i < CHUNK_CLOUD_COUNT; i++) {
+    const hx = chunkHashN(chunkX, chunkZ, i, 83.17);
+    const hz = chunkHashN(chunkX, chunkZ, i, 89.31);
+    const hy = chunkHashN(chunkX, chunkZ, i, 97.43);
+    const x = chunkCenterX + (hx - 0.5) * TERRAIN_CHUNK_SIZE;
+    const z = chunkCenterZ + (hz - 0.5) * TERRAIN_CHUNK_SIZE;
+    const y = THREE.MathUtils.lerp(CHUNK_CLOUD_MIN_HEIGHT, CHUNK_CLOUD_MAX_HEIGHT, hy);
+
+    const segHash = chunkHashN(chunkX, chunkZ, i, 101.59);
+    const segments = Math.round(
+      THREE.MathUtils.lerp(CHUNK_CLOUD_MIN_SEGMENTS, CHUNK_CLOUD_MAX_SEGMENTS, segHash),
+    );
+
+    const boundsW = THREE.MathUtils.lerp(12, 22, chunkHashN(chunkX, chunkZ, i, 107.71));
+    const boundsH = THREE.MathUtils.lerp(3, 6, chunkHashN(chunkX, chunkZ, i, 113.83));
+
+    const opacity = THREE.MathUtils.lerp(
+      CHUNK_CLOUD_MIN_OPACITY,
+      CHUNK_CLOUD_MAX_OPACITY,
+      chunkHashN(chunkX, chunkZ, i, 119.97),
+    );
+    const speed = THREE.MathUtils.lerp(
+      CHUNK_CLOUD_MIN_SPEED,
+      CHUNK_CLOUD_MAX_SPEED,
+      chunkHashN(chunkX, chunkZ, i, 127.13),
+    );
+
+    const seed = Math.floor(chunkHashN(chunkX, chunkZ, i, 131.29) * 100000);
+
+    placements.push({
+      position: [x, y, z] as const,
+      seed,
+      segments,
+      bounds: [boundsW, boundsH, 1] as const,
+      opacity,
+      speed,
     });
   }
 

@@ -467,6 +467,7 @@ export function CharacterRigController({
       <group ref={visualRootRef} position={[0, PLAYER_VISUAL_Y_OFFSET, 0]}>
         <CharacterActor
           motionState={actorMotionState}
+          planarSpeedRef={smoothedPlanarSpeedRef}
           onEmoteFinished={handleEmoteFinished}
           hidden={cameraMode === "first_person"}
         />

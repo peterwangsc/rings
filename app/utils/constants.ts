@@ -45,7 +45,7 @@ export const LOOK_TARGET_DISTANCE = 20;
 export const FIRST_PERSON_CAMERA_FOV = 55;
 export const THIRD_PERSON_CAMERA_FOV = 47;
 
-export const PLAYER_START_POSITION = new THREE.Vector3(0, 1.5, -2);
+export const PLAYER_START_POSITION = new THREE.Vector3(0, 3, -2);
 export const PLAYER_CAPSULE_HALF_HEIGHT = 0.45;
 export const PLAYER_CAPSULE_RADIUS = 0.35;
 export const PLAYER_VISUAL_Y_OFFSET = -(
@@ -54,8 +54,10 @@ export const PLAYER_VISUAL_Y_OFFSET = -(
 export const PLAYER_EYE_HEIGHT_OFFSET = 0.8;
 
 export const PLAYER_SPEED_SCALAR = 1.28;
-export const PLAYER_WALK_SPEED = 1.0 * PLAYER_SPEED_SCALAR;
-export const PLAYER_RUN_SPEED = 2.0 * PLAYER_SPEED_SCALAR;
+export const PLAYER_WALK_SPEED = 1.5 * PLAYER_SPEED_SCALAR;
+export const PLAYER_RUN_SPEED = 5.0 * PLAYER_SPEED_SCALAR;
+export const WALK_ANIM_REFERENCE_SPEED = 1.28;
+export const RUN_ANIM_REFERENCE_SPEED = 2.56;
 export const PLAYER_JUMP_VELOCITY = 12;
 export const WORLD_GRAVITY_Y = -18;
 export const JUMP_AIR_TIME_SECONDS =
@@ -71,7 +73,7 @@ export const VERTICAL_STILL_ENTER_SPEED_EPS = 0.2;
 export const VERTICAL_STILL_EXIT_SPEED_EPS = 0.35;
 
 export const WALK_SPEED_THRESHOLD = 0.2;
-export const PLANAR_SPEED_SMOOTHING = 12;
+export const PLANAR_SPEED_SMOOTHING = 30;
 
 export const CHARACTER_CAMERA_YAW_SIGN = -1;
 export const CHARACTER_MODEL_YAW_OFFSET = Math.PI;
@@ -87,14 +89,35 @@ export const THIRD_PERSON_CAMERA_MIN_DISTANCE = 0.5;
 
 export const GROUND_HALF_EXTENT = 50;
 export const GROUND_MESH_SEGMENTS = 128;
-export const TERRAIN_HEIGHT_AMPLITUDE = 3.4;
+export const TERRAIN_HEIGHT_AMPLITUDE = 2.5;
 export const TERRAIN_BASE_NOISE_SCALE = 0.045;
 export const TERRAIN_DETAIL_NOISE_SCALE = 0.12;
 export const TERRAIN_MICRO_NOISE_SCALE = 0.26;
 export const TERRAIN_RIDGE_STRENGTH = 0.38;
 export const TERRAIN_FLAT_RADIUS = 9;
-export const TERRAIN_EDGE_FALLOFF_START = GROUND_HALF_EXTENT - 8;
-export const TERRAIN_EDGE_FALLOFF_END = GROUND_HALF_EXTENT - 1.5;
+
+// --- Per-chunk content density ---
+export const CHUNK_ROCK_COUNT = 4;
+export const CHUNK_ROCK_MIN_SPACING = 8;
+export const CHUNK_ROCK_SCALE_MIN = 0.6;
+export const CHUNK_ROCK_SCALE_MAX = 1.4;
+export const CHUNK_TREE_COUNT = 7;
+export const CHUNK_TREE_MIN_SPACING = 7.2;
+export const CHUNK_TREE_ROCK_CLEARANCE = 4;
+export const CHUNK_TREE_HEIGHT_SCALE_MIN = 0.78;
+export const CHUNK_TREE_HEIGHT_SCALE_MAX = 1.42;
+export const CHUNK_GRASS_BLADE_COUNT = 1600;
+export const CHUNK_SPAWN_CLEARING_RADIUS = 6;
+export const CHUNK_CLOUD_COUNT = 3;
+export const CHUNK_CLOUD_MIN_HEIGHT = 26;
+export const CHUNK_CLOUD_MAX_HEIGHT = 38;
+export const CHUNK_CLOUD_MIN_SEGMENTS = 8;
+export const CHUNK_CLOUD_MAX_SEGMENTS = 13;
+export const CHUNK_CLOUD_MIN_OPACITY = 0.38;
+export const CHUNK_CLOUD_MAX_OPACITY = 0.58;
+export const CHUNK_CLOUD_MIN_SPEED = 0.1;
+export const CHUNK_CLOUD_MAX_SPEED = 0.22;
+export const CHUNK_CLOUD_FADE = 90;
 export const TERRAIN_COLOR_VALLEY = "#4F9249";
 export const TERRAIN_COLOR_MEADOW = "#69B35C";
 export const TERRAIN_COLOR_HIGHLAND = "#7FBC73";

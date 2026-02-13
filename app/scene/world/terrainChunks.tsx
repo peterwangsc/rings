@@ -12,8 +12,6 @@ import {
   TERRAIN_COLOR_RIDGE,
   TERRAIN_COLOR_VALLEY,
   TERRAIN_COLOR_WILDFLOWER,
-  TERRAIN_EDGE_FALLOFF_END,
-  TERRAIN_EDGE_FALLOFF_START,
   TERRAIN_HEIGHT_AMPLITUDE,
 } from "../../utils/constants";
 import {
@@ -65,9 +63,6 @@ function createTerrainGeometry(chunkX: number, chunkZ: number) {
     const y = sampleTerrainHeight(worldX, worldZ);
     positions.setY(i, y);
 
-    const radius = Math.hypot(worldX, worldZ);
-    const edgeDamp =
-      1 - smoothstep(TERRAIN_EDGE_FALLOFF_START, TERRAIN_EDGE_FALLOFF_END, radius);
     const broadNoise = valueNoise2D((worldX - 13.5) * 0.08, (worldZ + 7.4) * 0.08);
     const detailNoise = valueNoise2D((worldX + 21.2) * 0.16, (worldZ - 5.6) * 0.16);
     const moistureNoise = valueNoise2D((worldX - 44.1) * 0.06, (worldZ + 15.4) * 0.06);
@@ -102,8 +97,6 @@ function createTerrainGeometry(chunkX: number, chunkZ: number) {
     workingColor.lerp(dryColor, dryMask * 0.3);
     workingColor.lerp(wildflowerColor, flowerMask * 0.26);
     workingColor.offsetHSL((detailNoise - 0.5) * 0.02, 0, (detailNoise - 0.5) * 0.03);
-    workingColor.multiplyScalar(0.84 + edgeDamp * 0.16);
-
     colors[i * 3] = workingColor.r;
     colors[i * 3 + 1] = workingColor.g;
     colors[i * 3 + 2] = workingColor.b;

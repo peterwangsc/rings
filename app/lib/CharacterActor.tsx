@@ -13,9 +13,11 @@ import {
   JUMP_RUNNING_TIME_SCALE,
   JUMP_TIME_SCALE,
   MIN_DELTA_SECONDS,
+  RUN_ANIM_REFERENCE_SPEED,
   RUNNING_TIME_SCALE,
   SAD_TIME_SCALE,
   STATE_BLEND_DURATION_SECONDS,
+  WALK_ANIM_REFERENCE_SPEED,
   WALK_TIME_SCALE,
 } from "../utils/constants";
 import {
@@ -41,6 +43,7 @@ const CLIP_SAD = "Sad";
 
 export function CharacterActor({
   motionState,
+  planarSpeedRef,
   targetHeight = DEFAULT_CHARACTER_TARGET_HEIGHT,
   hidden = false,
   onEmoteFinished,
@@ -240,14 +243,24 @@ export function CharacterActor({
       mixerRef.current.update(dt);
     }
 
+    const speed = planarSpeedRef?.current ?? 0;
+
     const walkAction = actionsRef.current.walk;
     if (walkAction) {
-      walkAction.setEffectiveTimeScale(WALK_TIME_SCALE);
+      const walkSpeedRatio =
+        WALK_ANIM_REFERENCE_SPEED > 0 ? speed / WALK_ANIM_REFERENCE_SPEED : 1;
+      walkAction.setEffectiveTimeScale(
+        WALK_TIME_SCALE * Math.max(walkSpeedRatio, MIN_DELTA_SECONDS),
+      );
     }
 
     const runningAction = actionsRef.current.running;
     if (runningAction) {
-      runningAction.setEffectiveTimeScale(RUNNING_TIME_SCALE);
+      const runSpeedRatio =
+        RUN_ANIM_REFERENCE_SPEED > 0 ? speed / RUN_ANIM_REFERENCE_SPEED : 1;
+      runningAction.setEffectiveTimeScale(
+        RUNNING_TIME_SCALE * Math.max(runSpeedRatio, MIN_DELTA_SECONDS),
+      );
     }
 
     const jumpAction = actionsRef.current.jump;

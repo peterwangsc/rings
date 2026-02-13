@@ -1,8 +1,6 @@
 import {
   TERRAIN_BASE_NOISE_SCALE,
   TERRAIN_DETAIL_NOISE_SCALE,
-  TERRAIN_EDGE_FALLOFF_END,
-  TERRAIN_EDGE_FALLOFF_START,
   TERRAIN_FLAT_RADIUS,
   TERRAIN_HEIGHT_AMPLITUDE,
   TERRAIN_MICRO_NOISE_SCALE,
@@ -64,11 +62,10 @@ export function sampleTerrainHeight(x: number, z: number) {
   const ridge = Math.pow(Math.max(ridgeShape, 0), 2.1) * TERRAIN_RIDGE_STRENGTH;
 
   const radius = Math.hypot(x, z);
-  const centerMask = smoothstep(TERRAIN_FLAT_RADIUS * 0.45, TERRAIN_FLAT_RADIUS, radius);
-  const edgeMask = 1 - smoothstep(TERRAIN_EDGE_FALLOFF_START, TERRAIN_EDGE_FALLOFF_END, radius);
+  const spawnMask = smoothstep(TERRAIN_FLAT_RADIUS * 0.45, TERRAIN_FLAT_RADIUS, radius);
 
   const combinedNoise = base * 0.62 + detail * 0.26 + micro * 0.12;
-  return (combinedNoise + ridge) * TERRAIN_HEIGHT_AMPLITUDE * centerMask * edgeMask;
+  return (combinedNoise + ridge) * TERRAIN_HEIGHT_AMPLITUDE * spawnMask;
 }
 
 export function sampleTerrainSlope(x: number, z: number) {
