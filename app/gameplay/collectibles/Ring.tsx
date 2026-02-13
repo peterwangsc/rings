@@ -31,6 +31,7 @@ interface RingProps {
 export function Ring({ position, spawnedAtMs }: RingProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const materialRef = useRef<THREE.MeshStandardMaterial>(null);
+  const baseY = position[1];
   const despawnAtMs =
     spawnedAtMs === undefined ? null : spawnedAtMs + RING_DROP_LIFETIME_MS;
 
@@ -48,7 +49,7 @@ export function Ring({ position, spawnedAtMs }: RingProps) {
     const fallOffset =
       spawnedAtMs === undefined ? 0 : getDropRingFallOffset(spawnedAtMs, nowMs);
     mesh.position.y =
-      fallOffset + Math.sin(time * RING_BOB_SPEED) * RING_BOB_AMPLITUDE;
+      baseY + fallOffset + Math.sin(time * RING_BOB_SPEED) * RING_BOB_AMPLITUDE;
 
     let opacity = 1;
     let emissiveScale = 1;
