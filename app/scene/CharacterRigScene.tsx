@@ -2,6 +2,7 @@
 
 import { Physics } from "@react-three/rapier";
 import { Canvas } from "@react-three/fiber";
+import { SpacetimeDBProvider } from "spacetimedb/react";
 import {
   Suspense,
   useCallback,
@@ -15,7 +16,19 @@ import type { CameraMode } from "../camera/cameraTypes";
 import { CharacterRigController } from "../controller/CharacterRigController";
 import type { MobileMoveInput } from "../controller/controllerTypes";
 import { RingField } from "../gameplay/collectibles/RingField";
+import { RemotePlayersLayer } from "../gameplay/multiplayer/RemotePlayersLayer";
 import { GameHUD } from "../hud/GameHUD";
+import {
+  createMultiplayerStore,
+  useMultiplayerStoreSnapshot,
+  type MultiplayerStore,
+} from "../multiplayer/state/multiplayerStore";
+import type { FireballSpawnEvent } from "../multiplayer/state/multiplayerTypes";
+import { useMultiplayerSync } from "../multiplayer/state/useMultiplayerSync";
+import {
+  createSpacetimeConnectionBuilder,
+  getOrCreateGuestDisplayName,
+} from "../multiplayer/spacetime/client";
 import {
   FPS_TOGGLE_KEY,
   HORIZON_COLOR,
@@ -47,7 +60,11 @@ const ACTIVE_CHUNK_GRID_SIZE = ACTIVE_TERRAIN_CHUNK_RADIUS * 2 + 1;
 const ACTIVE_CHUNK_GRID_WORLD_SPAN = ACTIVE_CHUNK_GRID_SIZE * TERRAIN_CHUNK_SIZE;
 const CAMERA_FAR_DISTANCE = ACTIVE_CHUNK_GRID_WORLD_SPAN * 1.5;
 
-export function CharacterRigScene() {
+function CharacterRigSceneContent({
+  multiplayerStore,
+}: {
+  multiplayerStore: MultiplayerStore;
+}) {
   const [cameraMode, setCameraMode] = useState<CameraMode>("third_person");
   const [isWalkDefault, setIsWalkDefault] = useState(false);
   const [isPointerLocked, setIsPointerLocked] = useState(false);
@@ -55,13 +72,32 @@ export function CharacterRigScene() {
   const [isSplashDismissedByTouch, setIsSplashDismissedByTouch] =
     useState(false);
   const [fps, setFps] = useState<number | null>(null);
-  const worldEntityManager = useMemo(
-    () => createWorldEntityManager(),
-    [],
-  );
+  const worldEntityManager = useMemo(() => createWorldEntityManager(), []);
   const mobileMoveInputRef = useRef<MobileMoveInput>({ x: 0, y: 0 });
   const mobileJumpPressedRef = useRef(false);
   const mobileFireballTriggerRef = useRef(0);
+  const networkFireballSpawnQueueRef = useRef<FireballSpawnEvent[]>([]);
+
+  const multiplayerVersion = useMultiplayerStoreSnapshot(multiplayerStore);
+  void multiplayerVersion;
+
+  const {
+    sendLocalPlayerSnapshot,
+    sendLocalFireballCast,
+    sendRingCollect,
+  } = useMultiplayerSync({
+    store: multiplayerStore,
+    worldEntityManager,
+    networkFireballSpawnQueueRef,
+  });
+
+  const multiplayerState = multiplayerStore.state;
+  const hasAuthoritativeMultiplayer =
+    multiplayerState.connectionStatus === "connected";
+  const remotePlayers = useMemo(
+    () => Array.from(multiplayerState.remotePlayers.values()),
+    [multiplayerState.remotePlayers],
+  );
 
   const handleToggleCameraMode = useCallback(() => {
     setCameraMode((currentMode) => {
@@ -151,7 +187,13 @@ export function CharacterRigScene() {
         <Physics gravity={[0, WORLD_GRAVITY_Y, 0]}>
           <Suspense fallback={null}>
             <WorldGeometry worldEntityManager={worldEntityManager} />
-            <RingField worldEntityManager={worldEntityManager} />
+            <RingField
+              worldEntityManager={worldEntityManager}
+              onCollectRing={
+                hasAuthoritativeMultiplayer ? sendRingCollect : undefined
+              }
+            />
+            <RemotePlayersLayer players={remotePlayers} />
             <CharacterRigController
               cameraMode={cameraMode}
               onToggleCameraMode={handleToggleCameraMode}
@@ -163,11 +205,21 @@ export function CharacterRigScene() {
               mobileJumpPressedRef={mobileJumpPressedRef}
               mobileFireballTriggerRef={mobileFireballTriggerRef}
               fireballManager={worldEntityManager.fireballManager}
+              onLocalPlayerSnapshot={sendLocalPlayerSnapshot}
+              onLocalFireballCast={sendLocalFireballCast}
+              authoritativeLocalPlayerState={
+                multiplayerState.authoritativeLocalPlayerState
+              }
+              networkFireballSpawnQueueRef={networkFireballSpawnQueueRef}
             />
           </Suspense>
         </Physics>
       </Canvas>
-      <GameHUD worldEntityManager={worldEntityManager} />
+      <GameHUD
+        worldEntityManager={worldEntityManager}
+        connectionStatus={multiplayerState.connectionStatus}
+        remotePlayerCount={remotePlayers.length}
+      />
       {isFpsVisible ? (
         <div className="pointer-events-none absolute right-4 top-4 z-20 rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
           <p className="font-semibold tracking-wide text-white">FPS</p>
@@ -186,5 +238,19 @@ export function CharacterRigScene() {
       />
       <MobileOrientationOverlay />
     </div>
+  );
+}
+
+export function CharacterRigScene() {
+  const connectionBuilder = useMemo(() => createSpacetimeConnectionBuilder(), []);
+  const multiplayerStore = useMemo(
+    () => createMultiplayerStore(getOrCreateGuestDisplayName()),
+    [],
+  );
+
+  return (
+    <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
+      <CharacterRigSceneContent multiplayerStore={multiplayerStore} />
+    </SpacetimeDBProvider>
   );
 }

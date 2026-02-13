@@ -1,6 +1,11 @@
 import type { CameraMode } from "../camera/cameraTypes";
 import type { FireballManager } from "../gameplay/abilities/fireballManager";
 import type { MutableRefObject } from "react";
+import type {
+  AuthoritativePlayerState,
+  FireballSpawnEvent,
+  NetPlayerSnapshot,
+} from "../multiplayer/state/multiplayerTypes";
 
 export interface CharacterInputState {
   forward: boolean;
@@ -27,4 +32,15 @@ export interface CharacterRigControllerProps {
   readonly mobileJumpPressedRef?: MutableRefObject<boolean>;
   readonly mobileFireballTriggerRef?: MutableRefObject<number>;
   readonly fireballManager?: FireballManager;
+  readonly onLocalPlayerSnapshot?: (snapshot: NetPlayerSnapshot) => void;
+  readonly onLocalFireballCast?: (request: {
+    originX: number;
+    originY: number;
+    originZ: number;
+    directionX: number;
+    directionY: number;
+    directionZ: number;
+  }) => void;
+  readonly authoritativeLocalPlayerState?: AuthoritativePlayerState | null;
+  readonly networkFireballSpawnQueueRef?: MutableRefObject<FireballSpawnEvent[]>;
 }

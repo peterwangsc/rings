@@ -25,6 +25,7 @@ export interface FireballManager {
   nextId: number;
   cooldownSeconds: number;
   pendingSpawnCount: number;
+  pendingSpawnRequests: FireballSpawnRequest[];
   accumulatorSeconds: number;
   activeStates: FireballRuntimeState[];
   renderFrame: FireballRenderFrame;
@@ -95,18 +96,41 @@ function publishRenderFrame(manager: FireballManager) {
 export function createFireballManager(
   maxActiveCount = FIREBALL_MAX_ACTIVE_COUNT,
 ): FireballManager {
+  const normalizedMaxActiveCount = Math.max(0, Math.floor(maxActiveCount));
   return {
-    maxActiveCount,
+    maxActiveCount: normalizedMaxActiveCount,
     nextId: 0,
     cooldownSeconds: 0,
     pendingSpawnCount: 0,
+    pendingSpawnRequests: [],
     accumulatorSeconds: 0,
     activeStates: [],
     renderFrame: {
       interpolationAlpha: 0,
-      slots: Array.from({ length: maxActiveCount }, () => createRenderSlot()),
+      slots: Array.from(
+        { length: normalizedMaxActiveCount },
+        () => createRenderSlot(),
+      ),
     },
   };
+}
+
+export function setFireballManagerMaxActiveCount(
+  manager: FireballManager,
+  maxActiveCount: number,
+) {
+  const normalizedMaxActiveCount = Math.min(
+    manager.renderFrame.slots.length,
+    Math.max(0, Math.floor(maxActiveCount)),
+  );
+  manager.maxActiveCount = normalizedMaxActiveCount;
+
+  if (manager.activeStates.length > normalizedMaxActiveCount) {
+    manager.activeStates.splice(
+      0,
+      manager.activeStates.length - normalizedMaxActiveCount,
+    );
+  }
 }
 
 export function enqueueFireballSpawn(
@@ -118,6 +142,32 @@ export function enqueueFireballSpawn(
     return;
   }
   manager.pendingSpawnCount += normalizedCount;
+}
+
+export function enqueueFireballSpawnRequest(
+  manager: FireballManager,
+  request: FireballSpawnRequest,
+) {
+  manager.pendingSpawnRequests.push(request);
+}
+
+function spawnFireball(
+  manager: FireballManager,
+  spawnRequest: FireballSpawnRequest,
+) {
+  if (manager.maxActiveCount <= 0) {
+    return false;
+  }
+
+  const id = `fireball-${manager.nextId}`;
+  manager.nextId += 1;
+
+  if (manager.activeStates.length >= manager.maxActiveCount) {
+    return false;
+  }
+
+  manager.activeStates.push(createFireballRuntimeState(id, spawnRequest));
+  return true;
 }
 
 export function stepFireballSimulation(
@@ -141,19 +191,17 @@ export function stepFireballSimulation(
       0,
       manager.cooldownSeconds - FIREBALL_FIXED_STEP_SECONDS,
     );
-    if (manager.pendingSpawnCount > 0 && manager.cooldownSeconds <= 0) {
-      const id = `fireball-${manager.nextId}`;
-      manager.nextId += 1;
-
-      if (manager.activeStates.length >= manager.maxActiveCount) {
-        manager.activeStates.shift();
+    if (manager.pendingSpawnRequests.length > 0) {
+      const nextSpawnRequest = manager.pendingSpawnRequests.shift();
+      if (nextSpawnRequest) {
+        spawnFireball(manager, nextSpawnRequest);
       }
-
-      manager.activeStates.push(
-        createFireballRuntimeState(id, params.buildSpawnRequest()),
-      );
+    } else if (manager.pendingSpawnCount > 0 && manager.cooldownSeconds <= 0) {
+      const didSpawn = spawnFireball(manager, params.buildSpawnRequest());
       manager.pendingSpawnCount -= 1;
-      manager.cooldownSeconds = FIREBALL_COOLDOWN_SECONDS;
+      if (didSpawn) {
+        manager.cooldownSeconds = FIREBALL_COOLDOWN_SECONDS;
+      }
     }
 
     // Snapshot interpolation state for the upcoming fixed step.

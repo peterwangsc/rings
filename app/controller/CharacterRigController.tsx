@@ -18,6 +18,7 @@ import {
   buildFireballRenderFrame,
   createFireballManager,
   enqueueFireballSpawn,
+  enqueueFireballSpawnRequest,
   stepFireballSimulation,
 } from "../gameplay/abilities/fireballManager";
 import type {
@@ -79,6 +80,9 @@ import { sampleTerrainHeight } from "../utils/terrain";
 import { useControllerInputHandlers } from "./useControllerInputHandlers";
 
 const IDENTITY_ROTATION = { x: 0, y: 0, z: 0, w: 1 } as const;
+const SNAPSHOT_INTERVAL_SECONDS = 1 / 20;
+const RECONCILIATION_SOFT_DISTANCE = 0.08;
+const RECONCILIATION_HARD_DISTANCE = 2.5;
 
 export function CharacterRigController({
   cameraMode,
@@ -91,6 +95,10 @@ export function CharacterRigController({
   mobileJumpPressedRef,
   mobileFireballTriggerRef,
   fireballManager,
+  onLocalPlayerSnapshot,
+  onLocalFireballCast,
+  authoritativeLocalPlayerState,
+  networkFireballSpawnQueueRef,
 }: CharacterRigControllerProps) {
   const { camera, gl } = useThree();
   const { rapier, world } = useRapier();
@@ -114,6 +122,8 @@ export function CharacterRigController({
   const fireballRequestCountRef = useRef(0);
   const lastProcessedFireballRequestCountRef = useRef(0);
   const lastProcessedMobileFireballTriggerRef = useRef(0);
+  const snapshotAccumulatorSecondsRef = useRef(0);
+  const localInputSequenceRef = useRef(0);
   const motionStateRef = useRef<MotionState>("idle");
   const [actorMotionState, setActorMotionState] = useState<MotionState>("idle");
   const fallbackFireballManager = useMemo(
@@ -201,13 +211,6 @@ export function CharacterRigController({
       fireballRequestCountRef.current +=
         mobileFireballTriggerCount - lastProcessedMobileFireballTriggerRef.current;
       lastProcessedMobileFireballTriggerRef.current = mobileFireballTriggerCount;
-    }
-
-    const pendingFireballRequests =
-      fireballRequestCountRef.current - lastProcessedFireballRequestCountRef.current;
-    if (pendingFireballRequests > 0) {
-      enqueueFireballSpawn(activeFireballManager, pendingFireballRequests);
-      lastProcessedFireballRequestCountRef.current += pendingFireballRequests;
     }
 
     const translation = body.translation();
@@ -385,6 +388,62 @@ export function CharacterRigController({
     playerPositionRef.current.set(translation.x, translation.y, translation.z);
     onPlayerPositionUpdate?.(translation.x, translation.y, translation.z);
 
+    snapshotAccumulatorSecondsRef.current += dt;
+    while (snapshotAccumulatorSecondsRef.current >= SNAPSHOT_INTERVAL_SECONDS) {
+      localInputSequenceRef.current += 1;
+      onLocalPlayerSnapshot?.({
+        x: translation.x,
+        y: translation.y,
+        z: translation.z,
+        yaw: characterYawRef.current,
+        pitch: cameraPitchRef.current,
+        vx: nextVelocityX,
+        vy: nextVelocityY,
+        vz: nextVelocityZ,
+        planarSpeed: smoothedPlanarSpeedRef.current,
+        motionState: motionStateRef.current,
+        lastInputSeq: localInputSequenceRef.current,
+      });
+      snapshotAccumulatorSecondsRef.current -= SNAPSHOT_INTERVAL_SECONDS;
+    }
+
+    if (authoritativeLocalPlayerState) {
+      const currentTranslation = body.translation();
+      const dx = authoritativeLocalPlayerState.x - currentTranslation.x;
+      const dy = authoritativeLocalPlayerState.y - currentTranslation.y;
+      const dz = authoritativeLocalPlayerState.z - currentTranslation.z;
+      const distance = Math.hypot(dx, dy, dz);
+
+      if (distance > RECONCILIATION_HARD_DISTANCE) {
+        body.setTranslation(
+          {
+            x: authoritativeLocalPlayerState.x,
+            y: authoritativeLocalPlayerState.y,
+            z: authoritativeLocalPlayerState.z,
+          },
+          true,
+        );
+        body.setLinvel(
+          {
+            x: authoritativeLocalPlayerState.vx,
+            y: authoritativeLocalPlayerState.vy,
+            z: authoritativeLocalPlayerState.vz,
+          },
+          true,
+        );
+      } else if (distance > RECONCILIATION_SOFT_DISTANCE) {
+        const correctionBlend = 1 - Math.exp(-10 * dt);
+        body.setTranslation(
+          {
+            x: currentTranslation.x + dx * correctionBlend,
+            y: currentTranslation.y + dy * correctionBlend,
+            z: currentTranslation.z + dz * correctionBlend,
+          },
+          true,
+        );
+      }
+    }
+
     const buildSpawnRequest = (): FireballSpawnRequest => {
       getLookDirection(
         cameraYawRef.current,
@@ -422,6 +481,34 @@ export function CharacterRigController({
         directionZ: fireballPlanarDirectionRef.current.z,
       };
     };
+
+    const pendingFireballRequests =
+      fireballRequestCountRef.current - lastProcessedFireballRequestCountRef.current;
+    if (pendingFireballRequests > 0) {
+      enqueueFireballSpawn(activeFireballManager, pendingFireballRequests);
+      for (let index = 0; index < pendingFireballRequests; index += 1) {
+        onLocalFireballCast?.(buildSpawnRequest());
+      }
+      lastProcessedFireballRequestCountRef.current += pendingFireballRequests;
+    }
+
+    const pendingNetworkSpawns = networkFireballSpawnQueueRef?.current;
+    if (pendingNetworkSpawns && pendingNetworkSpawns.length > 0) {
+      for (let index = 0; index < pendingNetworkSpawns.length; index += 1) {
+        const spawn = pendingNetworkSpawns[index];
+        enqueueFireballSpawnRequest(activeFireballManager, {
+          originX: spawn.originX,
+          originY: spawn.originY,
+          originZ: spawn.originZ,
+          directionX: spawn.directionX,
+          directionY: spawn.directionY,
+          directionZ: spawn.directionZ,
+        });
+      }
+      if (networkFireballSpawnQueueRef) {
+        networkFireballSpawnQueueRef.current = [];
+      }
+    }
 
     const castSolidHit = (query: FireballCastQuery) => {
       const hit = world.castShape(

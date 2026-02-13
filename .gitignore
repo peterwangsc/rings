@@ -40,3 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# SpacetimeDB module local artifacts
+/spacetimedb/node_modules/
+/spacetimedb/dist/
+/spacetimedb/.spacetime/
+/spacetimedb/.spacetimedb/

@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import * as THREE from "three";
 import {
   createFireballManager,
+  setFireballManagerMaxActiveCount,
   type FireballManager,
 } from "../../gameplay/abilities/fireballManager";
 import {
@@ -106,6 +107,7 @@ function syncVisibleRingsAndHud(world: WorldEntityManager) {
   const visible = world.ringEntities.filter((ring) => !ring.collected);
   world.visibleRingEntities.splice(0, world.visibleRingEntities.length, ...visible);
   world.hud.ringCount = world.ringEntities.length - visible.length;
+  setFireballManagerMaxActiveCount(world.fireballManager, world.hud.ringCount);
 }
 
 function upsertActiveChunkSlots(
@@ -273,6 +275,30 @@ export function collectWorldRing(world: WorldEntityManager, ringId: string) {
   }
 
   ring.collected = true;
+  syncVisibleRingsAndHud(world);
+  emitWorldManagerChanged(world);
+}
+
+export function applyServerRingState(
+  world: WorldEntityManager,
+  collectedRingIds: Iterable<string>,
+) {
+  const collectedSet = new Set(collectedRingIds);
+  let didChange = false;
+
+  for (let index = 0; index < world.ringEntities.length; index += 1) {
+    const ring = world.ringEntities[index];
+    const shouldBeCollected = collectedSet.has(ring.id);
+    if (ring.collected !== shouldBeCollected) {
+      ring.collected = shouldBeCollected;
+      didChange = true;
+    }
+  }
+
+  if (!didChange) {
+    return;
+  }
+
   syncVisibleRingsAndHud(world);
   emitWorldManagerChanged(world);
 }

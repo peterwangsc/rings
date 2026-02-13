@@ -4,6 +4,7 @@ import {
   type WorldEntityManager,
   useWorldEntityVersion,
 } from "../scene/world/worldEntityManager";
+import type { ConnectionStatus } from "../multiplayer/state/multiplayerTypes";
 
 function RingIcon() {
   return (
@@ -37,8 +38,12 @@ function RingIcon() {
 
 export function GameHUD({
   worldEntityManager,
+  connectionStatus,
+  remotePlayerCount,
 }: {
   worldEntityManager: WorldEntityManager;
+  connectionStatus?: ConnectionStatus;
+  remotePlayerCount?: number;
 }) {
   const worldVersion = useWorldEntityVersion(worldEntityManager);
   void worldVersion;
@@ -54,6 +59,15 @@ export function GameHUD({
           {ringCount}
           <span className="text-yellow-100/50"> / {totalRings}</span>
         </span>
+      </div>
+      <div className="mt-2 rounded-lg border border-cyan-300/30 bg-black/40 px-3 py-2 text-[11px] text-cyan-100/95 backdrop-blur-sm">
+        <p className="font-semibold tracking-wide text-cyan-100">MULTIPLAYER</p>
+        <p className="mt-0.5 uppercase tracking-wide text-cyan-200/90">
+          {connectionStatus ?? "connecting"}
+        </p>
+        <p className="mt-0.5 text-cyan-100/85">
+          Players: {remotePlayerCount ?? 0}
+        </p>
       </div>
     </div>
   );

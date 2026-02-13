@@ -1,0 +1,82 @@
+import type { Infer } from "spacetimedb";
+import type { MotionState } from "../../lib/CharacterActor";
+import {
+  FireballEventRow,
+  PlayerStateRow,
+  RingStateRow,
+} from "../spacetime/bindings";
+
+export type NetPlayerRow = Infer<typeof PlayerStateRow>;
+export type NetFireballEventRow = Infer<typeof FireballEventRow>;
+export type NetRingRow = Infer<typeof RingStateRow>;
+
+export type ConnectionStatus =
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "error";
+
+export interface NetPlayerSnapshot {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  planarSpeed: number;
+  motionState: MotionState;
+  lastInputSeq: number;
+}
+
+export interface AuthoritativePlayerState extends NetPlayerSnapshot {
+  identity: string;
+  displayName: string;
+  updatedAtMs: number;
+  lastCastAtMs: number;
+}
+
+export interface FireballSpawnEvent {
+  eventId: string;
+  ownerIdentity: string;
+  originX: number;
+  originY: number;
+  originZ: number;
+  directionX: number;
+  directionY: number;
+  directionZ: number;
+  createdAtMs: number;
+  expiresAtMs: number;
+}
+
+export interface MultiplayerDiagnostics {
+  playerRowCount: number;
+  ringRowCount: number;
+  fireballEventRowCount: number;
+}
+
+export interface MultiplayerState {
+  connectionStatus: ConnectionStatus;
+  connectionError: string | null;
+  localIdentity: string | null;
+  localDisplayName: string;
+  authoritativeLocalPlayerState: AuthoritativePlayerState | null;
+  remotePlayers: Map<string, AuthoritativePlayerState>;
+  collectedRingIds: Set<string>;
+  pendingRemoteFireballSpawns: FireballSpawnEvent[];
+  diagnostics: MultiplayerDiagnostics;
+}
+
+export interface MultiplayerReducerFns {
+  upsertPlayerState: (snapshot: NetPlayerSnapshot) => void;
+  castFireball: (request: {
+    originX: number;
+    originY: number;
+    originZ: number;
+    directionX: number;
+    directionY: number;
+    directionZ: number;
+  }) => void;
+  collectRing: (ringId: string) => void;
+}

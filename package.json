@@ -3,10 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "sh -c 'STDB_PID=\"\"; if ! spacetime server ping http://127.0.0.1:3001 >/dev/null 2>&1; then spacetime start --listen-addr 127.0.0.1:3001 --non-interactive & STDB_PID=$!; fi; trap \"if [ -n \\\"$STDB_PID\\\" ]; then kill $STDB_PID 2>/dev/null || true; fi\" EXIT INT TERM; next dev'",
+    "dev:web": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "multiplayer:db:start": "spacetime start --listen-addr 127.0.0.1:3001 --non-interactive",
+    "multiplayer:db:publish": "spacetime publish rings-multiplayer --project-path ./spacetimedb --server http://127.0.0.1:3001 --yes",
+    "multiplayer:db:publish:maincloud": "spacetime publish rings-multiplayer --project-path ./spacetimedb --server maincloud --yes",
+    "multiplayer:db:generate": "spacetime generate --lang typescript --project-path ./spacetimedb --out-dir ./app/multiplayer/spacetime/bindings --yes",
+    "multiplayer:db:dev": "spacetime dev rings-multiplayer --project-path . --module-project-path spacetimedb --module-bindings-path app/multiplayer/spacetime/bindings --client-lang typescript --server http://127.0.0.1:3001 --yes"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -16,6 +22,7 @@
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "spacetimedb": "^1.12.0",
     "three": "^0.182.0"
   },
   "devDependencies": {

@@ -210,7 +210,7 @@ export const RING_PLACEMENTS: ReadonlyArray<readonly [number, number]> = [
 
 // --- Fireball ability ---
 export const FIREBALL_COOLDOWN_SECONDS = 0.2;
-export const FIREBALL_MAX_ACTIVE_COUNT = 8;
+export const FIREBALL_MAX_ACTIVE_COUNT = RING_PLACEMENTS.length;
 export const FIREBALL_RADIUS = 0.2;
 export const FIREBALL_SPEED = 11.5;
 export const FIREBALL_LAUNCH_VERTICAL_VELOCITY = 4.1;
