@@ -49,20 +49,25 @@ export function isNearRock(
   });
 }
 
-export function createRockPlacements(rockGeometries: readonly THREE.BufferGeometry[]) {
+export function createRockPlacements(
+  rockGeometries: readonly THREE.BufferGeometry[],
+) {
   return ROCK_FORMATIONS.map((rock, index) => {
     const geometry = rockGeometries[index];
-    const boundingBox = geometry.boundingBox ?? geometry.computeBoundingBox();
+    if (!geometry.boundingBox) {
+      geometry.computeBoundingBox();
+    }
+    const boundingBox = geometry.boundingBox;
     if (!boundingBox) {
       throw new Error(`Rock geometry ${index} is missing a bounding box.`);
     }
 
-    const scaledMin = boundingBox.min.clone().multiply(
-      new THREE.Vector3(rock.scale[0], rock.scale[1], rock.scale[2]),
-    );
-    const scaledMax = boundingBox.max.clone().multiply(
-      new THREE.Vector3(rock.scale[0], rock.scale[1], rock.scale[2]),
-    );
+    const scaledMin = boundingBox.min
+      .clone()
+      .multiply(new THREE.Vector3(rock.scale[0], rock.scale[1], rock.scale[2]));
+    const scaledMax = boundingBox.max
+      .clone()
+      .multiply(new THREE.Vector3(rock.scale[0], rock.scale[1], rock.scale[2]));
     const size = scaledMax.clone().sub(scaledMin);
     const center = scaledMin.clone().add(scaledMax).multiplyScalar(0.5);
 

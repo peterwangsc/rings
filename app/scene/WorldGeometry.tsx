@@ -1,3 +1,5 @@
+"use client";
+
 import { useFrame, useLoader } from "@react-three/fiber";
 import {
   CuboidCollider,
@@ -5,7 +7,13 @@ import {
   MeshCollider,
   RigidBody,
 } from "@react-three/rapier";
-import { type MutableRefObject, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type MutableRefObject,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import * as THREE from "three";
 import {
   PLAYER_START_POSITION,
@@ -45,9 +53,9 @@ export function WorldGeometry({
   playerPositionRef: MutableRefObject<THREE.Vector3>;
 }) {
   const grassRef =
-    useRef<THREE.InstancedMesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>>(
-      null,
-    );
+    useRef<
+      THREE.InstancedMesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>
+    >(null);
   const [centerChunk, setCenterChunk] = useState<TerrainChunkCoord>(() => ({
     x: getChunkCoordinate(PLAYER_START_POSITION.x),
     z: getChunkCoordinate(PLAYER_START_POSITION.z),
@@ -85,7 +93,8 @@ export function WorldGeometry({
     [rockNoiseTexture],
   );
   const rockGeometries = useMemo(
-    () => ROCK_FORMATIONS.map((_, index) => createProceduralRockGeometry(index)),
+    () =>
+      ROCK_FORMATIONS.map((_, index) => createProceduralRockGeometry(index)),
     [],
   );
   const rockPlacements = useMemo(
@@ -183,7 +192,10 @@ export function WorldGeometry({
             args={[tree.trunkCollider.halfHeight, tree.trunkCollider.radius]}
             position={[0, tree.trunkCollider.centerY, 0]}
           />
-          <SingleTree position={TREE_LOCAL_ORIGIN} heightScale={tree.heightScale} />
+          <SingleTree
+            position={TREE_LOCAL_ORIGIN}
+            heightScale={tree.heightScale}
+          />
         </RigidBody>
       ))}
 
@@ -194,7 +206,11 @@ export function WorldGeometry({
           key={`rock-${index}`}
           type="fixed"
           colliders={false}
-          position={[rock.position[0], rock.position[1] + rock.terrainY, rock.position[2]]}
+          position={[
+            rock.position[0],
+            rock.position[1] + rock.terrainY,
+            rock.position[2],
+          ]}
         >
           {ROCK_COLLIDER_MODE === "hull" ? (
             <MeshCollider type="hull">
