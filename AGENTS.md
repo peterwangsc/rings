@@ -10,13 +10,16 @@ This file provides guidance to AI coding agents working in this repository.
 
 ## Project
 
-A 3D character rig sandbox — a playable scene with a character you control, a camera that follows them, rocks with living shader surfaces, and a grass field under open sky. Built with Next.js 16, React Three Fiber, Three.js, and Rapier physics.
+A 3D character rig sandbox with realtime multiplayer. Players share movement/presence, fireball casts, ring state, chat, and Goomba interactions through SpacetimeDB. Built with Next.js 16, React Three Fiber, Three.js, Rapier physics, and SpacetimeDB.
 
 ```bash
 npm install
 npm run dev      # Dev server at localhost:3000
 npm run build    # Production build
 npm run lint     # ESLint (Next.js + TypeScript rules)
+npm run multiplayer:db:start     # Local SpacetimeDB on 127.0.0.1:3001
+npm run multiplayer:db:publish   # Publish module to local SpacetimeDB
+npm run multiplayer:db:generate  # Regenerate TS bindings from module schema
 ```
 
 No test framework is configured.
@@ -31,27 +34,27 @@ No test framework is configured.
 | Shift (hold) | Alternate gait (run / walk) |
 | CapsLock | Toggle default gait |
 | Space | Jump |
-| H | Trigger happy emote |
-| J | Trigger sad emote |
+| Click (while pointer-locked) | Cast fireball |
 | V | Toggle third-person / first-person |
-| Esc | Unlock pointer |
+| F | Toggle FPS overlay |
+| Enter | Open chat (unlocks pointer while chat is open) |
+| Esc | Unlock pointer; if chat is open, close chat and resume gameplay |
 
 ## Architecture
 
 ```
-page.tsx → CharacterRigScene → Canvas (R3F)
-  ├── AnimatedSun + SceneCloudLayer (sky, day/night cycle, and atmosphere)
-  ├── Physics (Rapier world)
-  │     ├── WorldGeometry (scene composition)
-  │     │     ├── terrainChunks (chunk terrain mesh + trimesh colliders)
-  │     │     ├── grassField (instanced blades + shader customization)
-  │     │     ├── placements (rock/tree/campfire placement generation)
-  │     │     └── SingleTree (handcrafted conifer-style trunk + layered canopy)
-  │     └── CharacterRigController (simulation loop)
-  │           ├── useControllerInputHandlers (keyboard, pointer-lock, touch look)
-  │           └── CharacterActor (model loading, animation mixer)
-  ├── RingField (collectible rings)
-  └── HUD + overlays (GameHUD, splash panels, mobile controls)
+page.tsx → CharacterRigScene → SpacetimeDBProvider
+  └── CharacterRigSceneContent
+       ├── Canvas (R3F)
+       │    ├── AnimatedSun + SceneCloudLayer (sky, day/night cycle, atmosphere)
+       │    ├── Physics (Rapier world)
+       │    │    ├── WorldGeometry (terrain, grass, rocks, trees, campfire)
+       │    │    ├── RingField (starter rings + dropped rings)
+       │    │    ├── GoombaLayer (enemy rendering)
+       │    │    ├── RemotePlayersLayer (remote avatars + chat nametags)
+       │    │    └── CharacterRigController (input → physics → camera → animation)
+       │    └── useMultiplayerSync (SpacetimeDB subscriptions + reducers)
+       └── HUD + overlays (GameHUD, GlobalChatFeed, ChatOverlay, splash, mobile controls)
 ```
 
 - All components under `app/` are client components (`"use client"`).
@@ -59,6 +62,7 @@ page.tsx → CharacterRigScene → Canvas (R3F)
 - The gameplay loop runs in `useFrame` inside `CharacterRigController.tsx` — the central orchestrator for input → physics → camera → animation each frame.
 - Vertical movement is fully physics-driven (Rapier gravity); horizontal intent is on the XZ plane.
 - Player is a capsule rigid body; ground uses trimesh colliders; rocks use hull mesh colliders by default (cuboid fallback mode is available).
+- Multiplayer authority is server-validated in `spacetimedb/src/index.ts` with client prediction on the local player.
 
 ---
 
@@ -266,9 +270,9 @@ Where things are placed, how big they are, and the ground colors.
 
 ### 9. Rings (collectibles)
 
-Golden torus collectibles scattered across the terrain. Walking into a ring collects it (sensor-based pickup) and increments the HUD counter.
+Golden torus collectibles include starter world rings and temporary dropped rings (from Goomba reward/spill). Collection is server-authoritative and synced to all players.
 
-**Primary files:** `app/gameplay/collectibles/Ring.tsx`, `app/gameplay/collectibles/RingField.tsx`, `app/hud/GameHUD.tsx`
+**Primary files:** `app/gameplay/collectibles/Ring.tsx`, `app/gameplay/collectibles/RingField.tsx`, `app/scene/world/worldEntityManager.ts`, `spacetimedb/src/index.ts`
 
 | What you're shaping | Constant | What it does |
 |---|---|---|
@@ -280,10 +284,24 @@ Golden torus collectibles scattered across the terrain. Walking into a ring coll
 | Spin speed | `RING_ROTATION_SPEED` | How fast the ring rotates around its vertical axis |
 | Bob motion | `RING_BOB_AMPLITUDE`, `RING_BOB_SPEED` | Vertical hovering motion — amplitude and frequency |
 | Pickup range | `RING_SENSOR_RADIUS` | How close the player must be to collect the ring |
+| Drop pickup range | `RING_DROP_SENSOR_RADIUS` | Larger pickup radius for dropped rings |
+| Drop fall-in | `RING_DROP_FALL_START_HEIGHT`, `RING_DROP_FALL_DURATION_MS` | Drop ring fall animation from spawn height down to hover height |
+| Drop lifetime | `RING_DROP_LIFETIME_MS` | Total time before dropped rings despawn |
+| Drop despawn flash | `RING_DROP_DESPAWN_FLASH_WINDOW_MS`, `RING_DROP_DESPAWN_FLASH_HZ`, `RING_DROP_DESPAWN_MIN_ALPHA` | Sonic-style flash/fade before dropped rings disappear |
 | Ring positions | `RING_PLACEMENTS` | Array of `[x, z]` coordinates — Y is computed from terrain height |
 | Mesh detail | `RING_TORUS_SEGMENTS`, `RING_TUBE_SEGMENTS` | Geometry resolution of the torus |
 
-Rings use Rapier sensor colliders for pickup detection. Only the player's dynamic body triggers collection — static world geometry is ignored. The RingField computes world-space Y positions from terrain height at spawn time. Collected rings are tracked by ID in a `Set<string>` owned by `CharacterRigScene`.
+Starter ring positions are terrain-derived in `worldEntityManager`. Drop rings are inserted and expired server-side in `spacetimedb/src/index.ts` and rendered client-side with timed fall + flash/fade behavior. Camera collision ignores ring sensors to avoid third-person camera pops while collecting.
+
+### 10. Multiplayer + Goomba gameplay
+
+Multiplayer state and enemy behavior are split between client sync/store and server reducers/tables.
+
+**Primary files:** `app/multiplayer/state/useMultiplayerSync.ts`, `app/multiplayer/state/multiplayerStore.ts`, `app/gameplay/goombas/GoombaLayer.tsx`, `spacetimedb/src/index.ts`
+
+- Player state, inventory, rings, ring drops, world day cycle, chat, and Goomba state are replicated via SpacetimeDB tables/bindings.
+- `CharacterRigController` predicts local movement and fireballs; authoritative snapshots from server are used for reconciliation.
+- Goomba AI and ring-drop spawn/cleanup are server-side. Visual rig animation for Goomba is client-side.
 
 **Convention for new gameplay elements:** constants in `constants.ts`, 3D components in `app/gameplay/<category>/`, HUD overlays in `app/hud/`, state orchestrated in `CharacterRigScene`.
 
@@ -343,7 +361,11 @@ These are structural decisions that keep the whole system working. Don't change 
 
 - Move around. Does the character accelerate, stop, and turn the way you intended?
 - Toggle camera mode (press V). Do transitions between first-person and third-person feel coherent, and does third-person keep camera orbit independent from heading while idle?
+- Cast fireballs while pointer-locked. Do spawn limits and visuals behave as expected?
+- Open chat with Enter. Does pointer lock release while chatting and resume cleanly on Escape/close?
 - Jump near rocks. Does the character land on them as expected, or clip through?
+- In multiplayer (2 clients), verify remote players, chat, and ring collection stay in sync.
+- Hit or stomp a Goomba. Do dropped rings fall to reachable height, bob, and despawn with flash/fade?
 - Look at rocks from both camera modes. Do the shader effects (glow, strata, bump) read well at different distances and angles?
 - Walk into fog. Does the atmosphere fade feel natural at the distance you set?
 - If you changed animation timing, watch transitions between idle, walk, run, and jump. Do the blends feel smooth or do they pop?
@@ -370,6 +392,9 @@ When changing camera, movement, coordinate-space, or animation coupling behavior
 | Animation helpers, clip processing | `app/lib/characterAnimation.ts` |
 | Input and per-frame gameplay loop | `app/controller/CharacterRigController.tsx` |
 | Input event wiring (keyboard, pointer-lock, touch look) | `app/controller/useControllerInputHandlers.ts` |
+| Multiplayer connection + table/reducer sync | `app/multiplayer/spacetime/client.ts`, `app/multiplayer/state/useMultiplayerSync.ts` |
+| Multiplayer client store/types | `app/multiplayer/state/multiplayerStore.ts`, `app/multiplayer/state/multiplayerTypes.ts` |
+| SpacetimeDB module schema/reducers | `spacetimedb/src/index.ts` |
 | Mobile joystick and splash/orientation overlays | `app/scene/MobileControlsOverlay.tsx`, `app/scene/SceneOverlays.tsx` |
 | Camera application logic | `app/camera/cameraRig.ts` |
 | Terrain height and noise sampling | `app/utils/terrain.ts` |
@@ -377,4 +402,5 @@ When changing camera, movement, coordinate-space, or animation coupling behavior
 | Motion state resolution | `app/utils/physics.ts` |
 | Ring collectible (3D mesh + sensor) | `app/gameplay/collectibles/Ring.tsx` |
 | Ring field spawner and collection state | `app/gameplay/collectibles/RingField.tsx` |
-| Game HUD (ring counter) | `app/hud/GameHUD.tsx` |
+| Goomba enemy render/animation layer | `app/gameplay/goombas/GoombaLayer.tsx` |
+| HUD and chat overlays | `app/hud/GameHUD.tsx`, `app/hud/GlobalChatFeed.tsx`, `app/hud/ChatOverlay.tsx` |
