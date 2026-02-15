@@ -218,7 +218,9 @@ function CharacterRigSceneContent({
       });
     }
 
-    entries.sort((a, b) => {
+    const rankedEntries = entries.filter((entry) => entry.highestRingCount > 0);
+
+    rankedEntries.sort((a, b) => {
       if (a.ringCount !== b.ringCount) {
         return b.ringCount - a.ringCount;
       }
@@ -232,7 +234,7 @@ function CharacterRigSceneContent({
       return a.identity.localeCompare(b.identity);
     });
 
-    return entries.slice(0, LEADERBOARD_ROW_LIMIT);
+    return rankedEntries.slice(0, LEADERBOARD_ROW_LIMIT);
   }, [
     multiplayerState.authoritativeLocalPlayerState,
     multiplayerState.localDisplayName,
@@ -243,11 +245,13 @@ function CharacterRigSceneContent({
   const allTimeLeaderboardEntries = useMemo(() => {
     const entries: AllTimeLeaderboardEntry[] = Array.from(
       multiplayerState.playerStats.values(),
-    ).map((stats) => ({
-      identity: stats.identity,
-      displayName: normalizeLeaderboardName(stats.displayName, stats.identity),
-      highestRingCount: stats.highestRingCount,
-    }));
+    )
+      .filter((stats) => stats.highestRingCount > 0)
+      .map((stats) => ({
+        identity: stats.identity,
+        displayName: normalizeLeaderboardName(stats.displayName, stats.identity),
+        highestRingCount: stats.highestRingCount,
+      }));
 
     entries.sort((a, b) => {
       if (a.highestRingCount !== b.highestRingCount) {
