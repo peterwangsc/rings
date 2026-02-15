@@ -24,6 +24,10 @@ function hash2D(x: number, z: number) {
   return fract(Math.sin(x * 127.1 + z * 311.7) * 43758.5453123);
 }
 
+export function hash1D(value: number) {
+  return fract(Math.sin(value * 12.9898) * 43758.5453123);
+}
+
 function valueNoise2D(x: number, z: number) {
   const x0 = Math.floor(x);
   const z0 = Math.floor(z);

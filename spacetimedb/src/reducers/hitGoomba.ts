@@ -1,10 +1,12 @@
 import { t } from 'spacetimedb/server';
 import {
+  GOOMBA_CHUNK_SPAWN_COOLDOWN_MS,
+  GOOMBA_DEFEATED_DESPAWN_MS,
   GOOMBA_HIT_VALIDATION_RADIUS,
-  GOOMBA_RESPAWN_MS,
   GOOMBA_STATE_DEFEATED,
   RING_DROP_SOURCE_GOOMBA,
 } from '../shared/constants';
+import { getChunkCoordFromWorld, getChunkKey } from '../shared/chunks';
 import { nowMs } from '../shared/time';
 import { spacetimedb } from '../schema';
 import { pruneExpiredRows } from '../systems/prune';
@@ -49,9 +51,33 @@ spacetimedb.reducer(
       stateEndsAtMs: 0,
       // Preserves deterministic behavior RNG state through defeat/respawn.
       nextChargeAllowedAtMs: goomba.nextChargeAllowedAtMs,
-      respawnAtMs: timestampMs + GOOMBA_RESPAWN_MS,
+      respawnAtMs: timestampMs + GOOMBA_DEFEATED_DESPAWN_MS,
       updatedAtMs: timestampMs,
     });
+
+    const spawnChunk = getChunkCoordFromWorld(goomba.spawnX, goomba.spawnZ);
+    const chunkKey = getChunkKey(spawnChunk.x, spawnChunk.z);
+    const existingChunkSpawnState =
+      ctx.db.goombaChunkSpawnState.chunkKey.find(chunkKey);
+
+    if (existingChunkSpawnState) {
+      ctx.db.goombaChunkSpawnState.chunkKey.update({
+        ...existingChunkSpawnState,
+        nextSpawnAtMs: timestampMs + GOOMBA_CHUNK_SPAWN_COOLDOWN_MS,
+        activeGoombaId: goomba.goombaId,
+        updatedAtMs: timestampMs,
+      });
+    } else {
+      ctx.db.goombaChunkSpawnState.insert({
+        chunkKey,
+        chunkX: spawnChunk.x,
+        chunkZ: spawnChunk.z,
+        nextSpawnAtMs: timestampMs + GOOMBA_CHUNK_SPAWN_COOLDOWN_MS,
+        spawnSequence: 1,
+        activeGoombaId: goomba.goombaId,
+        updatedAtMs: timestampMs,
+      });
+    }
 
     insertDropRing(
       ctx,

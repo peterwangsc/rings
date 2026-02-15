@@ -56,6 +56,8 @@ import ChatMessageEventRow from "./chat_message_event_table";
 export { ChatMessageEventRow };
 import FireballEventRow from "./fireball_event_table";
 export { FireballEventRow };
+import GoombaChunkSpawnStateRow from "./goomba_chunk_spawn_state_table";
+export { GoombaChunkSpawnStateRow };
 import GoombaStateRow from "./goomba_state_table";
 export { GoombaStateRow };
 import PlayerInventoryRow from "./player_inventory_table";
@@ -80,6 +82,8 @@ import CollectRing from "./collect_ring_type";
 export { CollectRing };
 import FireballEvent from "./fireball_event_type";
 export { FireballEvent };
+import GoombaChunkSpawnState from "./goomba_chunk_spawn_state_type";
+export { GoombaChunkSpawnState };
 import GoombaState from "./goomba_state_type";
 export { GoombaState };
 import HitGoomba from "./hit_goomba_type";
@@ -131,6 +135,17 @@ const tablesSchema = __schema(
       { name: 'fireball_event_eventId_key', constraint: 'unique', columns: ['eventId'] },
     ],
   }, FireballEventRow),
+  __table({
+    name: 'goomba_chunk_spawn_state',
+    indexes: [
+      { name: 'chunkKey', algorithm: 'btree', columns: [
+        'chunkKey',
+      ] },
+    ],
+    constraints: [
+      { name: 'goomba_chunk_spawn_state_chunkKey_key', constraint: 'unique', columns: ['chunkKey'] },
+    ],
+  }, GoombaChunkSpawnStateRow),
   __table({
     name: 'goomba_state',
     indexes: [

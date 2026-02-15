@@ -23,7 +23,7 @@ export const MAX_RING_COUNT = 999;
 
 export const GOOMBA_ENRAGE_RADIUS = 16;
 export const GOOMBA_RUN_SPEED = 5.5;
-export const GOOMBA_RUN_DURATION_MS = 4500;
+export const GOOMBA_RUN_DURATION_MS = 2500;
 export const GOOMBA_CHARGE_DURATION_MS = 1500;
 export const GOOMBA_COOLDOWN_DURATION_MS = 3000;
 export const GOOMBA_IDLE_WALK_SPEED = 1.7;
@@ -31,9 +31,15 @@ export const GOOMBA_IDLE_WANDER_MIN_DURATION_MS = 900;
 export const GOOMBA_IDLE_WANDER_MAX_DURATION_MS = 2400;
 export const GOOMBA_IDLE_LEASH_RADIUS = 9;
 export const GOOMBA_PLAYER_HIT_RADIUS = 1.1;
-export const GOOMBA_RESPAWN_MS = 6000;
+export const GOOMBA_DEFEATED_DESPAWN_MS = 900;
 // Supports ranged fireball hits (spawn distance + travel distance + hit radius buffer).
 export const GOOMBA_HIT_VALIDATION_RADIUS = 28;
+export const GOOMBA_CHUNK_ACTIVE_RADIUS = 1;
+export const GOOMBA_CHUNK_SPAWN_THRESHOLD = 0.5;
+export const GOOMBA_CHUNK_SPAWN_COOLDOWN_MS = 12_000;
+export const GOOMBA_CHUNK_SPAWN_MARGIN = 6;
+export const GOOMBA_CHUNK_HASH_SEED = 191.37;
+export const GOOMBA_DISABLE_ORIGIN_CHUNK_SPAWN = true;
 
 export const WORLD_STATE_ROW_ID = "global";
 export const WORLD_DAY_CYCLE_DURATION_SECONDS = 300;
@@ -95,6 +101,8 @@ export const GOOMBA_SPAWNS: ReadonlyArray<readonly [number, number]> = [
 ];
 
 // Keep this terrain sampler in sync with app/utils/terrain.ts so ring height checks match gameplay.
+export const TERRAIN_CHUNK_HALF_EXTENT = 50;
+export const TERRAIN_CHUNK_SIZE = TERRAIN_CHUNK_HALF_EXTENT * 2;
 export const TERRAIN_HEIGHT_AMPLITUDE = 2.5;
 export const TERRAIN_BASE_NOISE_SCALE = 0.045;
 export const TERRAIN_DETAIL_NOISE_SCALE = 0.12;

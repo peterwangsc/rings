@@ -1,5 +1,4 @@
 import { spacetimedb } from '../schema';
-import { ensureGoombaRows } from '../bootstrap/seedGoombas';
 import { ensurePlayerInventory } from '../shared/playerInventory';
 import { getConnectionIdHex, nowMs } from '../shared/time';
 import { ensureWorldStateRow } from '../shared/worldState';
@@ -7,7 +6,6 @@ import { ensureWorldStateRow } from '../shared/worldState';
 spacetimedb.clientConnected((ctx) => {
   const timestampMs = nowMs(ctx);
   ensureWorldStateRow(ctx);
-  ensureGoombaRows(ctx, timestampMs);
   ensurePlayerInventory(ctx, ctx.sender.toHexString(), timestampMs);
 
   const connectionId = getConnectionIdHex(ctx.connectionId);

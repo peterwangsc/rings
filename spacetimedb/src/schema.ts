@@ -75,6 +75,19 @@ const goombaState = table(
   },
 );
 
+const goombaChunkSpawnState = table(
+  { name: 'goomba_chunk_spawn_state' },
+  {
+    chunkKey: t.string().primaryKey(),
+    chunkX: t.f64(),
+    chunkZ: t.f64(),
+    nextSpawnAtMs: t.f64(),
+    spawnSequence: t.f64(),
+    activeGoombaId: t.option(t.string()),
+    updatedAtMs: t.f64(),
+  },
+);
+
 const worldState = table(
   { name: 'world_state', public: true },
   {
@@ -127,6 +140,7 @@ export const spacetimedb = schema(
   ringState,
   ringDropState,
   goombaState,
+  goombaChunkSpawnState,
   worldState,
   fireballEvent,
   chatMessageEvent,

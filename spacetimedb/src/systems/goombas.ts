@@ -18,13 +18,16 @@ import {
   MAX_SPILL_RING_COUNT,
   RING_DROP_SOURCE_SPILL,
 } from '../shared/constants';
+import { getChunkCoordFromWorld, getChunkKey } from '../shared/chunks';
 import type {
+  GoombaChunkSpawnStateRow,
   GoombaStateRow,
   PlayerInventoryRow,
   PlayerStateRow,
   RingDropStateRow,
 } from '../shared/rows';
 import { sampleTerrainHeight } from '../shared/terrain';
+import { tickGoombaChunkSpawns } from './goombaChunkSpawns';
 import { insertDropRing } from './ringDrops';
 import {
   normalizeRingCount,
@@ -39,9 +42,6 @@ type GoombaTickContext = {
   newUuidV4(): { toString(): string };
   db: {
     playerState: {
-      identity: {
-        find(identity: string): PlayerStateRow | null;
-      };
       iter(): IteratorObject<PlayerStateRow, undefined>;
     };
     playerInventory: {
@@ -52,8 +52,18 @@ type GoombaTickContext = {
     };
     goombaState: {
       iter(): IteratorObject<GoombaStateRow, undefined>;
+      insert(row: GoombaStateRow): void;
+      delete(row: GoombaStateRow): boolean;
       goombaId: {
+        find(goombaId: string): GoombaStateRow | null;
         update(row: GoombaStateRow): GoombaStateRow;
+      };
+    };
+    goombaChunkSpawnState: {
+      insert(row: GoombaChunkSpawnStateRow): void;
+      chunkKey: {
+        find(chunkKey: string): GoombaChunkSpawnStateRow | null;
+        update(row: GoombaChunkSpawnStateRow): GoombaChunkSpawnStateRow;
       };
     };
     ringDropState: {
@@ -305,13 +315,84 @@ function maybeHitNearbyPlayer(
   return true;
 }
 
+function maybeReleaseChunkSlot(
+  ctx: GoombaTickContext,
+  goomba: GoombaStateRow,
+  timestampMs: number,
+) {
+  const chunk = getChunkCoordFromWorld(goomba.spawnX, goomba.spawnZ);
+  const chunkKey = getChunkKey(chunk.x, chunk.z);
+  const spawnState = ctx.db.goombaChunkSpawnState.chunkKey.find(chunkKey);
+  if (!spawnState || spawnState.activeGoombaId !== goomba.goombaId) {
+    return;
+  }
+
+  ctx.db.goombaChunkSpawnState.chunkKey.update({
+    ...spawnState,
+    activeGoombaId: undefined,
+    updatedAtMs: timestampMs,
+  });
+}
+
+function hasGoombaChanged(previous: GoombaStateRow, next: GoombaStateRow) {
+  return (
+    previous.spawnX !== next.spawnX ||
+    previous.spawnY !== next.spawnY ||
+    previous.spawnZ !== next.spawnZ ||
+    previous.x !== next.x ||
+    previous.y !== next.y ||
+    previous.z !== next.z ||
+    previous.yaw !== next.yaw ||
+    previous.state !== next.state ||
+    previous.targetIdentity !== next.targetIdentity ||
+    previous.stateEndsAtMs !== next.stateEndsAtMs ||
+    previous.nextChargeAllowedAtMs !== next.nextChargeAllowedAtMs ||
+    previous.respawnAtMs !== next.respawnAtMs
+  );
+}
+
+function maybeUpdateGoomba(
+  ctx: GoombaTickContext,
+  previous: GoombaStateRow,
+  next: GoombaStateRow,
+  timestampMs: number,
+) {
+  if (!hasGoombaChanged(previous, next)) {
+    return;
+  }
+
+  ctx.db.goombaState.goombaId.update({
+    ...next,
+    updatedAtMs: timestampMs,
+  });
+}
+
 export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
+  const activeChunkKeys = tickGoombaChunkSpawns(ctx, timestampMs);
+
   for (const goomba of ctx.db.goombaState.iter()) {
     const next: GoombaStateRow = {
       ...goomba,
       state: sanitizeGoombaState(goomba.state),
-      updatedAtMs: timestampMs,
     };
+
+    const spawnChunk = getChunkCoordFromWorld(next.spawnX, next.spawnZ);
+    const spawnChunkKey = getChunkKey(spawnChunk.x, spawnChunk.z);
+
+    if (next.state === GOOMBA_STATE_DEFEATED) {
+      if (next.respawnAtMs !== undefined && timestampMs >= next.respawnAtMs) {
+        maybeReleaseChunkSlot(ctx, goomba, timestampMs);
+        ctx.db.goombaState.delete(goomba);
+        continue;
+      }
+      maybeUpdateGoomba(ctx, goomba, next, timestampMs);
+      continue;
+    }
+
+    if (!activeChunkKeys.has(spawnChunkKey)) {
+      continue;
+    }
+
     const randomCursor: RandomCursor = {
       // Reuse legacy cooldown storage as deterministic RNG state.
       state: toRandomSeed(next.nextChargeAllowedAtMs, next.goombaId),
@@ -320,20 +401,6 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
       0,
       Math.min((timestampMs - goomba.updatedAtMs) / 1000, 0.2),
     );
-
-    if (next.state === GOOMBA_STATE_DEFEATED) {
-      if (next.respawnAtMs !== undefined && timestampMs >= next.respawnAtMs) {
-        next.x = next.spawnX;
-        next.y = next.spawnY;
-        next.z = next.spawnZ;
-        setIdleState(next);
-        next.respawnAtMs = undefined;
-        startIdleWanderSegment(next, timestampMs, randomCursor);
-      }
-      next.nextChargeAllowedAtMs = randomCursor.state;
-      ctx.db.goombaState.goombaId.update(next);
-      continue;
-    }
 
     const nearbyTarget = findNearestPlayerWithinRadius(
       ctx,
@@ -351,14 +418,14 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
       }
       stepGoombaForward(next, GOOMBA_IDLE_WALK_SPEED, dtSeconds);
       next.nextChargeAllowedAtMs = randomCursor.state;
-      ctx.db.goombaState.goombaId.update(next);
+      maybeUpdateGoomba(ctx, goomba, next, timestampMs);
       continue;
     }
 
     if (next.state === GOOMBA_STATE_IDLE) {
       setChargeState(next, timestampMs, nearbyTarget.player);
       next.nextChargeAllowedAtMs = randomCursor.state;
-      ctx.db.goombaState.goombaId.update(next);
+      maybeUpdateGoomba(ctx, goomba, next, timestampMs);
       continue;
     }
 
@@ -366,12 +433,12 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
       next.targetIdentity = nearbyTarget.player.identity;
       if (timestampMs < next.stateEndsAtMs) {
         next.nextChargeAllowedAtMs = randomCursor.state;
-        ctx.db.goombaState.goombaId.update(next);
+        maybeUpdateGoomba(ctx, goomba, next, timestampMs);
         continue;
       }
       setChargeState(next, timestampMs, nearbyTarget.player);
       next.nextChargeAllowedAtMs = randomCursor.state;
-      ctx.db.goombaState.goombaId.update(next);
+      maybeUpdateGoomba(ctx, goomba, next, timestampMs);
       continue;
     }
 
@@ -379,7 +446,7 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
       next.targetIdentity = nearbyTarget.player.identity;
       if (timestampMs < next.stateEndsAtMs) {
         next.nextChargeAllowedAtMs = randomCursor.state;
-        ctx.db.goombaState.goombaId.update(next);
+        maybeUpdateGoomba(ctx, goomba, next, timestampMs);
         continue;
       }
       startEnragedRun(next, timestampMs, nearbyTarget.player);
@@ -392,7 +459,7 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
     if (timestampMs >= next.stateEndsAtMs) {
       setCooldownState(next, timestampMs, nearbyTarget.player);
       next.nextChargeAllowedAtMs = randomCursor.state;
-      ctx.db.goombaState.goombaId.update(next);
+      maybeUpdateGoomba(ctx, goomba, next, timestampMs);
       continue;
     }
 
@@ -403,6 +470,6 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
     }
 
     next.nextChargeAllowedAtMs = randomCursor.state;
-    ctx.db.goombaState.goombaId.update(next);
+    maybeUpdateGoomba(ctx, goomba, next, timestampMs);
   }
 }
