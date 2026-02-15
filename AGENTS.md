@@ -8,71 +8,6 @@ This file provides guidance to AI coding agents working in this repository.
 - Any change made to one of these files must be made to the other in the same update.
 - If they drift, treat `AGENTS.md` as the source of truth and resync `CLAUDE.local.md` immediately.
 
-## Active mission (default)
-
-The project is in V1 hardening mode.
-
-Primary objective:
-
-- Keep shipping and improving gameplay/multiplayer in V1 (`app/` + `spacetimedb/`).
-- Incorporate proven lessons from `v2/` only through targeted, low-risk backports into V1.
-- Improve multiplayer architecture incrementally inside V1 (clearer module boundaries, validation, observability, and performance).
-- Avoid active feature delivery work in `v2/` unless the user explicitly requests it.
-
-Unless the user explicitly overrides priority, choose work from the checklist in `docs/v1-multiplayer-platform-plan.md`.
-
-## Source-of-truth order
-
-1. `docs/v1-multiplayer-platform-plan.md` roadmap + progress log.
-2. Existing V1 behavior in `app/` and `spacetimedb/`.
-3. Process docs in `docs/agent-process/`.
-4. `docs/rings-rewrite-foundation-plan.md` (historical V2 reference only).
-5. This file.
-
-If these conflict, follow the highest item and update lower-priority docs to match.
-
-## Scope boundaries
-
-- New implementation work goes in V1 (`app/`, `spacetimedb/`) by default.
-- `v2/` is a pattern/reference source, not the active delivery target.
-- Prefer small, reversible refactors over large rewrites.
-- Preserve current player-visible behavior unless explicit behavior changes are requested.
-
-## Session workflow (mandatory)
-
-For every implementation session:
-
-1. Open `docs/v1-multiplayer-platform-plan.md` and pick one primary unchecked roadmap item.
-2. Mark it `[~]` when active work starts.
-3. Implement the task in V1 paths (`app/`, `spacetimedb/`) with minimal unrelated churn.
-4. Validate with relevant automated/manual checks.
-5. Mark checklist state:
-   - `[x]` only when code + validation are complete.
-   - `[!]` if blocked, with blocker and concrete next action.
-6. Add/update progress notes in `docs/v1-multiplayer-platform-plan.md` with date, files changed, and validation results.
-7. If complete and unblocked, move directly to the next highest-impact unchecked item.
-
-## V1 stability target (must remain correct while refactoring)
-
-V1 changes must preserve gameplay behavior and multiplayer semantics for:
-
-- Character movement and camera modes.
-- Fireball casting, simulation, lifecycle, and limits.
-- Ring placement, collection, inventory limits, and dropped-ring lifecycle.
-- Goomba behavior, hit detection, defeat/respawn, and ring rewards/spills.
-- Chat and multiplayer presence synchronization.
-- Day/night world cycle and world-state sync.
-
-## V2-to-V1 salvage map
-
-| Domain | Useful V2 takeaway | V1 destination |
-| --- | --- | --- |
-| Deterministic helpers | Pure math/terrain/simulation helpers separated from render/UI concerns | `app/utils/*`, `app/gameplay/abilities/*` (extract and reuse pure functions) |
-| Protocol contracts | Explicit command/event payload contracts | `app/multiplayer/state/multiplayerTypes.ts` + new `app/multiplayer/protocol/*` |
-| Server structure | Reducer/system/validation/bootstrap decomposition | `spacetimedb/src/{reducers,systems,validation,bootstrap}` |
-| Runtime diagnostics | Reliability/health counters and alert semantics | `app/multiplayer/state/*` and HUD diagnostics surfaces |
-| Queue boundaries | Explicit inbound/outbound queue ownership | `app/multiplayer/state/useMultiplayerSync.ts` and related net modules |
-
 ## Architecture rules for V1 (forward path)
 
 - Keep deterministic gameplay/math logic in plain TS modules (no React/Three/SDK imports in those helpers).
@@ -110,30 +45,6 @@ npm run multiplayer:db:generate
 
 Manual checks should cover touched gameplay/networking domains (movement feel, fireball behavior, ring/goomba interactions, chat/presence, and synchronization semantics).
 
-## Completion criteria for current V1 phase
-
-The active phase is complete only when:
-
-- All required checklist items in `docs/v1-multiplayer-platform-plan.md` are `[x]`.
-- V1 behavior remains correct across all stability domains listed above.
-- Core validation commands pass.
-- Documentation reflects actual ownership and runtime flow in V1.
-
-## Git and repo boundaries
-
-- The root repository is the active shipping codebase (V1).
-- `v2/` is a nested repository retained for reference and selective backports.
-- Keep commits scoped to the repository being changed.
-- Do not mix unrelated root-repo and `v2/` changes in one commit unless explicitly requested.
-
-## Change discipline
-
-- Prefer small, reversible increments.
-- Keep checklist/progress documentation in sync with actual code state.
-- Record intended architectural ownership changes before moving files.
-- Do not mark work complete with placeholders or TODO stubs.
-- If blocked, document the blocker and the next concrete action immediately.
-
 ## Project
 
 A 3D character rig sandbox with realtime multiplayer. Players share movement/presence, fireball casts, ring state, chat, and Goomba interactions through SpacetimeDB. Built with Next.js 16, React Three Fiber, Three.js, Rapier physics, and SpacetimeDB.
@@ -147,8 +58,6 @@ npm run multiplayer:db:start     # Local SpacetimeDB on 127.0.0.1:3001
 npm run multiplayer:db:publish   # Publish module to local SpacetimeDB
 npm run multiplayer:db:generate  # Regenerate TS bindings from module schema
 ```
-
-No test framework is configured.
 
 ## Controls
 
@@ -483,27 +392,6 @@ These are structural decisions that keep the whole system working. Don't change 
 **Collider-visual alignment:** Each rock's `collider` size should roughly match its `scale`. If you resize a rock visually, update its collider too or the player will bump into invisible walls or walk through visible rock.
 
 **Character asset:** Single rigged glTF at `public/models/character/character_new.gltf`. Character root is centered in X/Z, grounded at local Y=0, auto-scaled to target height (1.85m). Mesh shadows enabled.
-
----
-
-## Validating your changes
-
-- Move around. Does the character accelerate, stop, and turn the way you intended?
-- Toggle camera mode (press V). Do transitions between first-person and third-person feel coherent, and does third-person keep camera orbit independent from heading while idle?
-- Cast fireballs while pointer-locked. Do spawn limits and visuals behave as expected?
-- Open chat with Enter. Does pointer lock release while chatting and resume cleanly on Escape/close?
-- Jump near rocks. Does the character land on them as expected, or clip through?
-- In multiplayer (2 clients), verify remote players, chat, and ring collection stay in sync.
-- Hit or stomp a Goomba. Do dropped rings fall to reachable height, bob, and despawn with flash/fade?
-- Look at rocks from both camera modes. Do the shader effects (glow, strata, bump) read well at different distances and angles?
-- Walk into fog. Does the atmosphere fade feel natural at the distance you set?
-- If you changed animation timing, watch transitions between idle, walk, run, and jump. Do the blends feel smooth or do they pop?
-
----
-
-## Assumption change rule
-
-When changing camera, movement, coordinate-space, or animation coupling behavior: preserve the assumptions documented above, or update this file in the same change. Do not leave behavior and documentation out of sync.
 
 ---
 
