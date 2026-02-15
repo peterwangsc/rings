@@ -303,7 +303,7 @@ export function MobileControlsOverlay({
           aria-label={
             isLeaderboardVisible ? "Hide leaderboard" : "Show leaderboard"
           }
-          className={`mobile-utility-button mobile-utility-button--top-right pointer-events-auto touch-none select-none ${isLeaderboardVisible ? "mobile-utility-button--active" : ""}`}
+          className={`mobile-utility-button pointer-events-auto touch-none select-none ${isLeaderboardVisible ? "mobile-utility-button--active" : ""}`}
           onClick={onToggleLeaderboard}
         >
           <List

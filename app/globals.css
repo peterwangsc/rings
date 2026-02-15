@@ -398,17 +398,10 @@ body {
   filter: brightness(0.95) saturate(1.05);
 }
 
-.mobile-utility-button--top-right {
-  position: absolute;
-  top: calc(max(env(safe-area-inset-top), 0rem) + 0.75rem);
-  right: 0.75rem;
-}
-
 .mobile-utility-button--chat {
   position: absolute;
-  left: 50%;
-  margin-left: -22px;
-  bottom: calc(max(env(safe-area-inset-bottom), 0.75rem) + 1.05rem);
+  left: calc(1rem + 132px + 0.6rem);
+  bottom: calc(max(env(safe-area-inset-bottom), 0.75rem) + 2.75rem);
 }
 
 .mobile-control-icon--utility {

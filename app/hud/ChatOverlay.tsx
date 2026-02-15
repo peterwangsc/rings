@@ -129,7 +129,7 @@ export function ChatOverlay({
                 onSendMessage();
               }
             }}
-            className="h-10 w-full rounded-lg border border-cyan-200/35 bg-black/45 px-3 text-sm text-cyan-50 outline-none transition placeholder:text-cyan-100/45 focus:border-cyan-100/65 focus:bg-black/55"
+            className="h-10 w-full rounded-lg border border-cyan-200/35 bg-black/45 px-3 text-[16px] text-cyan-50 outline-none transition placeholder:text-cyan-100/45 focus:border-cyan-100/65 focus:bg-black/55 sm:text-sm"
           />
         </div>
       </div>
