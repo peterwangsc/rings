@@ -51,7 +51,8 @@ A 3D character rig sandbox with realtime multiplayer. Players share movement/pre
 
 ```bash
 npm install
-npm run dev      # Dev server at localhost:3000
+npm run dev      # Dev server at localhost:3000 (auto-starts local SpacetimeDB if needed)
+npm run dev:web  # Dev server only (no SpacetimeDB auto-start)
 npm run build    # Production build
 npm run lint     # ESLint (Next.js + TypeScript rules)
 npm run multiplayer:db:start     # Local SpacetimeDB on 127.0.0.1:3001
@@ -81,9 +82,9 @@ npm run multiplayer:db:generate  # Regenerate TS bindings from module schema
 page.tsx → CharacterRigScene → SpacetimeDBProvider
   └── CharacterRigSceneContent
        ├── Canvas (R3F)
-       │    ├── AnimatedSun + SceneCloudLayer (sky, day/night cycle, atmosphere)
+       │    ├── AnimatedSun (sky, day/night cycle, atmosphere)
        │    ├── Physics (Rapier world)
-       │    │    ├── WorldGeometry (terrain, grass, rocks, trees, campfire)
+       │    │    ├── WorldGeometry (chunked terrain, grass, rocks, trees, clouds, campfire)
        │    │    ├── RingField (starter rings + dropped rings)
        │    │    ├── GoombaLayer (enemy rendering)
        │    │    ├── RemotePlayersLayer (remote avatars + chat nametags)
@@ -92,11 +93,11 @@ page.tsx → CharacterRigScene → SpacetimeDBProvider
        └── HUD + overlays (GameHUD, GlobalChatFeed, ChatOverlay, splash, mobile controls)
 ```
 
-- All components under `app/` are client components (`"use client"`).
+- Most gameplay/rendering components under `app/` are client components (`"use client"`); `app/page.tsx` remains a server component.
 - State is managed via React hooks only — no global state library. `useRef` for per-frame mutable state (input, timers), `useState` for render-triggering state (camera mode, gait).
 - The gameplay loop runs in `useFrame` inside `CharacterRigController.tsx` — the central orchestrator for input → physics → camera → animation each frame.
 - Vertical movement is fully physics-driven (Rapier gravity); horizontal intent is on the XZ plane.
-- Player is a capsule rigid body; ground uses trimesh colliders; rocks use hull mesh colliders by default (cuboid fallback mode is available).
+- Player is a capsule rigid body; ground uses trimesh colliders; rocks use hull mesh colliders.
 - Multiplayer authority is server-validated in `spacetimedb/src/index.ts` with client prediction on the local player.
 
 ---
@@ -113,14 +114,14 @@ How heavy, light, snappy, or floaty the character feels to control.
 
 | What you're shaping   | Constant                    | What it does                                                                              |
 | --------------------- | --------------------------- | ----------------------------------------------------------------------------------------- |
-| Walking pace          | `PLAYER_WALK_SPEED`         | How fast the character strolls (currently ~3.6 m/s)                                       |
-| Running pace          | `PLAYER_RUN_SPEED`          | How fast the character sprints (currently ~5.8 m/s)                                       |
+| Walking pace          | `PLAYER_WALK_SPEED`         | How fast the character strolls (currently ~1.92 m/s)                                      |
+| Running pace          | `PLAYER_RUN_SPEED`          | How fast the character sprints (currently ~6.4 m/s)                                       |
 | Overall speed scaling | `PLAYER_SPEED_SCALAR`       | Multiplier on both walk and run — turn this up to make everything faster                  |
 | Responsiveness        | `PLAYER_ACCELERATION`       | How quickly the character reaches full speed — higher feels snappier, lower feels heavier |
 | Stopping drag         | `PLAYER_LINEAR_DAMPING`     | How quickly the character slows down when you let go — higher stops faster, lower slides  |
 | Jump power            | `PLAYER_JUMP_VELOCITY`      | How high the character launches — affects air time too                                    |
 | Gravity weight        | `WORLD_GRAVITY_Y`           | How hard the world pulls down — less negative feels floatier, more negative feels heavier |
-| Ledge forgiveness     | `GROUNDED_GRACE_SECONDS`    | Brief window after walking off an edge where you can still jump (currently 0.08s)         |
+| Ledge forgiveness     | `GROUNDED_GRACE_SECONDS`    | Brief window after walking off an edge where you can still jump (currently 0.12s)         |
 | Jump input buffer     | `JUMP_INPUT_BUFFER_SECONDS` | How early before landing you can press jump and still have it count (currently 0.15s)     |
 
 Walk and run speeds are built from a base value times `PLAYER_SPEED_SCALAR`. Change the scalar to shift both proportionally, or change each individually for a different walk-to-run ratio. Jump air time is calculated automatically from jump velocity and gravity — change either one and the arc adjusts.
@@ -180,7 +181,7 @@ How motion states blend together and how fast each clip plays.
 | Movement detection threshold | `WALK_SPEED_THRESHOLD`         | Minimum speed before the character switches from idle to walking — prevents twitchy transitions  |
 | Speed readout smoothing      | `PLANAR_SPEED_SMOOTHING`       | How smoothly the speed measurement updates — prevents flickering between walk/idle at low speeds |
 
-The character has seven motion states: `idle`, `walk`, `running`, `jump`, `jump_running`, `happy`, `sad`. Locomotion and airborne transitions happen automatically based on speed/input. `happy` and `sad` are one-shot emotes triggered by `H`/`J`, and they play only while grounded with no move intent. The blend duration is the single most impactful timing value — it controls how fluid or mechanical transitions feel. Animation playback speed and movement speed are independent, so you can have a character that moves fast but animates calmly, or vice versa.
+The character has seven motion states: `idle`, `walk`, `running`, `jump`, `jump_running`, `happy`, `sad`. Locomotion and airborne transitions happen automatically based on speed/input. `happy` and `sad` clips are available as motion states, but they are not currently bound to local input keys. The blend duration is the single most impactful timing value — it controls how fluid or mechanical transitions feel. Animation playback speed and movement speed are independent, so you can have a character that moves fast but animates calmly, or vice versa.
 
 **Files for deeper animation work:**
 
@@ -192,11 +193,11 @@ The character has seven motion states: `idle`, `walk`, `running`, `jump`, `jump_
 
 The mood of the scene — sky color, fog, sun direction, ambient tone.
 
-**Files:** `app/utils/constants.ts` for colors and fog range. `app/scene/AnimatedSun.tsx` for sky/day-night lighting behavior and shadow settings. `app/scene/SceneCloudLayer.tsx` for cloud placement.
+**Files:** `app/utils/constants.ts` for colors and fog range. `app/scene/AnimatedSun.tsx` for sky/day-night lighting behavior and shadow settings. `app/scene/world/placements.ts` and `app/scene/world/ChunkContent.tsx` for cloud placement/rendering.
 
 | What you're shaping     | Where                                        | What it does                                                                                       |
 | ----------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Sky color               | `SKY_BACKGROUND_COLOR` in constants          | Background and fog color (currently pale blue `#CFE9FF`)                                           |
+| Sky color               | `HORIZON_COLOR` in constants                 | Background and fog color (currently pale blue `#CFE9FF`)                                           |
 | Fog start               | `SKY_FOG_NEAR` in constants                  | How close fog begins (currently 35 units)                                                          |
 | Fog end                 | `SKY_FOG_FAR` in constants                   | Where fog becomes fully opaque (currently 135 units) — closer = more enclosed, farther = more open |
 | Sky/ground ambient tint | `hemisphereLight` in `AnimatedSun.tsx`       | Two-tone ambient: sky tint `#EAF6FF` from above, ground tint `#8AA36D` from below                  |
@@ -219,9 +220,9 @@ Trees are currently built from a single handcrafted conifer profile (trunk + lay
 | Canopy twist                    | `CANOPY_MAX_TWIST_RADIANS` in `SingleTree.tsx`                                                     | Rotates higher canopy layers further around trunk for spiral structure     |
 | Tree height variance            | `heightScale` prop on `SingleTree`                                                                 | Scales trunk + canopy proportions while preserving silhouette relationship |
 | Trunk thickness scaling         | `trunkRadiusScale` in `SingleTree.tsx`                                                             | Keeps trunk believable as tree height changes                              |
-| Forest density                  | `LANDSCAPE_TREE_TARGET_COUNT` in `app/scene/world/placements.ts`                                   | Number of trees placed in the world                                        |
-| Forest coverage                 | `LANDSCAPE_TREE_FIELD_RADIUS`, `LANDSCAPE_TREE_CLEARING_RADIUS` in `app/scene/world/placements.ts` | Outer tree band and central player clearing                                |
-| Spacing and collision avoidance | `LANDSCAPE_TREE_MIN_SPACING`, `LANDSCAPE_TREE_ROCK_CLEARANCE` in `app/scene/world/placements.ts`   | Prevents trees from clumping or intersecting rocks                         |
+| Forest density                  | `CHUNK_TREE_COUNT` in `app/utils/constants.ts`                                                      | Number of trees attempted per active terrain chunk                         |
+| Forest coverage                 | `ACTIVE_TERRAIN_CHUNK_RADIUS`, `TERRAIN_CHUNK_SIZE`, `CHUNK_SPAWN_CLEARING_RADIUS`                 | Active chunk coverage around player and origin spawn clearing              |
+| Spacing and collision avoidance | `CHUNK_TREE_MIN_SPACING`, `CHUNK_TREE_ROCK_CLEARANCE` in `app/utils/constants.ts`                  | Prevents trees from clumping or intersecting chunk rocks                   |
 
 ### 6. Rock surfaces — the shader palette
 
@@ -232,46 +233,29 @@ The rocks use a custom shader that layers multiple visual effects. Each effect h
 **Base material:**
 | Knob | Constant | What it does |
 |---|---|---|
-| Surface roughness | `ROCK_BASE_ROUGHNESS` | How matte vs. glossy (0.94 = very rough stone) |
-| Metal quality | `ROCK_BASE_METALNESS` | How metallic the reflections are (0.02 = almost none) |
-| Ambient glow color | `ROCK_BASE_EMISSIVE` | Subtle self-illumination tint |
-| Ambient glow strength | `ROCK_BASE_EMISSIVE_INTENSITY` | How visible the self-illumination is |
+| Surface roughness | `ROCK_BASE_ROUGHNESS` | How matte vs. glossy the base material appears |
+| Metal quality | `ROCK_BASE_METALNESS` | How metallic the reflections are |
 
-**Bump and relief — the surface texture that catches light:**
+**Triplanar noise stack:**
 | Knob | Constant | What it does |
 |---|---|---|
-| Noise scale | `ROCK_NOISE_TRIPLANAR_SCALE` | Size of the main noise pattern projected onto the rock |
-| Detail layer scale | `ROCK_NOISE_DETAIL_SCALE` | Size of the medium detail noise |
-| Micro detail scale | `ROCK_NOISE_MICRO_SCALE` | Size of the finest grain noise |
-| Drift speed | `ROCK_NOISE_DRIFT_SPEED` | How fast the noise pattern slowly shifts over time |
-| Bump depth | `ROCK_BUMP_STRENGTH` | How pronounced the surface relief appears |
-| Bump blend | `ROCK_BUMP_BLEND` | How much the bump normals override the mesh normals |
+| Primary noise scale | `ROCK_NOISE_TRIPLANAR_SCALE` | Base triplanar projection scale for rock noise |
+| Detail noise scale | `ROCK_NOISE_DETAIL_SCALE` | Medium-frequency detail multiplier |
+| Micro noise scale | `ROCK_NOISE_MICRO_SCALE` | High-frequency detail multiplier |
+| Axis blend sharpness | `ROCK_TRIPLANAR_BLEND_POWER` | How sharply normals choose projection axes |
 
-**Color variation layers — painted onto the surface based on shape and position:**
-| Knob | What it does |
-|---|---|
-| `STRATA_FREQUENCY` | How many horizontal bands of color stripe across the rock |
-| `STRATA_TILT_X`, `STRATA_TILT_Z` | How much the strata tilt away from perfectly horizontal — makes them feel geological |
-| `STRATA_DARKEN_FACTOR`, `STRATA_LIGHTEN_FACTOR` | Contrast between dark and light bands |
-| `WEATHERING_LIGHTEN` | How much upward-facing surfaces lighten, like real sun-bleached rock |
-| `CAVITY_DARKEN` | How dark the crevices and pockets get — adds depth |
-| `RIDGE_LIGHTEN` | How bright the raised ridges get — adds sharpness |
+**Bump and normal response:**
+| Knob | Constant | What it does |
+|---|---|---|
+| Bump sample step | `ROCK_BUMP_SAMPLE_OFFSET` | World-space offset used to estimate bump gradient |
+| Bump depth | `ROCK_BUMP_STRENGTH` | How strongly bump normals perturb the surface |
+| Bump blend | `ROCK_BUMP_BLEND` | How much bump normals override base normals |
 
-**Accent materials — iron veins and lichen patches:**
-| Knob | What it does |
-|---|---|
-| `IRON_VEIN_FREQUENCY` | How many rusty orange veins run through the rock |
-| `IRON_VEIN_STRENGTH` | How visible the iron coloring is |
-| `LICHEN_STRENGTH` | How visible the green-gray lichen patches are |
-| `LICHEN_MIN`, `LICHEN_MAX` | Which surface angles get lichen (currently upward-facing areas) |
-
-**Animated glow effects — light that pulses from inside the cracks:**
-| Knob | What it does |
-|---|---|
-| `ROCK_GLOW_INTENSITY` | Strength of the cyan-blue light in deep cracks |
-| `ROCK_EMBER_INTENSITY` | Strength of the orange-red ember glow |
-
-The glow colors are defined inline in the shader: cyan abyss glow `(0.10, 0.84, 0.96)` and orange ember glow `(0.94, 0.30, 0.16)`. To change these colors, search for `abyssGlow` and `emberGlow` in the emissive section of the shader.
+**Roughness shaping:**
+| Knob | Constant | What it does |
+|---|---|---|
+| Cavity roughness boost | `ROCK_ROUGHNESS_CAVITY_BOOST` | Makes crevices rougher |
+| Ridge roughness reduction | `ROCK_ROUGHNESS_RIDGE_REDUCE` | Makes exposed ridges slightly smoother |
 
 ### 7. Rock silhouettes — the procedural shape
 
@@ -294,17 +278,20 @@ Each rock is generated from a sphere that gets sculpted by layered noise.
 
 Where things are placed, how big they are, and the ground colors.
 
-**File:** `app/utils/constants.ts`
+**Files:** `app/utils/constants.ts`, `app/scene/world/terrainChunks.tsx`, `app/scene/world/placements.ts`
 
-| What you're shaping | Constant                     | What it does                                                            |
-| ------------------- | ---------------------------- | ----------------------------------------------------------------------- |
-| Rock positions      | `ROCK_FORMATIONS[].position` | World coordinates `[x, y, z]` for each rock cluster                     |
-| Rock visual scale   | `ROCK_FORMATIONS[].scale`    | Stretch in each axis — `[width, height, depth]`                         |
-| Rock collision size | `ROCK_FORMATIONS[].collider` | Invisible box the player bumps into — should roughly match visual scale |
-| Grass field color   | `GRASS_FIELD_COLOR`          | Main ground plane color                                                 |
-| Grass patch color   | `GRASS_PATCH_COLOR`          | Overlay circle color — slightly darker for variation                    |
-| Rock base color     | `ROCK_MATERIAL_COLOR`        | Base tint before shader effects layer on top                            |
-| Ground size         | `GROUND_HALF_EXTENT`         | Half-width of the ground plane in meters                                |
+| What you're shaping | Constant | What it does |
+| ------------------- | -------- | ------------ |
+| Active world span | `ACTIVE_TERRAIN_CHUNK_RADIUS`, `TERRAIN_CHUNK_SIZE` | Number/size of loaded terrain chunks around the player |
+| Spawn clearing | `CHUNK_SPAWN_CLEARING_RADIUS` | Keeps origin area playable and unobstructed |
+| Rock density | `CHUNK_ROCK_COUNT`, `CHUNK_ROCK_MIN_SPACING` | Per-chunk rock count and minimum spacing |
+| Rock size range | `CHUNK_ROCK_SCALE_MIN`, `CHUNK_ROCK_SCALE_MAX` | Procedural rock size envelope |
+| Tree density | `CHUNK_TREE_COUNT`, `CHUNK_TREE_MIN_SPACING` | Per-chunk tree count and spacing |
+| Tree clearance | `CHUNK_TREE_ROCK_CLEARANCE` | Avoids tree overlap with chunk rocks |
+| Tree height range | `CHUNK_TREE_HEIGHT_SCALE_MIN`, `CHUNK_TREE_HEIGHT_SCALE_MAX` | Procedural tree silhouette variation |
+| Terrain palette | `TERRAIN_COLOR_*` | Height/slope-driven terrain color bands |
+| Grass color | `GRASS_FIELD_COLOR` | Base grass tint used by grass material |
+| Rock base tint | `ROCK_MATERIAL_COLOR` | Base color passed into rock shader material |
 
 ### 9. Rings (collectibles)
 
@@ -321,15 +308,14 @@ Golden torus collectibles include starter world rings and temporary dropped ring
 | Ring surface        | `RING_ROUGHNESS`, `RING_METALNESS`                                                               | Material feel — lower roughness and higher metalness for shiny gold |
 | Spin speed          | `RING_ROTATION_SPEED`                                                                            | How fast the ring rotates around its vertical axis                  |
 | Bob motion          | `RING_BOB_AMPLITUDE`, `RING_BOB_SPEED`                                                           | Vertical hovering motion — amplitude and frequency                  |
-| Pickup range        | `RING_SENSOR_RADIUS`                                                                             | How close the player must be to collect the ring                    |
-| Drop pickup range   | `RING_DROP_SENSOR_RADIUS`                                                                        | Larger pickup radius for dropped rings                              |
+| Pickup range        | `RING_COLLECT_RADIUS`                                                                            | Distance threshold used by both client checks and server validation |
 | Drop fall-in        | `RING_DROP_FALL_START_HEIGHT`, `RING_DROP_FALL_DURATION_MS`                                      | Drop ring fall animation from spawn height down to hover height     |
 | Drop lifetime       | `RING_DROP_LIFETIME_MS`                                                                          | Total time before dropped rings despawn                             |
 | Drop despawn flash  | `RING_DROP_DESPAWN_FLASH_WINDOW_MS`, `RING_DROP_DESPAWN_FLASH_HZ`, `RING_DROP_DESPAWN_MIN_ALPHA` | Sonic-style flash/fade before dropped rings disappear               |
 | Ring positions      | `RING_PLACEMENTS`                                                                                | Array of `[x, z]` coordinates — Y is computed from terrain height   |
 | Mesh detail         | `RING_TORUS_SEGMENTS`, `RING_TUBE_SEGMENTS`                                                      | Geometry resolution of the torus                                    |
 
-Starter ring positions are terrain-derived in `worldEntityManager`. Drop rings are inserted and expired server-side in `spacetimedb/src/index.ts` and rendered client-side with timed fall + flash/fade behavior. Camera collision ignores ring sensors to avoid third-person camera pops while collecting.
+Starter ring positions are terrain-derived in `worldEntityManager`. Drop rings are inserted and expired server-side in `spacetimedb/src/index.ts` and rendered client-side with timed fall + flash/fade behavior. Ring collection is distance-based (no ring sensor colliders).
 
 ### 10. Multiplayer + Goomba gameplay
 
@@ -400,7 +386,7 @@ These are structural decisions that keep the whole system working. Don't change 
 | Layer                                                                | Primary file                                                                                                                         |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | Movement, camera, timing, layout, colors                             | `app/utils/constants.ts`                                                                                                             |
-| Lighting, shadows, sky/fog behavior, cloud layer                     | `app/scene/CharacterRigScene.tsx`, `app/scene/AnimatedSun.tsx`, `app/scene/SceneCloudLayer.tsx`                                      |
+| Lighting, shadows, sky/fog behavior, cloud layer                     | `app/scene/CharacterRigScene.tsx`, `app/scene/AnimatedSun.tsx`, `app/scene/world/placements.ts`, `app/scene/world/ChunkContent.tsx` |
 | Ground plane, grass, rock placement, campfire, forest tree placement | `app/scene/WorldGeometry.tsx`, `app/scene/world/terrainChunks.tsx`, `app/scene/world/grassField.ts`, `app/scene/world/placements.ts` |
 | Handcrafted conifer tree mesh                                        | `app/vegetation/trees/SingleTree.tsx`                                                                                                |
 | Rock surface shader effects                                          | `app/utils/shaders.ts`                                                                                                               |
@@ -417,7 +403,7 @@ These are structural decisions that keep the whole system working. Don't change 
 | Terrain height and noise sampling                                    | `app/utils/terrain.ts`                                                                                                               |
 | Direction and angle math                                             | `app/utils/math.ts`                                                                                                                  |
 | Motion state resolution                                              | `app/utils/physics.ts`                                                                                                               |
-| Ring collectible (3D mesh + sensor)                                  | `app/gameplay/collectibles/Ring.tsx`                                                                                                 |
+| Ring collectible (3D mesh + visual timing)                           | `app/gameplay/collectibles/Ring.tsx`                                                                                                 |
 | Ring field spawner and collection state                              | `app/gameplay/collectibles/RingField.tsx`                                                                                            |
 | Goomba enemy render/animation layer                                  | `app/gameplay/goombas/GoombaLayer.tsx`                                                                                               |
 | HUD and chat overlays                                                | `app/hud/GameHUD.tsx`, `app/hud/GlobalChatFeed.tsx`, `app/hud/ChatOverlay.tsx`                                                       |
