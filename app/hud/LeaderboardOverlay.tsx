@@ -32,7 +32,7 @@ export function LeaderboardOverlay({
 
   return (
     <div
-      className="pointer-events-auto absolute inset-0 z-30"
+      className="pointer-events-auto absolute inset-0 z-50"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();

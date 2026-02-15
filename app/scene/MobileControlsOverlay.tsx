@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Flame, List, MessageSquare } from "lucide-react";
+import { Camera, Flame } from "lucide-react";
 import {
   type MutableRefObject,
   type PointerEvent as ReactPointerEvent,
@@ -19,18 +19,12 @@ export function MobileControlsOverlay({
   jumpPressedRef,
   fireballTriggerRef,
   onToggleCameraMode,
-  onOpenChat,
-  onToggleLeaderboard,
-  isLeaderboardVisible,
   isChatOpen,
 }: {
   moveInputRef: MutableRefObject<MobileMoveInput>;
   jumpPressedRef: MutableRefObject<boolean>;
   fireballTriggerRef: MutableRefObject<number>;
   onToggleCameraMode: () => void;
-  onOpenChat: () => void;
-  onToggleLeaderboard: () => void;
-  isLeaderboardVisible: boolean;
   isChatOpen: boolean;
 }) {
   const joystickPointerIdRef = useRef<number | null>(null);
@@ -286,31 +280,7 @@ export function MobileControlsOverlay({
           }}
         />
       </div>
-      <button
-        type="button"
-        aria-label="Open chat"
-        className="mobile-utility-button mobile-utility-button--chat pointer-events-auto touch-none select-none"
-        onClick={onOpenChat}
-      >
-        <MessageSquare
-          aria-hidden="true"
-          className="mobile-control-icon mobile-control-icon--utility"
-        />
-      </button>
       <div className="flex flex-col items-end gap-2">
-        <button
-          type="button"
-          aria-label={
-            isLeaderboardVisible ? "Hide leaderboard" : "Show leaderboard"
-          }
-          className={`mobile-utility-button pointer-events-auto touch-none select-none ${isLeaderboardVisible ? "mobile-utility-button--active" : ""}`}
-          onClick={onToggleLeaderboard}
-        >
-          <List
-            aria-hidden="true"
-            className="mobile-control-icon mobile-control-icon--utility"
-          />
-        </button>
         <button
           type="button"
           aria-label="Toggle view mode"

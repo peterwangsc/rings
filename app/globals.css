@@ -361,54 +361,6 @@ body {
   filter: brightness(0.95);
 }
 
-.mobile-utility-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border-radius: 12px;
-  border: 1px solid rgba(198, 242, 255, 0.64);
-  background:
-    radial-gradient(
-      circle at 30% 24%,
-      rgba(247, 254, 255, 0.84),
-      rgba(102, 212, 247, 0.45)
-    ),
-    rgba(22, 96, 148, 0.62);
-  box-shadow:
-    0 14px 24px -20px rgba(0, 0, 0, 0.78),
-    inset 0 1px 0 rgba(255, 255, 255, 0.58),
-    inset 0 -6px 10px -8px rgba(10, 56, 84, 0.62);
-  color: #12456f;
-  transition:
-    transform 0.08s ease,
-    filter 0.12s ease,
-    box-shadow 0.12s ease;
-}
-
-.mobile-utility-button:active {
-  transform: translateY(1px) scale(0.98);
-  filter: brightness(0.95);
-}
-
-.mobile-utility-button--active {
-  transform: translateY(1px) scale(0.98);
-  filter: brightness(0.95) saturate(1.05);
-}
-
-.mobile-utility-button--chat {
-  position: absolute;
-  left: calc(1rem + 132px + 0.6rem);
-  bottom: calc(max(env(safe-area-inset-bottom), 0.75rem) + 2.75rem);
-}
-
-.mobile-control-icon--utility {
-  width: 1.1rem;
-  height: 1.1rem;
-}
-
 .mobile-portrait-lock {
   display: none;
   pointer-events: auto;

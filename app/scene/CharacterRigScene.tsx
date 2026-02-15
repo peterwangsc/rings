@@ -359,10 +359,6 @@ function CharacterRigSceneContent({
     setIsChatOpen(true);
   }, []);
 
-  const handleToggleLeaderboardOverlay = useCallback(() => {
-    setIsLeaderboardVisible((isVisible) => !isVisible);
-  }, []);
-
   const handlePlayerPositionUpdate = useCallback(
     (x: number, y: number, z: number) => {
       updateWorldPlayerPosition(worldEntityManager, x, y, z);
@@ -651,9 +647,6 @@ function CharacterRigSceneContent({
         jumpPressedRef={mobileJumpPressedRef}
         fireballTriggerRef={mobileFireballTriggerRef}
         onToggleCameraMode={handleToggleCameraMode}
-        onOpenChat={handleOpenChatOverlay}
-        onToggleLeaderboard={handleToggleLeaderboardOverlay}
-        isLeaderboardVisible={isLeaderboardVisible}
         isChatOpen={isChatOpen || isResumingFromChat}
       />
       <MobileOrientationOverlay
