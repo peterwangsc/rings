@@ -10,51 +10,51 @@ This file provides guidance to AI coding agents working in this repository.
 
 ## Active mission (default)
 
-The project is in migration mode.
+The project is in V1 hardening mode.
 
 Primary objective:
 
-- Migrate all current V1 functionality into `v2`.
-- Reach feature parity with V1 in the V2 codebase.
-- Keep progressing the roadmap checklist in `v2/README.md` until parity is complete.
-- After parity, continue new gameplay/feature development in the standalone `v2` repository.
+- Keep shipping and improving gameplay/multiplayer in V1 (`app/` + `spacetimedb/`).
+- Incorporate proven lessons from `v2/` only through targeted, low-risk backports into V1.
+- Improve multiplayer architecture incrementally inside V1 (clearer module boundaries, validation, observability, and performance).
+- Avoid active feature delivery work in `v2/` unless the user explicitly requests it.
 
-Unless the user explicitly overrides priority, choose work from the roadmap checklist in `v2/README.md`.
+Unless the user explicitly overrides priority, choose work from the checklist in `docs/v1-multiplayer-platform-plan.md`.
 
 ## Source-of-truth order
 
-1. `v2/README.md` roadmap + progress log.
-2. `docs/rings-rewrite-foundation-plan.md`.
-3. Existing V1 behavior in `app/` and `spacetimedb/`.
-4. Process docs in `docs/agent-process/`.
+1. `docs/v1-multiplayer-platform-plan.md` roadmap + progress log.
+2. Existing V1 behavior in `app/` and `spacetimedb/`.
+3. Process docs in `docs/agent-process/`.
+4. `docs/rings-rewrite-foundation-plan.md` (historical V2 reference only).
 5. This file.
 
 If these conflict, follow the highest item and update lower-priority docs to match.
 
 ## Scope boundaries
 
-- New migration implementation work goes in `v2/` by default.
-- V1 (`app/`, `spacetimedb/`) is behavior reference unless a user explicitly asks for V1 changes.
-- Avoid introducing new gameplay features before parity unless explicitly requested.
-- Keep architecture aligned with the target V2 boundaries described in `v2/README.md`.
+- New implementation work goes in V1 (`app/`, `spacetimedb/`) by default.
+- `v2/` is a pattern/reference source, not the active delivery target.
+- Prefer small, reversible refactors over large rewrites.
+- Preserve current player-visible behavior unless explicit behavior changes are requested.
 
 ## Session workflow (mandatory)
 
 For every implementation session:
 
-1. Open `v2/README.md` and pick one primary unchecked roadmap item.
+1. Open `docs/v1-multiplayer-platform-plan.md` and pick one primary unchecked roadmap item.
 2. Mark it `[~]` when active work starts.
-3. Implement the task in `v2/` with minimal unrelated churn.
+3. Implement the task in V1 paths (`app/`, `spacetimedb/`) with minimal unrelated churn.
 4. Validate with relevant automated/manual checks.
 5. Mark checklist state:
    - `[x]` only when code + validation are complete.
    - `[!]` if blocked, with blocker and concrete next action.
-6. Add/update progress notes in `v2/README.md` (or linked V2 docs) with date, files changed, and validation results.
+6. Add/update progress notes in `docs/v1-multiplayer-platform-plan.md` with date, files changed, and validation results.
 7. If complete and unblocked, move directly to the next highest-impact unchecked item.
 
-## Feature parity target (what must match V1)
+## V1 stability target (must remain correct while refactoring)
 
-V2 must preserve gameplay behavior and multiplayer semantics for:
+V1 changes must preserve gameplay behavior and multiplayer semantics for:
 
 - Character movement and camera modes.
 - Fireball casting, simulation, lifecycle, and limits.
@@ -63,30 +63,27 @@ V2 must preserve gameplay behavior and multiplayer semantics for:
 - Chat and multiplayer presence synchronization.
 - Day/night world cycle and world-state sync.
 
-## V1-to-V2 migration map
+## V2-to-V1 salvage map
 
-| Domain                     | V1 source of truth                                                                                                  | V2 destination                                                                      |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Movement/camera/frame loop | `app/controller/CharacterRigController.tsx`, `app/camera/cameraRig.ts`, `app/utils/physics.ts`, `app/utils/math.ts` | `v2/packages/core/src/{math,gameplay,loop}`, `v2/apps/web/src/game/{runtime,sim}`   |
-| Terrain/world sampling     | `app/utils/terrain.ts`, `app/scene/world/*`                                                                         | `v2/packages/core/src/terrain`, `v2/apps/web/src/game/world`                        |
-| Fireball gameplay          | `app/gameplay/abilities/*`                                                                                          | `v2/packages/core/src/gameplay/fireballs`, `v2/apps/web/src/game/sim/systems`       |
-| Rings/goomba gameplay      | `app/gameplay/collectibles/*`, `app/gameplay/goombas/*`, `spacetimedb/src/index.ts`                                 | `v2/packages/core/src/gameplay`, `v2/apps/server/src/{reducers,systems,validation}` |
-| Multiplayer protocol/types | `app/multiplayer/state/multiplayerTypes.ts`, reducer payloads in `spacetimedb/src/index.ts`                         | `v2/packages/protocol/src/{commands,events,snapshots}.ts`                           |
-| Client net integration     | `app/multiplayer/spacetime/*`, `app/multiplayer/state/useMultiplayerSync.ts`                                        | `v2/apps/web/src/game/net`                                                          |
-| Rendering layers/HUD       | `app/scene/*`, `app/hud/*`, gameplay render layers                                                                  | `v2/apps/web/src/game/{render,ui}`                                                  |
+| Domain | Useful V2 takeaway | V1 destination |
+| --- | --- | --- |
+| Deterministic helpers | Pure math/terrain/simulation helpers separated from render/UI concerns | `app/utils/*`, `app/gameplay/abilities/*` (extract and reuse pure functions) |
+| Protocol contracts | Explicit command/event payload contracts | `app/multiplayer/state/multiplayerTypes.ts` + new `app/multiplayer/protocol/*` |
+| Server structure | Reducer/system/validation/bootstrap decomposition | `spacetimedb/src/{reducers,systems,validation,bootstrap}` |
+| Runtime diagnostics | Reliability/health counters and alert semantics | `app/multiplayer/state/*` and HUD diagnostics surfaces |
+| Queue boundaries | Explicit inbound/outbound queue ownership | `app/multiplayer/state/useMultiplayerSync.ts` and related net modules |
 
-## Architecture rules for V2
+## Architecture rules for V1 (forward path)
 
-- `packages/core` contains deterministic rules only (no React, no Three.js, no SpacetimeDB SDK imports).
-- `packages/protocol` owns shared command/event/snapshot contracts used by both web and server.
-- `apps/server` is authoritative for validation and world mutations.
-- `apps/web/src/game/sim` owns client prediction, reconciliation, and interpolation.
-- `apps/web/src/game/render` projects state only; render code must not own gameplay authority.
-- `packages/content` stores tuneables/content definitions, not runtime mutation logic.
+- Keep deterministic gameplay/math logic in plain TS modules (no React/Three/SDK imports in those helpers).
+- `spacetimedb/src` remains authoritative for mutation validation and world state transitions.
+- Client networking code should separate ingest, reconciliation, and dispatch responsibilities.
+- Rendering/UI layers should project multiplayer state, not own multiplayer authority transitions.
+- Prefer shared payload contracts and constants over duplicated client/server shape definitions.
 
 ## SpacetimeDB and multiplayer guardrails
 
-When touching V2 server/client networking, enforce these non-negotiables:
+When touching V1 server/client networking, enforce these non-negotiables:
 
 - Reducers are mutations, not reads.
 - Reducers are deterministic.
@@ -96,12 +93,11 @@ When touching V2 server/client networking, enforce these non-negotiables:
 
 ## Validation expectations
 
-Run relevant checks from `v2/` after changes:
+Run relevant checks from the repo root after changes:
 
 ```bash
-npm run typecheck
-npm run lint:web
-npm run build:web
+npm run lint
+npm run build
 ```
 
 For multiplayer/server-affecting changes, also run:
@@ -112,21 +108,21 @@ npm run multiplayer:db:publish
 npm run multiplayer:db:generate
 ```
 
-Manual parity checks should cover the touched domain (movement feel, fireball behavior, ring/goomba interactions, chat/presence, and synchronization semantics).
+Manual checks should cover touched gameplay/networking domains (movement feel, fireball behavior, ring/goomba interactions, chat/presence, and synchronization semantics).
 
-## Completion criteria for parity phase
+## Completion criteria for current V1 phase
 
-The migration phase is complete only when:
+The active phase is complete only when:
 
-- All roadmap items required for parity in `v2/README.md` are `[x]`.
-- V2 reproduces V1 behavior for all parity domains listed above.
-- Core validation commands pass in V2.
-- V2 is ready to continue as the primary standalone repository.
+- All required checklist items in `docs/v1-multiplayer-platform-plan.md` are `[x]`.
+- V1 behavior remains correct across all stability domains listed above.
+- Core validation commands pass.
+- Documentation reflects actual ownership and runtime flow in V1.
 
 ## Git and repo boundaries
 
-- The root repository contains V1 + migration planning.
-- `v2/` is a nested repository intended to become standalone.
+- The root repository is the active shipping codebase (V1).
+- `v2/` is a nested repository retained for reference and selective backports.
 - Keep commits scoped to the repository being changed.
 - Do not mix unrelated root-repo and `v2/` changes in one commit unless explicitly requested.
 
@@ -134,6 +130,7 @@ The migration phase is complete only when:
 
 - Prefer small, reversible increments.
 - Keep checklist/progress documentation in sync with actual code state.
+- Record intended architectural ownership changes before moving files.
 - Do not mark work complete with placeholders or TODO stubs.
 - If blocked, document the blocker and the next concrete action immediately.
 

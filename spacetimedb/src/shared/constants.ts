@@ -1,0 +1,96 @@
+export const MAX_WORLD_ABS = 1000;
+export const MAX_SNAPSHOT_SPEED = 40;
+export const MAX_VERTICAL_DELTA = 18;
+export const SNAPSHOT_POSITION_LEEWAY = 1.5;
+export const PLAYER_CAST_COOLDOWN_MS = 200;
+export const FIREBALL_EVENT_TTL_MS = 2400;
+export const CHAT_MESSAGE_EVENT_TTL_MS = 10000;
+export const CHAT_MESSAGE_MAX_LENGTH = 120;
+export const FIREBALL_MIN_DIR_LENGTH = 0.5;
+export const FIREBALL_MAX_DIR_LENGTH = 1.5;
+export const FIREBALL_MIN_SPAWN_DISTANCE = 0.2;
+export const FIREBALL_MAX_SPAWN_DISTANCE = 2.8;
+
+// Keep in sync with app/utils/constants.ts (RING_COLLECT_RADIUS).
+export const RING_COLLECT_RADIUS = 1.35;
+export const RING_HOVER_HEIGHT = 1.2;
+export const RING_DROP_HOVER_HEIGHT = 0.9;
+// Keep in sync with app/utils/constants.ts (RING_DROP_LIFETIME_MS).
+export const RING_DROP_LIFETIME_MS = 12_000;
+export const RING_DROP_PRUNE_AFTER_COLLECT_MS = 20_000;
+export const MAX_SPILL_RING_COUNT = 24;
+export const MAX_RING_COUNT = 999;
+
+export const GOOMBA_DETECT_RADIUS = 11;
+export const GOOMBA_CHARGE_SPEED = 7.5;
+export const GOOMBA_CHARGE_DURATION_MS = 900;
+export const GOOMBA_CHARGE_COOLDOWN_MS = 2800;
+export const GOOMBA_PLAYER_HIT_RADIUS = 1.1;
+export const GOOMBA_RESPAWN_MS = 6000;
+// Supports ranged fireball hits (spawn distance + travel distance + hit radius buffer).
+export const GOOMBA_HIT_VALIDATION_RADIUS = 28;
+
+export const WORLD_STATE_ROW_ID = 'global';
+export const WORLD_DAY_CYCLE_DURATION_SECONDS = 300;
+
+export const GOOMBA_STATE_IDLE = 'idle';
+export const GOOMBA_STATE_CHARGE = 'charge';
+export const GOOMBA_STATE_COOLDOWN = 'cooldown';
+export const GOOMBA_STATE_DEFEATED = 'defeated';
+
+export const RING_DROP_SOURCE_GOOMBA = 'goomba_reward';
+export const RING_DROP_SOURCE_SPILL = 'spill';
+
+export type GoombaStateTag =
+  | typeof GOOMBA_STATE_IDLE
+  | typeof GOOMBA_STATE_CHARGE
+  | typeof GOOMBA_STATE_COOLDOWN
+  | typeof GOOMBA_STATE_DEFEATED;
+
+export type RingDropSource =
+  | typeof RING_DROP_SOURCE_GOOMBA
+  | typeof RING_DROP_SOURCE_SPILL;
+
+export const MOTION_STATES = new Set([
+  'idle',
+  'walk',
+  'running',
+  'jump',
+  'jump_running',
+  'happy',
+  'sad',
+] as const);
+
+export type MotionState =
+  | 'idle'
+  | 'walk'
+  | 'running'
+  | 'jump'
+  | 'jump_running'
+  | 'happy'
+  | 'sad';
+
+export const RING_PLACEMENTS: ReadonlyArray<readonly [number, number]> = [
+  [3, 0],
+  [-2, 3.5],
+  [5.5, -3],
+  [0, 5],
+  [-5.5, -2],
+  [6, 3.5],
+  [-1, -5.5],
+  [4, 7],
+  [-6.5, 1],
+  [1.5, -6],
+];
+
+export const GOOMBA_SPAWNS: ReadonlyArray<readonly [number, number]> = [
+  [2.4, 2.8],
+];
+
+// Keep this terrain sampler in sync with app/utils/terrain.ts so ring height checks match gameplay.
+export const TERRAIN_HEIGHT_AMPLITUDE = 2.5;
+export const TERRAIN_BASE_NOISE_SCALE = 0.045;
+export const TERRAIN_DETAIL_NOISE_SCALE = 0.12;
+export const TERRAIN_MICRO_NOISE_SCALE = 0.26;
+export const TERRAIN_RIDGE_STRENGTH = 0.38;
+export const TERRAIN_FLAT_RADIUS = 9;

@@ -1,5 +1,14 @@
 # Rings Rewrite Foundation Plan
 
+> Status (2026-02-14): Historical reference only.
+>
+> Active implementation now runs through V1 using:
+> - `docs/v1-multiplayer-platform-plan.md`
+> - `app/`
+> - `spacetimedb/`
+>
+> Use this document only for salvage ideas that can be backported safely into V1.
+
 ## Goal
 
 Rewrite the game into a durable architecture where:
@@ -363,4 +372,3 @@ onReducer(command):
 3. Any gameplay rule change is implemented in shared core first.
 4. No phase ends with undocumented behavior drift.
 5. Each phase ships with a rollback path.
-

@@ -2,6 +2,10 @@ import type { CameraMode } from "../camera/cameraTypes";
 import type { FireballManager } from "../gameplay/abilities/fireballManager";
 import type { MutableRefObject } from "react";
 import type {
+  CastFireballCommand,
+  HitGoombaCommand,
+} from "../multiplayer/protocol";
+import type {
   AuthoritativePlayerState,
   FireballSpawnEvent,
   GoombaState,
@@ -35,16 +39,9 @@ export interface CharacterRigControllerProps {
   readonly mobileFireballTriggerRef?: MutableRefObject<number>;
   readonly fireballManager?: FireballManager;
   readonly onLocalPlayerSnapshot?: (snapshot: NetPlayerSnapshot) => void;
-  readonly onLocalFireballCast?: (request: {
-    originX: number;
-    originY: number;
-    originZ: number;
-    directionX: number;
-    directionY: number;
-    directionZ: number;
-  }) => void;
+  readonly onLocalFireballCast?: (request: CastFireballCommand) => void;
   readonly goombas?: readonly GoombaState[];
-  readonly onLocalGoombaHit?: (goombaId: string) => void;
+  readonly onLocalGoombaHit?: (goombaId: HitGoombaCommand["goombaId"]) => void;
   readonly authoritativeLocalPlayerState?: AuthoritativePlayerState | null;
   readonly networkFireballSpawnQueueRef?: MutableRefObject<FireballSpawnEvent[]>;
 }

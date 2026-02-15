@@ -1,5 +1,11 @@
 # SpacetimeDB Agent Playbook
 
+Current mode:
+
+- Active implementation target is V1 (`app/` + `spacetimedb/`).
+- `v2/` is reference-only unless explicitly requested.
+- Prioritize checklist items in `docs/v1-multiplayer-platform-plan.md`.
+
 Use this when working on:
 
 - `spacetimedb/src/index.ts`
@@ -40,13 +46,19 @@ This is a pruned process reference extracted from the removed template metadata 
 
 ## Feature implementation order
 
-1. Add/update schema tables and indexes.
-2. Add/update reducers with validation and authority checks.
-3. Regenerate bindings.
-4. Wire table subscriptions and state mapping on client.
-5. Wire reducer call sites from gameplay/UI.
-6. Add reconciliation/ordering validation for networked fields (for example monotonic `lastInputSeq`).
-7. Run local two-client validation for sync, authority, and rollback behavior.
+1. If touching large surfaces, split `spacetimedb/src/index.ts` by responsibility first:
+   - `schema`
+   - `reducers`
+   - `systems`
+   - `validation`
+   - `bootstrap`
+2. Add/update schema tables and indexes.
+3. Add/update reducers with validation and authority checks.
+4. Regenerate bindings.
+5. Wire table subscriptions and state mapping on client.
+6. Wire reducer call sites from gameplay/UI.
+7. Add reconciliation/ordering validation for networked fields (for example monotonic `lastInputSeq`).
+8. Run local multi-client validation for sync, authority, and rollback behavior.
 
 ## Local command loop
 

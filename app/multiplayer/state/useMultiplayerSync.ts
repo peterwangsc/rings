@@ -16,6 +16,14 @@ import {
   setWorldLocalRingCount,
 } from "../../scene/world/worldEntityManager";
 import { reducers, tables } from "../spacetime/bindings";
+import type { CastFireballCommand } from "../protocol";
+import {
+  toCastFireballCommand,
+  toCollectRingCommand,
+  toHitGoombaCommand,
+  toSendChatMessageCommand,
+  toUpsertPlayerStateCommand,
+} from "../protocol";
 import { persistMultiplayerToken } from "../spacetime/client";
 import {
   consumeRemoteFireballSpawns,
@@ -183,6 +191,13 @@ function getConnectionErrorMessage(error: unknown) {
     // ignore serialization errors and fall through to generic marker
   }
   return String(error);
+}
+
+function warnInvalidCommand(commandName: string, details: unknown) {
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+  console.warn(`[multiplayer] dropped invalid ${commandName} command`, details);
 }
 
 export function useMultiplayerSync({
@@ -478,27 +493,30 @@ export function useMultiplayerSync({
       if (!connectionState.isActive) {
         return;
       }
-      sendUpsertPlayerState({
-        ...snapshot,
-        displayName: localDisplayName,
-      });
+      const command = toUpsertPlayerStateCommand(snapshot, localDisplayName);
+      if (!command) {
+        warnInvalidCommand("upsert_player_state", {
+          snapshot,
+          localDisplayName,
+        });
+        return;
+      }
+      sendUpsertPlayerState(command);
     },
     [connectionState.isActive, localDisplayName, sendUpsertPlayerState],
   );
 
   const sendLocalFireballCast = useCallback(
-    (request: {
-      originX: number;
-      originY: number;
-      originZ: number;
-      directionX: number;
-      directionY: number;
-      directionZ: number;
-    }) => {
+    (request: CastFireballCommand) => {
       if (!connectionState.isActive) {
         return;
       }
-      sendCastFireball(request);
+      const command = toCastFireballCommand(request);
+      if (!command) {
+        warnInvalidCommand("cast_fireball", request);
+        return;
+      }
+      sendCastFireball(command);
     },
     [connectionState.isActive, sendCastFireball],
   );
@@ -508,7 +526,12 @@ export function useMultiplayerSync({
       if (!connectionState.isActive) {
         return;
       }
-      sendCollectRing({ ringId });
+      const command = toCollectRingCommand(ringId);
+      if (!command) {
+        warnInvalidCommand("collect_ring", { ringId });
+        return;
+      }
+      sendCollectRing(command);
     },
     [connectionState.isActive, sendCollectRing],
   );
@@ -518,7 +541,12 @@ export function useMultiplayerSync({
       if (!connectionState.isActive) {
         return;
       }
-      sendChatMessageReducer({ messageText });
+      const command = toSendChatMessageCommand(messageText);
+      if (!command) {
+        warnInvalidCommand("send_chat_message", { messageText });
+        return;
+      }
+      sendChatMessageReducer(command);
     },
     [connectionState.isActive, sendChatMessageReducer],
   );
@@ -528,7 +556,12 @@ export function useMultiplayerSync({
       if (!connectionState.isActive) {
         return;
       }
-      sendHitGoomba({ goombaId });
+      const command = toHitGoombaCommand(goombaId);
+      if (!command) {
+        warnInvalidCommand("hit_goomba", { goombaId });
+        return;
+      }
+      sendHitGoomba(command);
     },
     [connectionState.isActive, sendHitGoomba],
   );

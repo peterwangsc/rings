@@ -1,5 +1,4 @@
 import type { Infer } from "spacetimedb";
-import type { MotionState } from "../../lib/CharacterActor";
 import {
   ChatMessageEventRow,
   FireballEventRow,
@@ -10,6 +9,12 @@ import {
   RingStateRow,
   WorldStateRow,
 } from "../spacetime/bindings";
+import type {
+  CastFireballCommand,
+  CollectRingCommand,
+  LocalPlayerSnapshot,
+  SendChatMessageCommand,
+} from "../protocol";
 
 export type NetPlayerRow = Infer<typeof PlayerStateRow>;
 export type NetFireballEventRow = Infer<typeof FireballEventRow>;
@@ -26,19 +31,7 @@ export type ConnectionStatus =
   | "disconnected"
   | "error";
 
-export interface NetPlayerSnapshot {
-  x: number;
-  y: number;
-  z: number;
-  yaw: number;
-  pitch: number;
-  vx: number;
-  vy: number;
-  vz: number;
-  planarSpeed: number;
-  motionState: MotionState;
-  lastInputSeq: number;
-}
+export type NetPlayerSnapshot = LocalPlayerSnapshot;
 
 export interface AuthoritativePlayerState extends NetPlayerSnapshot {
   identity: string;
@@ -104,14 +97,7 @@ export interface MultiplayerState {
 
 export interface MultiplayerReducerFns {
   upsertPlayerState: (snapshot: NetPlayerSnapshot) => void;
-  castFireball: (request: {
-    originX: number;
-    originY: number;
-    originZ: number;
-    directionX: number;
-    directionY: number;
-    directionZ: number;
-  }) => void;
-  sendChatMessage: (request: { messageText: string }) => void;
-  collectRing: (ringId: string) => void;
+  castFireball: (request: CastFireballCommand) => void;
+  sendChatMessage: (request: SendChatMessageCommand) => void;
+  collectRing: (request: CollectRingCommand) => void;
 }
