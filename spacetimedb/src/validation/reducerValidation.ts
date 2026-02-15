@@ -13,6 +13,7 @@ import {
   type GoombaStateTag,
   type MotionState,
 } from '../shared/constants';
+import { getIdentitySeededGuestDisplayName } from '../shared/guestDisplayNames';
 
 export function isFiniteNumber(value: number) {
   return Number.isFinite(value) && !Number.isNaN(value);
@@ -33,8 +34,7 @@ export function sanitizeDisplayName(displayName: string, identity: string) {
   if (trimmed.length > 0) {
     return trimmed;
   }
-  const suffix = identity.replace(/^0x/, '').slice(0, 6);
-  return `Guest-${suffix}`;
+  return getIdentitySeededGuestDisplayName(identity);
 }
 
 export function sanitizeGoombaState(state: string): GoombaStateTag {

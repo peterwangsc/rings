@@ -1,6 +1,11 @@
 "use client";
 
 import { DbConnection } from "./bindings";
+import {
+  DEFAULT_GUEST_DISPLAY_NAME,
+  isLegacyGeneratedGuestDisplayName,
+  pickRandomGuestDisplayName,
+} from "./guestDisplayNames";
 
 const DEFAULT_SPACETIMEDB_URI = "ws://127.0.0.1:3001";
 const DEFAULT_SPACETIMEDB_MODULE = "rings-multiplayer";
@@ -68,7 +73,7 @@ export function clearMultiplayerToken() {
 
 export function getOrCreateGuestDisplayName() {
   if (typeof window === "undefined") {
-    return "Guest-local";
+    return DEFAULT_GUEST_DISPLAY_NAME;
   }
 
   const existing = window.localStorage.getItem(
@@ -77,6 +82,14 @@ export function getOrCreateGuestDisplayName() {
   if (existing) {
     const sanitizedExisting = sanitizeMultiplayerDisplayName(existing);
     if (sanitizedExisting.length > 0) {
+      if (isLegacyGeneratedGuestDisplayName(sanitizedExisting)) {
+        const migratedDisplayName = pickRandomGuestDisplayName();
+        window.localStorage.setItem(
+          MULTIPLAYER_DISPLAY_NAME_STORAGE_KEY,
+          migratedDisplayName,
+        );
+        return migratedDisplayName;
+      }
       if (sanitizedExisting !== existing) {
         window.localStorage.setItem(
           MULTIPLAYER_DISPLAY_NAME_STORAGE_KEY,
@@ -87,12 +100,7 @@ export function getOrCreateGuestDisplayName() {
     }
   }
 
-  const suffix = globalThis.crypto
-    .randomUUID()
-    .replace(/-/g, "")
-    .slice(0, 6)
-    .toUpperCase();
-  const displayName = `Guest-${suffix}`;
+  const displayName = pickRandomGuestDisplayName();
   window.localStorage.setItem(MULTIPLAYER_DISPLAY_NAME_STORAGE_KEY, displayName);
   return displayName;
 }

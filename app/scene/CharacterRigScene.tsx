@@ -37,6 +37,7 @@ import {
   getOrCreateGuestDisplayName,
   setStoredGuestDisplayName,
 } from "../multiplayer/spacetime/client";
+import { DEFAULT_GUEST_DISPLAY_NAME } from "../multiplayer/spacetime/guestDisplayNames";
 import {
   FPS_TOGGLE_KEY,
   HORIZON_COLOR,
@@ -489,7 +490,7 @@ function CharacterRigSceneContent({
 export function CharacterRigScene() {
   const connectionBuilder = useMemo(() => createSpacetimeConnectionBuilder(), []);
   const multiplayerStore = useMemo(
-    () => createMultiplayerStore("Guest-local"),
+    () => createMultiplayerStore(DEFAULT_GUEST_DISPLAY_NAME),
     [],
   );
 
