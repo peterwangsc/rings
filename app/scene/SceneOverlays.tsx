@@ -62,7 +62,7 @@ export function DesktopSplashOverlay({
           <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-2xl">
               <p className="text-xs font-medium uppercase tracking-[0.28em] text-cyan-100/90 sm:text-sm">
-                Spacetime DB Sandbox
+                BY PETERWANG.TECH
               </p>
               <div className="relative mt-2">
                 <p className="jump-logo-glow absolute left-[0.03em] top-[0.06em] text-5xl uppercase tracking-[0.1em] sm:text-7xl lg:text-8xl">
