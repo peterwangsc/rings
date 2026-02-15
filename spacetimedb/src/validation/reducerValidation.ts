@@ -6,6 +6,7 @@ import {
   GOOMBA_STATE_CHARGE,
   GOOMBA_STATE_COOLDOWN,
   GOOMBA_STATE_DEFEATED,
+  GOOMBA_STATE_ENRAGED,
   GOOMBA_STATE_IDLE,
   MAX_RING_COUNT,
   MOTION_STATES,
@@ -39,10 +40,15 @@ export function sanitizeDisplayName(displayName: string, identity: string) {
 export function sanitizeGoombaState(state: string): GoombaStateTag {
   switch (state) {
     case GOOMBA_STATE_IDLE:
+      return GOOMBA_STATE_IDLE;
     case GOOMBA_STATE_CHARGE:
+      return GOOMBA_STATE_CHARGE;
+    case GOOMBA_STATE_ENRAGED:
+      return GOOMBA_STATE_ENRAGED;
     case GOOMBA_STATE_COOLDOWN:
+      return GOOMBA_STATE_COOLDOWN;
     case GOOMBA_STATE_DEFEATED:
-      return state;
+      return GOOMBA_STATE_DEFEATED;
     default:
       return GOOMBA_STATE_IDLE;
   }

@@ -137,6 +137,7 @@ function toValidGoombaState(value: string): GoombaState["state"] {
   switch (value) {
     case "idle":
     case "charge":
+    case "enraged":
     case "cooldown":
     case "defeated":
       return value;

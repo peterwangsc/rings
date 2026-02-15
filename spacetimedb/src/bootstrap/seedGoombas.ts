@@ -17,6 +17,15 @@ type GoombaSeedContext = {
   };
 };
 
+function hashStringToUint32(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
 export function ensureGoombaRows(ctx: GoombaSeedContext, timestampMs: number) {
   const seedById = new Map(
     goombaSeedData.map((seed) => [seed.goombaId, seed] as const),
@@ -45,7 +54,8 @@ export function ensureGoombaRows(ctx: GoombaSeedContext, timestampMs: number) {
       state: GOOMBA_STATE_IDLE,
       targetIdentity: undefined,
       stateEndsAtMs: 0,
-      nextChargeAllowedAtMs: timestampMs,
+      // Stored as deterministic RNG seed by goomba behavior tick.
+      nextChargeAllowedAtMs: hashStringToUint32(goomba.goombaId) || 1,
       respawnAtMs: undefined,
       updatedAtMs: timestampMs,
     });

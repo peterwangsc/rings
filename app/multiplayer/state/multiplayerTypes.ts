@@ -68,7 +68,7 @@ export interface GoombaState {
   y: number;
   z: number;
   yaw: number;
-  state: "idle" | "charge" | "cooldown" | "defeated";
+  state: "idle" | "charge" | "enraged" | "cooldown" | "defeated";
 }
 
 export interface MultiplayerDiagnostics {

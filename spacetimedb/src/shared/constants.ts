@@ -21,29 +21,36 @@ export const RING_DROP_PRUNE_AFTER_COLLECT_MS = 20_000;
 export const MAX_SPILL_RING_COUNT = 24;
 export const MAX_RING_COUNT = 999;
 
-export const GOOMBA_DETECT_RADIUS = 11;
-export const GOOMBA_CHARGE_SPEED = 7.5;
-export const GOOMBA_CHARGE_DURATION_MS = 900;
-export const GOOMBA_CHARGE_COOLDOWN_MS = 2800;
+export const GOOMBA_ENRAGE_RADIUS = 36;
+export const GOOMBA_RUN_SPEED = 4.5;
+export const GOOMBA_RUN_DURATION_MS = 6000;
+export const GOOMBA_CHARGE_DURATION_MS = 1500;
+export const GOOMBA_COOLDOWN_DURATION_MS = 3000;
+export const GOOMBA_IDLE_WALK_SPEED = 1.7;
+export const GOOMBA_IDLE_WANDER_MIN_DURATION_MS = 900;
+export const GOOMBA_IDLE_WANDER_MAX_DURATION_MS = 2400;
+export const GOOMBA_IDLE_LEASH_RADIUS = 9;
 export const GOOMBA_PLAYER_HIT_RADIUS = 1.1;
 export const GOOMBA_RESPAWN_MS = 6000;
 // Supports ranged fireball hits (spawn distance + travel distance + hit radius buffer).
 export const GOOMBA_HIT_VALIDATION_RADIUS = 28;
 
-export const WORLD_STATE_ROW_ID = 'global';
+export const WORLD_STATE_ROW_ID = "global";
 export const WORLD_DAY_CYCLE_DURATION_SECONDS = 300;
 
-export const GOOMBA_STATE_IDLE = 'idle';
-export const GOOMBA_STATE_CHARGE = 'charge';
-export const GOOMBA_STATE_COOLDOWN = 'cooldown';
-export const GOOMBA_STATE_DEFEATED = 'defeated';
+export const GOOMBA_STATE_IDLE = "idle";
+export const GOOMBA_STATE_ENRAGED = "enraged";
+export const GOOMBA_STATE_DEFEATED = "defeated";
+export const GOOMBA_STATE_CHARGE = "charge";
+export const GOOMBA_STATE_COOLDOWN = "cooldown";
 
-export const RING_DROP_SOURCE_GOOMBA = 'goomba_reward';
-export const RING_DROP_SOURCE_SPILL = 'spill';
+export const RING_DROP_SOURCE_GOOMBA = "goomba_reward";
+export const RING_DROP_SOURCE_SPILL = "spill";
 
 export type GoombaStateTag =
   | typeof GOOMBA_STATE_IDLE
   | typeof GOOMBA_STATE_CHARGE
+  | typeof GOOMBA_STATE_ENRAGED
   | typeof GOOMBA_STATE_COOLDOWN
   | typeof GOOMBA_STATE_DEFEATED;
 
@@ -52,23 +59,23 @@ export type RingDropSource =
   | typeof RING_DROP_SOURCE_SPILL;
 
 export const MOTION_STATES = new Set([
-  'idle',
-  'walk',
-  'running',
-  'jump',
-  'jump_running',
-  'happy',
-  'sad',
+  "idle",
+  "walk",
+  "running",
+  "jump",
+  "jump_running",
+  "happy",
+  "sad",
 ] as const);
 
 export type MotionState =
-  | 'idle'
-  | 'walk'
-  | 'running'
-  | 'jump'
-  | 'jump_running'
-  | 'happy'
-  | 'sad';
+  | "idle"
+  | "walk"
+  | "running"
+  | "jump"
+  | "jump_running"
+  | "happy"
+  | "sad";
 
 export const RING_PLACEMENTS: ReadonlyArray<readonly [number, number]> = [
   [3, 0],

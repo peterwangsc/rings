@@ -1,6 +1,5 @@
 import { t } from 'spacetimedb/server';
 import {
-  GOOMBA_CHARGE_COOLDOWN_MS,
   GOOMBA_HIT_VALIDATION_RADIUS,
   GOOMBA_RESPAWN_MS,
   GOOMBA_STATE_DEFEATED,
@@ -48,7 +47,8 @@ spacetimedb.reducer(
       state: GOOMBA_STATE_DEFEATED,
       targetIdentity: undefined,
       stateEndsAtMs: 0,
-      nextChargeAllowedAtMs: timestampMs + GOOMBA_CHARGE_COOLDOWN_MS,
+      // Preserves deterministic behavior RNG state through defeat/respawn.
+      nextChargeAllowedAtMs: goomba.nextChargeAllowedAtMs,
       respawnAtMs: timestampMs + GOOMBA_RESPAWN_MS,
       updatedAtMs: timestampMs,
     });
