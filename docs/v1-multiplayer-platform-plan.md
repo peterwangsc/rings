@@ -67,7 +67,7 @@ Status legend:
 
 ### Phase 5: Render/Runtime Performance Guardrails
 
-- [ ] Add guardrails against per-frame allocations in critical loops.
+- [!] Add guardrails against per-frame allocations in critical loops.
 - [ ] Ensure heavy world/procedural generation is cached and not re-triggered by unrelated UI updates.
 - [ ] Add a repeatable perf smoke run that fails on major FPS regression.
 
@@ -142,3 +142,26 @@ npm run multiplayer:db:generate
 - Expanded fireball-only Goomba hit detection volume to a taller/wider vertical hitbox (`GOOMBA_FIREBALL_HITBOX_RADIUS`, `GOOMBA_FIREBALL_HITBOX_HEIGHT`, `GOOMBA_FIREBALL_HITBOX_BASE_OFFSET`) while keeping stomp hit behavior unchanged.
 - Replaced center-point fireball overlap checks with fireball-segment vs vertical Goomba-axis segment distance checks in `app/controller/CharacterRigController.tsx` to catch overhead/sides misses more reliably.
 - Validation: `npx eslint app/controller/CharacterRigController.tsx app/utils/constants.ts` (pass), `npm run build` (pass).
+- User-directed V1 ring render polish: upgraded `app/gameplay/collectibles/Ring.tsx` from `MeshStandardMaterial` to `MeshPhysicalMaterial` with custom `onBeforeCompile` shader passes for view-dependent gold glints, fresnel highlight shaping, and emissive pulse/glow modulation.
+- Kept drop-ring lifecycle behavior intact by preserving despawn flash/fade logic and wiring glow uniforms to existing flash/opacity timing.
+- Tuned collectible ring material constants in `app/utils/constants.ts` for shinier metallic response (warmer gold base/emissive colors, lower roughness, full metalness, denser torus segments for smoother specular highlights).
+- Roadmap status: `Phase 5 / Add guardrails against per-frame allocations in critical loops` remains blocked for full completion because this session was scoped to ring visual polish only; next action is a broader audit of remaining `useFrame` hot paths and allocation guards beyond collectibles.
+- Files changed: `app/gameplay/collectibles/Ring.tsx`, `app/utils/constants.ts`, `docs/v1-multiplayer-platform-plan.md`.
+- Validation: `npx eslint app/gameplay/collectibles/Ring.tsx app/utils/constants.ts` (pass), `npm run build` (pass), `npm run lint` (fails on pre-existing unrelated errors/warnings in `docs/*`, `spacetimedb/dist/*`, `.next/*`, and `v2/*` paths).
+- User follow-up ring pass: removed custom `onBeforeCompile` glint shader and kept a uniform polished-gold `MeshPhysicalMaterial` surface so the ring body reads as consistent metallic gold under scene lighting.
+- Added a dedicated ring point light in `app/gameplay/collectibles/Ring.tsx` and wired its intensity to the existing emissive/flash lifecycle so drop rings still fade/flash coherently before despawn.
+- Extended ring constants with light controls in `app/utils/constants.ts` (`RING_LIGHT_INTENSITY`, `RING_LIGHT_DISTANCE`, `RING_LIGHT_DECAY`) and retuned polished-gold values (`RING_COLOR`, `RING_EMISSIVE_COLOR`, `RING_ROUGHNESS`).
+- Roadmap status: `Phase 5 / Add guardrails against per-frame allocations in critical loops` remains blocked for full completion because this session stayed scoped to ring material/light polish; next action is still a broader audit across other hot-frame systems.
+- Files changed: `app/gameplay/collectibles/Ring.tsx`, `app/utils/constants.ts`, `docs/v1-multiplayer-platform-plan.md`.
+- Validation: `npx eslint app/gameplay/collectibles/Ring.tsx app/utils/constants.ts` (pass), `npm run build` (pass), `npm run lint` (fails on pre-existing unrelated errors/warnings in `docs/*`, `spacetimedb/dist/*`, `.next/*`, and `v2/*` paths).
+- Follow-up reflective tuning (using the fireball rendering pattern as reference): upgraded ring rendering to keep the dedicated point light while reintroducing a custom shader pass in `app/gameplay/collectibles/Ring.tsx` for stronger mirror-style reflections (analytical sky/ground reflection blend + fresnel boost + tight spec sweep), instead of fireball-like noise.
+- Retuned ring material constants for ultra-polished response in `app/utils/constants.ts` (`RING_ROUGHNESS`, `RING_ENV_MAP_INTENSITY`, `RING_LIGHT_INTENSITY`, `RING_EMISSIVE_INTENSITY`).
+- Roadmap status: `Phase 5 / Add guardrails against per-frame allocations in critical loops` remains blocked for full completion because this work remained scoped to ring visuals; next action remains a broader allocation audit across hot-frame systems.
+- Files changed: `app/gameplay/collectibles/Ring.tsx`, `app/utils/constants.ts`, `docs/v1-multiplayer-platform-plan.md`.
+- Validation: `npx eslint app/gameplay/collectibles/Ring.tsx app/utils/constants.ts` (pass), `npm run build` (pass), `npm run lint` (fails on pre-existing unrelated errors/warnings in `docs/*`, `spacetimedb/dist/*`, `.next/*`, and `v2/*` paths).
+- User-requested brightness pass: significantly increased ring visual luminance by raising base gold/emissive colors and intensities, boosting `RING_ENV_MAP_INTENSITY`, and strengthening ring point light output/radius in `app/utils/constants.ts`.
+- Increased reflective shader brightness in `app/gameplay/collectibles/Ring.tsx` by amplifying reflection blend strength, broadening and brightening the spec sweep, and adding a rim-light boost for stronger edge pop.
+- Final brightness bump: increased `RING_EMISSIVE_INTENSITY` again after validation pass to ensure the ring reads clearly brighter in-world under the same lighting setup.
+- Roadmap status: `Phase 5 / Add guardrails against per-frame allocations in critical loops` remains blocked for full completion because this pass remained scoped to ring visuals; next action remains a broader allocation audit across hot-frame systems.
+- Files changed: `app/gameplay/collectibles/Ring.tsx`, `app/utils/constants.ts`, `docs/v1-multiplayer-platform-plan.md`.
+- Validation: `npx eslint app/gameplay/collectibles/Ring.tsx app/utils/constants.ts` (pass), `npm run build` (pass), `npm run lint` (fails on pre-existing unrelated errors/warnings in `docs/*`, `spacetimedb/dist/*`, `.next/*`, and `v2/*` paths).
