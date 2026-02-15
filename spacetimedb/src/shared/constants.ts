@@ -21,9 +21,9 @@ export const RING_DROP_PRUNE_AFTER_COLLECT_MS = 20_000;
 export const MAX_SPILL_RING_COUNT = 24;
 export const MAX_RING_COUNT = 999;
 
-export const GOOMBA_ENRAGE_RADIUS = 36;
-export const GOOMBA_RUN_SPEED = 4.5;
-export const GOOMBA_RUN_DURATION_MS = 6000;
+export const GOOMBA_ENRAGE_RADIUS = 16;
+export const GOOMBA_RUN_SPEED = 5.5;
+export const GOOMBA_RUN_DURATION_MS = 4500;
 export const GOOMBA_CHARGE_DURATION_MS = 1500;
 export const GOOMBA_COOLDOWN_DURATION_MS = 3000;
 export const GOOMBA_IDLE_WALK_SPEED = 1.7;
