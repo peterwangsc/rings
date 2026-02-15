@@ -35,7 +35,7 @@ export const GOOMBA_DEFEATED_DESPAWN_MS = 900;
 // Supports ranged fireball hits (spawn distance + travel distance + hit radius buffer).
 export const GOOMBA_HIT_VALIDATION_RADIUS = 28;
 export const GOOMBA_CHUNK_ACTIVE_RADIUS = 1;
-export const GOOMBA_CHUNK_SPAWN_THRESHOLD = 0.5;
+export const GOOMBA_CHUNK_SPAWN_THRESHOLD = 0.0;
 export const GOOMBA_CHUNK_SPAWN_COOLDOWN_MS = 12_000;
 export const GOOMBA_CHUNK_SPAWN_MARGIN = 6;
 export const GOOMBA_CHUNK_HASH_SEED = 191.37;
