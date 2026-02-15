@@ -65,10 +65,10 @@ export function DesktopSplashOverlay({
                 BY PETERWANG.TECH
               </p>
               <div className="relative mt-2">
-                <p className="jump-logo-glow absolute left-[0.03em] top-[0.06em] text-5xl uppercase tracking-[0.1em] sm:text-7xl lg:text-8xl">
+                <p className="jump-logo-glow absolute left-[0.03em] top-[0.06em] text-5xl uppercase tracking-widest sm:text-7xl lg:text-8xl">
                   Jump Man
                 </p>
-                <h1 className="jump-logo relative text-5xl uppercase tracking-[0.1em] sm:text-7xl lg:text-8xl">
+                <h1 className="jump-logo relative text-5xl uppercase tracking-widest sm:text-7xl lg:text-8xl">
                   Jump Man
                 </h1>
               </div>

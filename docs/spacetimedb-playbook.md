@@ -3,16 +3,12 @@
 Current mode:
 
 - Active implementation target is V1 (`app/` + `spacetimedb/`).
-- `v2/` is reference-only unless explicitly requested.
-- Prioritize checklist items in `docs/v1-multiplayer-platform-plan.md`.
 
 Use this when working on:
 
 - `spacetimedb/src/index.ts`
 - `app/multiplayer/spacetime/*`
 - `app/multiplayer/state/*` integrations that depend on generated bindings
-
-This is a pruned process reference extracted from the removed template metadata docs.
 
 ## Non-negotiables
 
