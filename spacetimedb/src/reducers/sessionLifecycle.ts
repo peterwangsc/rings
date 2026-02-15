@@ -1,12 +1,25 @@
 import { spacetimedb } from '../schema';
 import { ensurePlayerInventory } from '../shared/playerInventory';
+import { ensurePlayerStats } from '../shared/playerStats';
 import { getConnectionIdHex, nowMs } from '../shared/time';
 import { ensureWorldStateRow } from '../shared/worldState';
+import { normalizeRingCount } from '../validation/reducerValidation';
 
 spacetimedb.clientConnected((ctx) => {
   const timestampMs = nowMs(ctx);
   ensureWorldStateRow(ctx);
-  ensurePlayerInventory(ctx, ctx.sender.toHexString(), timestampMs);
+  const identity = ctx.sender.toHexString();
+  const inventory = ensurePlayerInventory(ctx, identity, timestampMs);
+  const playerStats = ensurePlayerStats(ctx, identity, timestampMs);
+  const ringCount = normalizeRingCount(inventory.ringCount);
+  const highestRingCount = normalizeRingCount(playerStats.highestRingCount);
+  if (ringCount > highestRingCount) {
+    ctx.db.playerStats.identity.update({
+      ...playerStats,
+      highestRingCount: ringCount,
+      updatedAtMs: timestampMs,
+    });
+  }
 
   const connectionId = getConnectionIdHex(ctx.connectionId);
   if (!connectionId) {
@@ -20,7 +33,7 @@ spacetimedb.clientConnected((ctx) => {
 
   ctx.db.session.insert({
     connectionId,
-    identity: ctx.sender.toHexString(),
+    identity,
     connectedAtMs: timestampMs,
   });
 });

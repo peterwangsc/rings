@@ -9,6 +9,8 @@ import type {
   GoombaState,
   MultiplayerDiagnostics,
   MultiplayerState,
+  PlayerInventorySnapshot,
+  PlayerStatsSnapshot,
 } from "./multiplayerTypes";
 
 const EMPTY_DIAGNOSTICS: MultiplayerDiagnostics = {
@@ -34,6 +36,8 @@ function cloneState(state: MultiplayerState): MultiplayerState {
   return {
     ...state,
     remotePlayers: new Map(state.remotePlayers),
+    playerInventories: new Map(state.playerInventories),
+    playerStats: new Map(state.playerStats),
     goombas: new Map(state.goombas),
     collectedRingIds: new Set(state.collectedRingIds),
     pendingRemoteFireballSpawns: [...state.pendingRemoteFireballSpawns],
@@ -81,6 +85,8 @@ export function createMultiplayerStore(
       serverTimeOffsetMs: null,
       authoritativeLocalPlayerState: null,
       remotePlayers: new Map(),
+      playerInventories: new Map(),
+      playerStats: new Map(),
       goombas: new Map(),
       collectedRingIds: new Set(),
       pendingRemoteFireballSpawns: [],
@@ -224,6 +230,34 @@ export function setRemotePlayers(
 
   const nextState = cloneState(store.state);
   nextState.remotePlayers = new Map(remotePlayers);
+  store.state = nextState;
+  emitChanged(store);
+}
+
+export function setPlayerInventories(
+  store: MultiplayerStore,
+  playerInventories: Map<string, PlayerInventorySnapshot>,
+) {
+  if (!hasMapContentChanged(store.state.playerInventories, playerInventories)) {
+    return;
+  }
+
+  const nextState = cloneState(store.state);
+  nextState.playerInventories = new Map(playerInventories);
+  store.state = nextState;
+  emitChanged(store);
+}
+
+export function setPlayerStats(
+  store: MultiplayerStore,
+  playerStats: Map<string, PlayerStatsSnapshot>,
+) {
+  if (!hasMapContentChanged(store.state.playerStats, playerStats)) {
+    return;
+  }
+
+  const nextState = cloneState(store.state);
+  nextState.playerStats = new Map(playerStats);
   store.state = nextState;
   emitChanged(store);
 }

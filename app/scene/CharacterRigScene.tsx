@@ -22,6 +22,11 @@ import { ChatOverlay } from "../hud/ChatOverlay";
 import { GameHUD } from "../hud/GameHUD";
 import { GlobalChatFeed } from "../hud/GlobalChatFeed";
 import {
+  LeaderboardOverlay,
+  type AllTimeLeaderboardEntry,
+  type OnlineLeaderboardEntry,
+} from "../hud/LeaderboardOverlay";
+import {
   createMultiplayerStore,
   setLocalDisplayName,
   useMultiplayerStoreSnapshot,
@@ -73,6 +78,7 @@ const CHAT_CLOCK_TICK_MS = 250;
 const CHAT_LOG_MAX_MESSAGES = 32;
 const CHAT_RESUME_CLOSE_DELAY_MS = 120;
 const CHAT_SESSION_HISTORY_MAX_MESSAGES = 512;
+const LEADERBOARD_ROW_LIMIT = 15;
 
 function isEditableEventTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) {
@@ -86,6 +92,24 @@ function isEditableEventTarget(target: EventTarget | null) {
     target instanceof HTMLTextAreaElement ||
     target instanceof HTMLSelectElement
   );
+}
+
+function toFallbackLeaderboardName(identity: string) {
+  if (identity.length <= 8) {
+    return identity;
+  }
+  return `${identity.slice(0, 8)}...`;
+}
+
+function normalizeLeaderboardName(
+  preferredName: string | undefined,
+  identity: string,
+) {
+  const normalized = preferredName?.trim() ?? "";
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  return toFallbackLeaderboardName(identity);
 }
 
 function CharacterRigSceneContent({
@@ -102,6 +126,7 @@ function CharacterRigSceneContent({
   const [fps, setFps] = useState<number | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isResumingFromChat, setIsResumingFromChat] = useState(false);
+  const [isLeaderboardVisible, setIsLeaderboardVisible] = useState(false);
   const [chatDraft, setChatDraft] = useState("");
   const [chatNowMs, setChatNowMs] = useState(() => Date.now());
   const [chatSessionHistory, setChatSessionHistory] = useState<ChatMessageEvent[]>(
@@ -157,6 +182,86 @@ function CharacterRigSceneContent({
     }
     return next;
   }, [activeChatMessages]);
+  const onlineLeaderboardEntries = useMemo(() => {
+    const entries: OnlineLeaderboardEntry[] = [];
+    const inventoryByIdentity = multiplayerState.playerInventories;
+    const statsByIdentity = multiplayerState.playerStats;
+
+    const localPlayer = multiplayerState.authoritativeLocalPlayerState;
+    if (localPlayer) {
+      const inventory = inventoryByIdentity.get(localPlayer.identity);
+      const stats = statsByIdentity.get(localPlayer.identity);
+      const ringCount = inventory?.ringCount ?? 0;
+      entries.push({
+        identity: localPlayer.identity,
+        displayName: normalizeLeaderboardName(
+          stats?.displayName ?? localPlayer.displayName ?? multiplayerState.localDisplayName,
+          localPlayer.identity,
+        ),
+        ringCount,
+        highestRingCount: Math.max(stats?.highestRingCount ?? 0, ringCount),
+      });
+    }
+
+    for (const player of remotePlayers) {
+      const inventory = inventoryByIdentity.get(player.identity);
+      const stats = statsByIdentity.get(player.identity);
+      const ringCount = inventory?.ringCount ?? 0;
+      entries.push({
+        identity: player.identity,
+        displayName: normalizeLeaderboardName(
+          stats?.displayName ?? player.displayName,
+          player.identity,
+        ),
+        ringCount,
+        highestRingCount: Math.max(stats?.highestRingCount ?? 0, ringCount),
+      });
+    }
+
+    entries.sort((a, b) => {
+      if (a.ringCount !== b.ringCount) {
+        return b.ringCount - a.ringCount;
+      }
+      if (a.highestRingCount !== b.highestRingCount) {
+        return b.highestRingCount - a.highestRingCount;
+      }
+      const nameSort = a.displayName.localeCompare(b.displayName);
+      if (nameSort !== 0) {
+        return nameSort;
+      }
+      return a.identity.localeCompare(b.identity);
+    });
+
+    return entries.slice(0, LEADERBOARD_ROW_LIMIT);
+  }, [
+    multiplayerState.authoritativeLocalPlayerState,
+    multiplayerState.localDisplayName,
+    multiplayerState.playerInventories,
+    multiplayerState.playerStats,
+    remotePlayers,
+  ]);
+  const allTimeLeaderboardEntries = useMemo(() => {
+    const entries: AllTimeLeaderboardEntry[] = Array.from(
+      multiplayerState.playerStats.values(),
+    ).map((stats) => ({
+      identity: stats.identity,
+      displayName: normalizeLeaderboardName(stats.displayName, stats.identity),
+      highestRingCount: stats.highestRingCount,
+    }));
+
+    entries.sort((a, b) => {
+      if (a.highestRingCount !== b.highestRingCount) {
+        return b.highestRingCount - a.highestRingCount;
+      }
+      const nameSort = a.displayName.localeCompare(b.displayName);
+      if (nameSort !== 0) {
+        return nameSort;
+      }
+      return a.identity.localeCompare(b.identity);
+    });
+
+    return entries.slice(0, LEADERBOARD_ROW_LIMIT);
+  }, [multiplayerState.playerStats]);
 
   const handleToggleCameraMode = useCallback(() => {
     setCameraMode((currentMode) => {
@@ -228,6 +333,7 @@ function CharacterRigSceneContent({
 
   const handleResumeGameplayFromChat = useCallback(() => {
     setIsResumingFromChat(true);
+    setIsLeaderboardVisible(false);
     requestGameplayPointerLock();
     if (resumeFromChatTimeoutRef.current !== null) {
       window.clearTimeout(resumeFromChatTimeoutRef.current);
@@ -258,6 +364,18 @@ function CharacterRigSceneContent({
         handleToggleFpsOverlay();
       }
 
+      if (event.code === "Tab") {
+        if (isEditableEventTarget(event.target)) {
+          return;
+        }
+        if (isChatOpen || isResumingFromChat) {
+          return;
+        }
+        event.preventDefault();
+        setIsLeaderboardVisible(true);
+        return;
+      }
+
       if (event.code === "Escape" && isChatOpen) {
         event.preventDefault();
         handleResumeGameplayFromChat();
@@ -274,6 +392,7 @@ function CharacterRigSceneContent({
           resumeFromChatTimeoutRef.current = null;
         }
         setIsResumingFromChat(false);
+        setIsLeaderboardVisible(false);
         setIsChatOpen(true);
       }
     };
@@ -282,7 +401,30 @@ function CharacterRigSceneContent({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleResumeGameplayFromChat, handleToggleFpsOverlay, isChatOpen]);
+  }, [
+    handleResumeGameplayFromChat,
+    handleToggleFpsOverlay,
+    isChatOpen,
+    isResumingFromChat,
+  ]);
+
+  useEffect(() => {
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code !== "Tab") {
+        return;
+      }
+      if (isEditableEventTarget(event.target)) {
+        return;
+      }
+      event.preventDefault();
+      setIsLeaderboardVisible(false);
+    };
+
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -321,6 +463,16 @@ function CharacterRigSceneContent({
       document.exitPointerLock();
     }
   }, [isChatOpen, isResumingFromChat]);
+
+  useEffect(() => {
+    const handleWindowBlur = () => {
+      setIsLeaderboardVisible(false);
+    };
+    window.addEventListener("blur", handleWindowBlur);
+    return () => {
+      window.removeEventListener("blur", handleWindowBlur);
+    };
+  }, []);
 
   useEffect(() => {
     if (multiplayerState.chatMessages.length === 0) {
@@ -451,6 +603,11 @@ function CharacterRigSceneContent({
         messages={activeChatMessages}
         localIdentity={multiplayerState.localIdentity}
       />
+      <LeaderboardOverlay
+        isVisible={isLeaderboardVisible}
+        onlineEntries={onlineLeaderboardEntries}
+        allTimeEntries={allTimeLeaderboardEntries}
+      />
       <ChatOverlay
         isOpen={isChatOpen}
         messages={chatSessionHistory}
@@ -461,7 +618,7 @@ function CharacterRigSceneContent({
         onResumeGameplay={handleResumeGameplayFromChat}
       />
       {isFpsVisible ? (
-        <div className="pointer-events-none absolute right-4 top-4 z-20 rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
+        <div className="ui-nonselectable pointer-events-none absolute right-4 top-4 z-20 rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
           <p className="font-semibold tracking-wide text-white">FPS</p>
           <p>{fps ?? "--"}</p>
         </div>

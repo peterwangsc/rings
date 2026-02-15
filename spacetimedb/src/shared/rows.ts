@@ -16,6 +16,13 @@ export type PlayerInventoryRow = {
   updatedAtMs: number;
 };
 
+export type PlayerStatsRow = {
+  identity: string;
+  displayName: string;
+  highestRingCount: number;
+  updatedAtMs: number;
+};
+
 export type PlayerStateRow = {
   identity: string;
   displayName: string;

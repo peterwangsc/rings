@@ -4,6 +4,7 @@ import {
   RING_DROP_LIFETIME_MS,
 } from '../shared/constants';
 import { ensurePlayerInventory } from '../shared/playerInventory';
+import { ensurePlayerStats } from '../shared/playerStats';
 import { nowMs } from '../shared/time';
 import { ringPositionById } from '../shared/worldSeeds';
 import { spacetimedb } from '../schema';
@@ -17,6 +18,25 @@ spacetimedb.reducer(
   (ctx, { ringId }) => {
     const identity = ctx.sender.toHexString();
     const timestampMs = nowMs(ctx);
+    const updatePlayerRingProgress = () => {
+      const inventory = ensurePlayerInventory(ctx, identity, timestampMs);
+      const nextRingCount = normalizeRingCount(inventory.ringCount + 1);
+      ctx.db.playerInventory.identity.update({
+        ...inventory,
+        ringCount: nextRingCount,
+        updatedAtMs: timestampMs,
+      });
+
+      const stats = ensurePlayerStats(ctx, identity, timestampMs);
+      const currentHighest = normalizeRingCount(stats.highestRingCount);
+      if (nextRingCount > currentHighest) {
+        ctx.db.playerStats.identity.update({
+          ...stats,
+          highestRingCount: nextRingCount,
+          updatedAtMs: timestampMs,
+        });
+      }
+    };
 
     const player = ctx.db.playerState.identity.find(identity);
     if (!player) {
@@ -47,13 +67,7 @@ spacetimedb.reducer(
           collectedBy: identity,
           collectedAtMs: timestampMs,
         });
-
-        const inventory = ensurePlayerInventory(ctx, identity, timestampMs);
-        ctx.db.playerInventory.identity.update({
-          ...inventory,
-          ringCount: normalizeRingCount(inventory.ringCount + 1),
-          updatedAtMs: timestampMs,
-        });
+        updatePlayerRingProgress();
       }
 
       return { tag: 'ok' };
@@ -89,13 +103,7 @@ spacetimedb.reducer(
       collectedBy: identity,
       collectedAtMs: timestampMs,
     });
-
-    const inventory = ensurePlayerInventory(ctx, identity, timestampMs);
-    ctx.db.playerInventory.identity.update({
-      ...inventory,
-      ringCount: normalizeRingCount(inventory.ringCount + 1),
-      updatedAtMs: timestampMs,
-    });
+    updatePlayerRingProgress();
 
     return { tag: 'ok' };
   },

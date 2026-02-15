@@ -12,6 +12,7 @@ const SPLASH_CONTROLS: ReadonlyArray<{
   { keys: ["Click"], action: "Fireball (while locked)" },
   { keys: ["Shift"], action: "Hold for walk/run" },
   { keys: ["CapsLock"], action: "Toggle walk/run" },
+  { keys: ["Tab (hold)"], action: "Leaderboard" },
   { keys: ["V"], action: "Toggle camera mode" },
   { keys: ["F"], action: "Toggle FPS overlay" },
   { keys: ["Esc"], action: "Unlock pointer" },
@@ -193,7 +194,7 @@ export function MobileOrientationOverlay({
               setDraftDisplayName(event.currentTarget.value);
             }}
             placeholder="Guest Name"
-            className="h-9 w-full rounded-lg border border-cyan-100/40 bg-black/35 px-3 text-xs font-medium text-cyan-50 outline-none transition focus:border-cyan-100/70 focus:bg-black/45"
+            className="h-9 w-full rounded-lg border border-cyan-100/40 bg-black/35 px-3 text-[16px] font-medium text-cyan-50 outline-none transition focus:border-cyan-100/70 focus:bg-black/45"
           />
         </div>
       </div>

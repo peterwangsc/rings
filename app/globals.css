@@ -31,6 +31,14 @@ body {
   font-family: var(--font-geist-sans), "Segoe UI", sans-serif;
 }
 
+.ui-nonselectable,
+.ui-nonselectable * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 @keyframes jump-gradient-shift {
   0% {
     background-position: 0% 50%;

@@ -5,6 +5,7 @@ import {
   GoombaStateRow,
   PlayerInventoryRow,
   PlayerStateRow,
+  PlayerStatsRow,
   RingDropStateRow,
   RingStateRow,
   WorldStateRow,
@@ -22,6 +23,7 @@ export type NetChatMessageEventRow = Infer<typeof ChatMessageEventRow>;
 export type NetRingRow = Infer<typeof RingStateRow>;
 export type NetRingDropRow = Infer<typeof RingDropStateRow>;
 export type NetPlayerInventoryRow = Infer<typeof PlayerInventoryRow>;
+export type NetPlayerStatsRow = Infer<typeof PlayerStatsRow>;
 export type NetGoombaRow = Infer<typeof GoombaStateRow>;
 export type NetWorldStateRow = Infer<typeof WorldStateRow>;
 
@@ -71,6 +73,19 @@ export interface GoombaState {
   state: "idle" | "charge" | "enraged" | "cooldown" | "defeated";
 }
 
+export interface PlayerInventorySnapshot {
+  identity: string;
+  ringCount: number;
+  updatedAtMs: number;
+}
+
+export interface PlayerStatsSnapshot {
+  identity: string;
+  displayName: string;
+  highestRingCount: number;
+  updatedAtMs: number;
+}
+
 export interface MultiplayerDiagnostics {
   playerRowCount: number;
   ringRowCount: number;
@@ -88,6 +103,8 @@ export interface MultiplayerState {
   serverTimeOffsetMs: number | null;
   authoritativeLocalPlayerState: AuthoritativePlayerState | null;
   remotePlayers: Map<string, AuthoritativePlayerState>;
+  playerInventories: Map<string, PlayerInventorySnapshot>;
+  playerStats: Map<string, PlayerStatsSnapshot>;
   goombas: Map<string, GoombaState>;
   collectedRingIds: Set<string>;
   pendingRemoteFireballSpawns: FireballSpawnEvent[];

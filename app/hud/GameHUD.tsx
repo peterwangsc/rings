@@ -54,7 +54,7 @@ export function GameHUD({
   const totalRings = worldEntityManager.hud.totalRings;
 
   return (
-    <div className="pointer-events-none absolute left-4 top-4 z-20">
+    <div className="ui-nonselectable pointer-events-none absolute left-4 top-4 z-20">
       <div className="flex items-center gap-2 rounded-lg border border-yellow-400/35 bg-black/40 px-3 py-2 backdrop-blur-sm">
         <RingIcon />
         <span className="text-[13px] font-semibold leading-4 tabular-nums text-yellow-100">

@@ -6,6 +6,7 @@ import {
   SNAPSHOT_POSITION_LEEWAY,
 } from '../shared/constants';
 import { ensurePlayerInventory } from '../shared/playerInventory';
+import { ensurePlayerStats } from '../shared/playerStats';
 import type { PlayerStateRow } from '../shared/rows';
 import { nowMs } from '../shared/time';
 import { spacetimedb } from '../schema';
@@ -84,10 +85,11 @@ spacetimedb.reducer(
     nextX = Math.max(-MAX_WORLD_ABS, Math.min(MAX_WORLD_ABS, nextX));
     nextY = Math.max(-MAX_WORLD_ABS, Math.min(MAX_WORLD_ABS, nextY));
     nextZ = Math.max(-MAX_WORLD_ABS, Math.min(MAX_WORLD_ABS, nextZ));
+    const sanitizedDisplayName = sanitizeDisplayName(payload.displayName, identity);
 
     const nextRow: PlayerStateRow = {
       identity,
-      displayName: sanitizeDisplayName(payload.displayName, identity),
+      displayName: sanitizedDisplayName,
       x: nextX,
       y: nextY,
       z: nextZ,
@@ -109,6 +111,14 @@ spacetimedb.reducer(
     ctx.db.playerState.insert(nextRow);
 
     ensurePlayerInventory(ctx, identity, timestampMs);
+    const playerStats = ensurePlayerStats(ctx, identity, timestampMs);
+    if (playerStats.displayName !== sanitizedDisplayName) {
+      ctx.db.playerStats.identity.update({
+        ...playerStats,
+        displayName: sanitizedDisplayName,
+        updatedAtMs: timestampMs,
+      });
+    }
     tickGoombas(ctx, timestampMs);
     pruneExpiredRows(ctx, timestampMs);
 

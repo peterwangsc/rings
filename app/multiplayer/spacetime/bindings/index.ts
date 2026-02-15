@@ -64,6 +64,8 @@ import PlayerInventoryRow from "./player_inventory_table";
 export { PlayerInventoryRow };
 import PlayerStateRow from "./player_state_table";
 export { PlayerStateRow };
+import PlayerStatsRow from "./player_stats_table";
+export { PlayerStatsRow };
 import RingDropStateRow from "./ring_drop_state_table";
 export { RingDropStateRow };
 import RingStateRow from "./ring_state_table";
@@ -98,6 +100,8 @@ import PlayerInventory from "./player_inventory_type";
 export { PlayerInventory };
 import PlayerState from "./player_state_type";
 export { PlayerState };
+import PlayerStats from "./player_stats_type";
+export { PlayerStats };
 import RingDropState from "./ring_drop_state_type";
 export { RingDropState };
 import RingState from "./ring_state_type";
@@ -179,6 +183,17 @@ const tablesSchema = __schema(
       { name: 'player_state_identity_key', constraint: 'unique', columns: ['identity'] },
     ],
   }, PlayerStateRow),
+  __table({
+    name: 'player_stats',
+    indexes: [
+      { name: 'identity', algorithm: 'btree', columns: [
+        'identity',
+      ] },
+    ],
+    constraints: [
+      { name: 'player_stats_identity_key', constraint: 'unique', columns: ['identity'] },
+    ],
+  }, PlayerStatsRow),
   __table({
     name: 'ring_drop_state',
     indexes: [

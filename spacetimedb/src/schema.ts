@@ -30,6 +30,16 @@ const playerInventory = table(
   },
 );
 
+const playerStats = table(
+  { name: 'player_stats', public: true },
+  {
+    identity: t.string().primaryKey(),
+    displayName: t.string(),
+    highestRingCount: t.f64(),
+    updatedAtMs: t.f64(),
+  },
+);
+
 const ringState = table(
   { name: 'ring_state', public: true },
   {
@@ -137,6 +147,7 @@ const session = table(
 export const spacetimedb = schema(
   playerState,
   playerInventory,
+  playerStats,
   ringState,
   ringDropState,
   goombaState,

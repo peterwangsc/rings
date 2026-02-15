@@ -35,6 +35,8 @@ import {
   setMultiplayerConnectionStatus as setConnectionStatusInStore,
   setMultiplayerDiagnostics,
   setMultiplayerIdentity,
+  setPlayerInventories,
+  setPlayerStats,
   setRemotePlayers,
   setServerTimeOffsetMs,
   setWorldDayCycleConfig,
@@ -48,9 +50,13 @@ import type {
   NetChatMessageEventRow,
   NetFireballEventRow,
   NetGoombaRow,
+  NetPlayerInventoryRow,
   NetPlayerRow,
   NetPlayerSnapshot,
+  NetPlayerStatsRow,
   NetWorldStateRow,
+  PlayerInventorySnapshot,
+  PlayerStatsSnapshot,
 } from "./multiplayerTypes";
 
 const MOTION_STATE_FALLBACK: MotionState = "idle";
@@ -157,6 +163,26 @@ function toGoombaState(row: NetGoombaRow): GoombaState {
   };
 }
 
+function toPlayerInventorySnapshot(
+  row: NetPlayerInventoryRow,
+): PlayerInventorySnapshot {
+  return {
+    identity: row.identity,
+    ringCount: Math.max(0, Math.floor(row.ringCount)),
+    updatedAtMs: row.updatedAtMs,
+  };
+}
+
+function toPlayerStatsSnapshot(row: NetPlayerStatsRow): PlayerStatsSnapshot {
+  const normalizedDisplayName = row.displayName.trim();
+  return {
+    identity: row.identity,
+    displayName: normalizedDisplayName.length > 0 ? normalizedDisplayName : "Guest",
+    highestRingCount: Math.max(0, Math.floor(row.highestRingCount)),
+    updatedAtMs: row.updatedAtMs,
+  };
+}
+
 function pickWorldStateRow(
   rows: readonly NetWorldStateRow[],
 ): NetWorldStateRow | null {
@@ -213,6 +239,7 @@ export function useMultiplayerSync({
   const connectionState = useSpacetimeDB();
   const [playerRows] = useTable(tables.playerState);
   const [playerInventoryRows] = useTable(tables.playerInventory);
+  const [playerStatsRows] = useTable(tables.playerStats);
   const [goombaRows] = useTable(tables.goombaState);
   const [ringRows] = useTable(tables.ringState);
   const [ringDropRows] = useTable(tables.ringDropState);
@@ -368,6 +395,22 @@ export function useMultiplayerSync({
       worldState.dayCycleDurationSeconds,
     );
   }, [store, worldStateRows]);
+
+  useEffect(() => {
+    const inventoryByIdentity = new Map<string, PlayerInventorySnapshot>();
+    for (const row of playerInventoryRows) {
+      inventoryByIdentity.set(row.identity, toPlayerInventorySnapshot(row));
+    }
+    setPlayerInventories(store, inventoryByIdentity);
+  }, [playerInventoryRows, store]);
+
+  useEffect(() => {
+    const statsByIdentity = new Map<string, PlayerStatsSnapshot>();
+    for (const row of playerStatsRows) {
+      statsByIdentity.set(row.identity, toPlayerStatsSnapshot(row));
+    }
+    setPlayerStats(store, statsByIdentity);
+  }, [playerStatsRows, store]);
 
   useEffect(() => {
     if (!connectionState.isActive) {

@@ -256,7 +256,7 @@ export function MobileControlsOverlay({
   }, [jumpPressedRef, setMoveInput]);
 
   return (
-    <div className="mobile-game-controls pointer-events-none absolute inset-x-0 bottom-0 z-40 items-end justify-between px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-6">
+    <div className="ui-nonselectable mobile-game-controls pointer-events-none absolute inset-x-0 bottom-0 z-40 items-end justify-between px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-6">
       <div
         role="presentation"
         className="mobile-joystick pointer-events-auto touch-none select-none"
