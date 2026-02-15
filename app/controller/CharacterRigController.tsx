@@ -37,7 +37,9 @@ import {
   FIRST_PERSON_CAMERA_FOV,
   FIREBALL_MAX_ACTIVE_COUNT,
   FIREBALL_RADIUS,
-  GOOMBA_FIREBALL_HIT_RADIUS,
+  GOOMBA_FIREBALL_HITBOX_BASE_OFFSET,
+  GOOMBA_FIREBALL_HITBOX_HEIGHT,
+  GOOMBA_FIREBALL_HITBOX_RADIUS,
   GOOMBA_HIT_RETRY_COOLDOWN_MS,
   GOOMBA_INTERACT_DISABLED_STATE,
   GOOMBA_STOMP_MIN_FALL_SPEED,
@@ -89,42 +91,103 @@ const SNAPSHOT_INTERVAL_SECONDS = 1 / 20;
 const RECONCILIATION_SOFT_DISTANCE = 0.08;
 const RECONCILIATION_HARD_DISTANCE = 2.5;
 
-function getPointToSegmentDistanceSquared(
-  pointX: number,
-  pointY: number,
-  pointZ: number,
-  startX: number,
-  startY: number,
-  startZ: number,
-  endX: number,
-  endY: number,
-  endZ: number,
+function getSegmentToSegmentDistanceSquared(
+  segmentAStartX: number,
+  segmentAStartY: number,
+  segmentAStartZ: number,
+  segmentAEndX: number,
+  segmentAEndY: number,
+  segmentAEndZ: number,
+  segmentBStartX: number,
+  segmentBStartY: number,
+  segmentBStartZ: number,
+  segmentBEndX: number,
+  segmentBEndY: number,
+  segmentBEndZ: number,
 ) {
-  const segmentX = endX - startX;
-  const segmentY = endY - startY;
-  const segmentZ = endZ - startZ;
-  const segmentLengthSquared =
-    segmentX * segmentX + segmentY * segmentY + segmentZ * segmentZ;
-  if (segmentLengthSquared <= 1e-8) {
-    const dx = pointX - startX;
-    const dy = pointY - startY;
-    const dz = pointZ - startZ;
-    return dx * dx + dy * dy + dz * dz;
+  const SEGMENT_EPSILON = 1e-8;
+
+  const directionAX = segmentAEndX - segmentAStartX;
+  const directionAY = segmentAEndY - segmentAStartY;
+  const directionAZ = segmentAEndZ - segmentAStartZ;
+  const directionBX = segmentBEndX - segmentBStartX;
+  const directionBY = segmentBEndY - segmentBStartY;
+  const directionBZ = segmentBEndZ - segmentBStartZ;
+  const offsetX = segmentAStartX - segmentBStartX;
+  const offsetY = segmentAStartY - segmentBStartY;
+  const offsetZ = segmentAStartZ - segmentBStartZ;
+
+  const a =
+    directionAX * directionAX +
+    directionAY * directionAY +
+    directionAZ * directionAZ;
+  const b =
+    directionAX * directionBX +
+    directionAY * directionBY +
+    directionAZ * directionBZ;
+  const c =
+    directionBX * directionBX +
+    directionBY * directionBY +
+    directionBZ * directionBZ;
+  const d =
+    directionAX * offsetX + directionAY * offsetY + directionAZ * offsetZ;
+  const e =
+    directionBX * offsetX + directionBY * offsetY + directionBZ * offsetZ;
+  const denominator = a * c - b * b;
+
+  let sNumerator: number;
+  let sDenominator = denominator;
+  let tNumerator: number;
+  let tDenominator = denominator;
+
+  if (denominator <= SEGMENT_EPSILON) {
+    sNumerator = 0;
+    sDenominator = 1;
+    tNumerator = e;
+    tDenominator = c;
+  } else {
+    sNumerator = b * e - c * d;
+    tNumerator = a * e - b * d;
+
+    if (sNumerator < 0) {
+      sNumerator = 0;
+      tNumerator = e;
+      tDenominator = c;
+    } else if (sNumerator > sDenominator) {
+      sNumerator = sDenominator;
+      tNumerator = e + b;
+      tDenominator = c;
+    }
   }
 
-  const pointOffsetX = pointX - startX;
-  const pointOffsetY = pointY - startY;
-  const pointOffsetZ = pointZ - startZ;
-  const projection =
-    (pointOffsetX * segmentX + pointOffsetY * segmentY + pointOffsetZ * segmentZ) /
-    segmentLengthSquared;
-  const clampedProjection = THREE.MathUtils.clamp(projection, 0, 1);
-  const closestX = startX + segmentX * clampedProjection;
-  const closestY = startY + segmentY * clampedProjection;
-  const closestZ = startZ + segmentZ * clampedProjection;
-  const dx = pointX - closestX;
-  const dy = pointY - closestY;
-  const dz = pointZ - closestZ;
+  if (tNumerator < 0) {
+    tNumerator = 0;
+    if (-d < 0) {
+      sNumerator = 0;
+    } else if (-d > a) {
+      sNumerator = sDenominator;
+    } else {
+      sNumerator = -d;
+      sDenominator = a;
+    }
+  } else if (tNumerator > tDenominator) {
+    tNumerator = tDenominator;
+    if (-d + b < 0) {
+      sNumerator = 0;
+    } else if (-d + b > a) {
+      sNumerator = sDenominator;
+    } else {
+      sNumerator = -d + b;
+      sDenominator = a;
+    }
+  }
+
+  const s = Math.abs(sNumerator) <= SEGMENT_EPSILON ? 0 : sNumerator / sDenominator;
+  const t = Math.abs(tNumerator) <= SEGMENT_EPSILON ? 0 : tNumerator / tDenominator;
+
+  const dx = offsetX + directionAX * s - directionBX * t;
+  const dy = offsetY + directionAY * s - directionBY * t;
+  const dz = offsetZ + directionAZ * s - directionBZ * t;
   return dx * dx + dy * dy + dz * dz;
 }
 
@@ -647,7 +710,7 @@ export function CharacterRigController({
           return;
         }
 
-        const fireballHitRadius = GOOMBA_FIREBALL_HIT_RADIUS + FIREBALL_RADIUS;
+        const fireballHitRadius = GOOMBA_FIREBALL_HITBOX_RADIUS + FIREBALL_RADIUS;
         const fireballHitRadiusSquared = fireballHitRadius * fireballHitRadius;
         for (let goombaIndex = 0; goombaIndex < goombas.length; goombaIndex += 1) {
           const goomba = goombas[goombaIndex];
@@ -658,16 +721,21 @@ export function CharacterRigController({
             continue;
           }
 
-          const distanceSquared = getPointToSegmentDistanceSquared(
-            goomba.x,
-            goomba.y,
-            goomba.z,
+          const hitboxBottomY = goomba.y + GOOMBA_FIREBALL_HITBOX_BASE_OFFSET;
+          const hitboxTopY = hitboxBottomY + GOOMBA_FIREBALL_HITBOX_HEIGHT;
+          const distanceSquared = getSegmentToSegmentDistanceSquared(
             fireballState.prevX,
             fireballState.prevY,
             fireballState.prevZ,
             fireballState.x,
             fireballState.y,
             fireballState.z,
+            goomba.x,
+            hitboxBottomY,
+            goomba.z,
+            goomba.x,
+            hitboxTopY,
+            goomba.z,
           );
           if (distanceSquared > fireballHitRadiusSquared) {
             continue;
