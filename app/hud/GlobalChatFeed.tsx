@@ -20,8 +20,8 @@ export function GlobalChatFeed({
   );
 
   return (
-    <div className="ui-nonselectable pointer-events-none absolute bottom-12 left-8 z-30 w-[min(32rem,calc(100vw-2rem))]">
-      <div className="space-y-1">
+    <div className="ui-nonselectable mobile-global-chat-feed pointer-events-none absolute bottom-12 left-8 z-30 w-[min(32rem,calc(100vw-2rem))]">
+      <div className="mobile-global-chat-feed__list space-y-1">
         {visibleMessages.map((message) => (
           <p
             key={message.messageId}

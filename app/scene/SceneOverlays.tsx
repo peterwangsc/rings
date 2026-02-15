@@ -12,6 +12,7 @@ const SPLASH_CONTROLS: ReadonlyArray<{
   { keys: ["Click"], action: "Fireball (while locked)" },
   { keys: ["Shift"], action: "Hold for walk/run" },
   { keys: ["CapsLock"], action: "Toggle walk/run" },
+  { keys: ["Enter"], action: "Open chat" },
   { keys: ["Tab (hold)"], action: "Leaderboard" },
   { keys: ["V"], action: "Toggle camera mode" },
   { keys: ["F"], action: "Toggle FPS overlay" },

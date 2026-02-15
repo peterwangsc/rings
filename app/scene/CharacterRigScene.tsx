@@ -345,6 +345,20 @@ function CharacterRigSceneContent({
     }, CHAT_RESUME_CLOSE_DELAY_MS);
   }, [requestGameplayPointerLock]);
 
+  const handleOpenChatOverlay = useCallback(() => {
+    if (resumeFromChatTimeoutRef.current !== null) {
+      window.clearTimeout(resumeFromChatTimeoutRef.current);
+      resumeFromChatTimeoutRef.current = null;
+    }
+    setIsResumingFromChat(false);
+    setIsLeaderboardVisible(false);
+    setIsChatOpen(true);
+  }, []);
+
+  const handleToggleLeaderboardOverlay = useCallback(() => {
+    setIsLeaderboardVisible((isVisible) => !isVisible);
+  }, []);
+
   const handlePlayerPositionUpdate = useCallback(
     (x: number, y: number, z: number) => {
       updateWorldPlayerPosition(worldEntityManager, x, y, z);
@@ -387,13 +401,7 @@ function CharacterRigSceneContent({
           return;
         }
         event.preventDefault();
-        if (resumeFromChatTimeoutRef.current !== null) {
-          window.clearTimeout(resumeFromChatTimeoutRef.current);
-          resumeFromChatTimeoutRef.current = null;
-        }
-        setIsResumingFromChat(false);
-        setIsLeaderboardVisible(false);
-        setIsChatOpen(true);
+        handleOpenChatOverlay();
       }
     };
 
@@ -402,6 +410,7 @@ function CharacterRigSceneContent({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [
+    handleOpenChatOverlay,
     handleResumeGameplayFromChat,
     handleToggleFpsOverlay,
     isChatOpen,
@@ -607,6 +616,9 @@ function CharacterRigSceneContent({
         isVisible={isLeaderboardVisible}
         onlineEntries={onlineLeaderboardEntries}
         allTimeEntries={allTimeLeaderboardEntries}
+        onClose={() => {
+          setIsLeaderboardVisible(false);
+        }}
       />
       <ChatOverlay
         isOpen={isChatOpen}
@@ -635,6 +647,10 @@ function CharacterRigSceneContent({
         jumpPressedRef={mobileJumpPressedRef}
         fireballTriggerRef={mobileFireballTriggerRef}
         onToggleCameraMode={handleToggleCameraMode}
+        onOpenChat={handleOpenChatOverlay}
+        onToggleLeaderboard={handleToggleLeaderboardOverlay}
+        isLeaderboardVisible={isLeaderboardVisible}
+        isChatOpen={isChatOpen || isResumingFromChat}
       />
       <MobileOrientationOverlay
         localDisplayName={multiplayerState.localDisplayName}
