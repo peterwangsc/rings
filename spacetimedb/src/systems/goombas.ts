@@ -120,7 +120,7 @@ function spillPlayerRings(
 
   ctx.db.playerInventory.identity.update({
     ...inventory,
-    ringCount: 0,
+    ringCount: ringCount - spillCount,
     updatedAtMs: timestampMs,
   });
 }
