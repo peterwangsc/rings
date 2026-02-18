@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import { PCFShadowMap } from "three";
+import { useGameAudio } from "../audio/useGameAudio";
 import type { CameraMode } from "../camera/cameraTypes";
 import { CharacterRigController } from "../controller/CharacterRigController";
 import type { MobileMoveInput } from "../controller/controllerTypes";
@@ -45,6 +46,7 @@ import {
 import { DEFAULT_GUEST_DISPLAY_NAME } from "../multiplayer/spacetime/guestDisplayNames";
 import {
   FPS_TOGGLE_KEY,
+  GOOMBA_INTERACT_DISABLED_STATE,
   HORIZON_COLOR,
   SKY_FOG_FAR,
   SKY_FOG_NEAR,
@@ -63,6 +65,7 @@ import {
 import {
   createWorldEntityManager,
   disposeWorldEntityManager,
+  useWorldEntityVersion,
   updateWorldPlayerPosition,
 } from "./world/worldEntityManager";
 
@@ -79,6 +82,42 @@ const CHAT_LOG_MAX_MESSAGES = 32;
 const CHAT_RESUME_CLOSE_DELAY_MS = 120;
 const CHAT_SESSION_HISTORY_MAX_MESSAGES = 512;
 const LEADERBOARD_ROW_LIMIT = 15;
+const MUSIC_BLEND_TICK_MS = 200;
+const MUSIC_DAY_NIGHT_START_SUN_HEIGHT = -0.08;
+const MUSIC_DAY_NIGHT_END_SUN_HEIGHT = 0.12;
+const MUSIC_CYCLE_PHASE_OFFSET_RADIANS = Math.PI * 0.25;
+
+function smoothstep(edge0: number, edge1: number, value: number) {
+  const clamped = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+  return clamped * clamped * (3 - 2 * clamped);
+}
+
+function getMusicNightFactor({
+  dayCycleAnchorMs,
+  dayCycleDurationSeconds,
+  estimatedServerTimeOffsetMs,
+}: {
+  dayCycleAnchorMs: number;
+  dayCycleDurationSeconds: number;
+  estimatedServerTimeOffsetMs: number;
+}) {
+  const durationMs = Math.max(1, dayCycleDurationSeconds * 1000);
+  const estimatedServerNowMs = Date.now() + estimatedServerTimeOffsetMs;
+  const elapsedMs = estimatedServerNowMs - dayCycleAnchorMs;
+  const wrappedElapsedMs = ((elapsedMs % durationMs) + durationMs) % durationMs;
+  const cycleProgress = wrappedElapsedMs / durationMs;
+  const cycleAngleRadians =
+    cycleProgress * Math.PI * 2 + MUSIC_CYCLE_PHASE_OFFSET_RADIANS;
+  const sunHeight = Math.sin(cycleAngleRadians);
+  return (
+    1 -
+    smoothstep(
+      MUSIC_DAY_NIGHT_START_SUN_HEIGHT,
+      MUSIC_DAY_NIGHT_END_SUN_HEIGHT,
+      sunHeight,
+    )
+  );
+}
 
 function isEditableEventTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) {
@@ -133,12 +172,27 @@ function CharacterRigSceneContent({
     [],
   );
   const worldEntityManager = useMemo(() => createWorldEntityManager(), []);
+  const worldVersion = useWorldEntityVersion(worldEntityManager);
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const resumeFromChatTimeoutRef = useRef<number | null>(null);
   const mobileMoveInputRef = useRef<MobileMoveInput>({ x: 0, y: 0 });
   const mobileJumpPressedRef = useRef(false);
   const mobileFireballTriggerRef = useRef(0);
   const networkFireballSpawnQueueRef = useRef<FireballSpawnEvent[]>([]);
+  const previousLocalRingCountRef = useRef(worldEntityManager.hud.ringCount);
+  const hasRingCountSnapshotRef = useRef(false);
+  const previousGoombaStateByIdRef = useRef<Map<string, string>>(new Map());
+  const hasGoombaSnapshotRef = useRef(false);
+  const fallbackMusicCycleAnchorMsRef = useRef<number | null>(null);
+
+  const {
+    playCoin,
+    playFireball,
+    playJump,
+    playGoombaDefeated,
+    setFootstepsActive,
+    setDayNightMusicBlend,
+  } = useGameAudio();
 
   const multiplayerVersion = useMultiplayerStoreSnapshot(multiplayerStore);
   void multiplayerVersion;
@@ -373,6 +427,85 @@ function CharacterRigSceneContent({
   }, [worldEntityManager]);
 
   useEffect(() => {
+    const ringCount = worldEntityManager.hud.ringCount;
+    if (!hasRingCountSnapshotRef.current) {
+      hasRingCountSnapshotRef.current = true;
+      previousLocalRingCountRef.current = ringCount;
+      return;
+    }
+
+    const gainedRingCount = ringCount - previousLocalRingCountRef.current;
+    previousLocalRingCountRef.current = ringCount;
+    if (gainedRingCount <= 0) {
+      return;
+    }
+
+    const playbackCount = Math.min(gainedRingCount, 4);
+    for (let index = 0; index < playbackCount; index += 1) {
+      playCoin();
+    }
+  }, [playCoin, worldEntityManager, worldVersion]);
+
+  useEffect(() => {
+    if (fallbackMusicCycleAnchorMsRef.current === null) {
+      fallbackMusicCycleAnchorMsRef.current = Date.now();
+    }
+
+    const updateMusicBlend = () => {
+      const cycleAnchorMs =
+        multiplayerState.dayCycleAnchorMs ?? fallbackMusicCycleAnchorMsRef.current ?? Date.now();
+      const nightFactor = getMusicNightFactor({
+        dayCycleAnchorMs: cycleAnchorMs,
+        dayCycleDurationSeconds: multiplayerState.dayCycleDurationSeconds,
+        estimatedServerTimeOffsetMs: multiplayerState.serverTimeOffsetMs ?? 0,
+      });
+      setDayNightMusicBlend(nightFactor);
+    };
+
+    updateMusicBlend();
+    const intervalId = window.setInterval(updateMusicBlend, MUSIC_BLEND_TICK_MS);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [
+    multiplayerState.dayCycleAnchorMs,
+    multiplayerState.dayCycleDurationSeconds,
+    multiplayerState.serverTimeOffsetMs,
+    setDayNightMusicBlend,
+  ]);
+
+  useEffect(() => {
+    const nextStateById = new Map<string, string>();
+
+    if (!hasGoombaSnapshotRef.current) {
+      for (const goomba of goombas) {
+        nextStateById.set(goomba.goombaId, goomba.state);
+      }
+      previousGoombaStateByIdRef.current = nextStateById;
+      hasGoombaSnapshotRef.current = true;
+      return;
+    }
+
+    const previousStateById = previousGoombaStateByIdRef.current;
+    let defeatedTransitions = 0;
+    for (const goomba of goombas) {
+      const previousState = previousStateById.get(goomba.goombaId);
+      nextStateById.set(goomba.goombaId, goomba.state);
+      if (
+        goomba.state === GOOMBA_INTERACT_DISABLED_STATE &&
+        previousState !== GOOMBA_INTERACT_DISABLED_STATE
+      ) {
+        defeatedTransitions += 1;
+      }
+    }
+
+    previousGoombaStateByIdRef.current = nextStateById;
+    for (let index = 0; index < defeatedTransitions; index += 1) {
+      playGoombaDefeated();
+    }
+  }, [goombas, playGoombaDefeated]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.code === FPS_TOGGLE_KEY && !event.repeat) {
         handleToggleFpsOverlay();
@@ -581,6 +714,9 @@ function CharacterRigSceneContent({
               fireballManager={worldEntityManager.fireballManager}
               onLocalPlayerSnapshot={sendLocalPlayerSnapshot}
               onLocalFireballCast={sendLocalFireballCast}
+              onLocalFireballSound={playFireball}
+              onLocalJump={playJump}
+              onLocalFootstepsActiveChange={setFootstepsActive}
               goombas={goombas}
               onLocalGoombaHit={sendGoombaHit}
               authoritativeLocalPlayerState={

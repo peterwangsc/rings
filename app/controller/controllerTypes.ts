@@ -40,6 +40,9 @@ export interface CharacterRigControllerProps {
   readonly fireballManager?: FireballManager;
   readonly onLocalPlayerSnapshot?: (snapshot: NetPlayerSnapshot) => void;
   readonly onLocalFireballCast?: (request: CastFireballCommand) => void;
+  readonly onLocalFireballSound?: () => void;
+  readonly onLocalJump?: () => void;
+  readonly onLocalFootstepsActiveChange?: (isActive: boolean) => void;
   readonly goombas?: readonly GoombaState[];
   readonly onLocalGoombaHit?: (goombaId: HitGoombaCommand["goombaId"]) => void;
   readonly authoritativeLocalPlayerState?: AuthoritativePlayerState | null;

@@ -88,6 +88,7 @@ const RECONCILIATION_SOFT_DISTANCE_SQUARED = 0.08 * 0.08;
 const RECONCILIATION_HARD_DISTANCE_SQUARED = 2.5 * 2.5;
 const MAX_LOCAL_FIREBALL_REQUESTS_PER_FRAME = 4;
 const MAX_NETWORK_FIREBALL_SPAWNS_PER_FRAME = 6;
+const FOOTSTEPS_MIN_PLANAR_SPEED = 0.32;
 const GOOMBA_STOMP_RADIUS_SQUARED = GOOMBA_STOMP_RADIUS * GOOMBA_STOMP_RADIUS;
 const FIREBALL_GOOMBA_HIT_RADIUS_SQUARED =
   (GOOMBA_FIREBALL_HITBOX_RADIUS + FIREBALL_RADIUS) *
@@ -215,6 +216,9 @@ export function CharacterRigController({
   fireballManager,
   onLocalPlayerSnapshot,
   onLocalFireballCast,
+  onLocalFireballSound,
+  onLocalJump,
+  onLocalFootstepsActiveChange,
   goombas,
   onLocalGoombaHit,
   authoritativeLocalPlayerState,
@@ -246,6 +250,7 @@ export function CharacterRigController({
   const snapshotAccumulatorSecondsRef = useRef(0);
   const localInputSequenceRef = useRef(0);
   const goombaHitTimestampsRef = useRef(new Map<string, number>());
+  const footstepsAudioActiveRef = useRef(false);
   const motionStateRef = useRef<MotionState>("idle");
   const [actorMotionState, setActorMotionState] = useState<MotionState>("idle");
   const fallbackFireballManager = useMemo(
@@ -414,6 +419,16 @@ export function CharacterRigController({
     cameraPitchRef,
   });
 
+  useEffect(() => {
+    return () => {
+      if (!footstepsAudioActiveRef.current) {
+        return;
+      }
+      footstepsAudioActiveRef.current = false;
+      onLocalFootstepsActiveChange?.(false);
+    };
+  }, [onLocalFootstepsActiveChange]);
+
   useFrame((_, deltaSeconds) => {
     const body = bodyRef.current;
     const visualRoot = visualRootRef.current;
@@ -576,6 +591,9 @@ export function CharacterRigController({
       isInVerticalStillBandRef.current = false;
       groundedRecoveryLatchRef.current = false;
     }
+    if (didJump) {
+      onLocalJump?.();
+    }
 
     body.setLinvel(
       { x: nextVelocityX, y: nextVelocityY, z: nextVelocityZ },
@@ -620,6 +638,15 @@ export function CharacterRigController({
     const planarSpeedSquared =
       nextVelocityX * nextVelocityX + nextVelocityZ * nextVelocityZ;
     const planarSpeed = Math.sqrt(planarSpeedSquared);
+    const shouldPlayFootsteps =
+      !isInputSuspended &&
+      isGroundedStable &&
+      hasMoveIntent &&
+      planarSpeed > FOOTSTEPS_MIN_PLANAR_SPEED;
+    if (shouldPlayFootsteps !== footstepsAudioActiveRef.current) {
+      footstepsAudioActiveRef.current = shouldPlayFootsteps;
+      onLocalFootstepsActiveChange?.(shouldPlayFootsteps);
+    }
     if (planarSpeedSquared > 1e-8) {
       const velocityYaw = Math.atan2(nextVelocityX, -nextVelocityZ);
       characterYawRef.current = normalizeAngle(
@@ -730,6 +757,7 @@ export function CharacterRigController({
       enqueueFireballSpawn(activeFireballManager, requestsToProcess);
       for (let index = 0; index < requestsToProcess; index += 1) {
         onLocalFireballCast?.(buildSpawnRequest());
+        onLocalFireballSound?.();
       }
       lastProcessedFireballRequestCountRef.current += requestsToProcess;
     }
