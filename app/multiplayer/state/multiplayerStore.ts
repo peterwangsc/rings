@@ -58,29 +58,56 @@ function areShallowValuesEqual<T>(a: T, b: T) {
   return true;
 }
 
-function hasMapContentChanged<T>(a: Map<string, T>, b: Map<string, T>) {
-  if (a.size !== b.size) {
-    return true;
-  }
-  for (const [key, value] of a.entries()) {
-    const nextValue = b.get(key);
-    if (nextValue === undefined || !areShallowValuesEqual(value, nextValue)) {
-      return true;
+function syncMapInPlace<T>(target: Map<string, T>, next: Map<string, T>) {
+  let didChange = false;
+
+  for (const key of target.keys()) {
+    if (next.has(key)) {
+      continue;
     }
+    target.delete(key);
+    didChange = true;
   }
-  return false;
+
+  for (const [key, nextValue] of next.entries()) {
+    if (!target.has(key)) {
+      target.set(key, nextValue);
+      didChange = true;
+      continue;
+    }
+
+    const currentValue = target.get(key) as T;
+    if (areShallowValuesEqual(currentValue, nextValue)) {
+      continue;
+    }
+
+    target.set(key, nextValue);
+    didChange = true;
+  }
+
+  return didChange;
 }
 
-function hasSetContentChanged(a: Set<string>, b: Set<string>) {
-  if (a.size !== b.size) {
-    return true;
-  }
-  for (const value of a) {
-    if (!b.has(value)) {
-      return true;
+function syncSetInPlace(target: Set<string>, next: Set<string>) {
+  let didChange = false;
+
+  for (const value of target) {
+    if (next.has(value)) {
+      continue;
     }
+    target.delete(value);
+    didChange = true;
   }
-  return false;
+
+  for (const value of next) {
+    if (target.has(value)) {
+      continue;
+    }
+    target.add(value);
+    didChange = true;
+  }
+
+  return didChange;
 }
 
 export function createMultiplayerStore(
@@ -141,11 +168,8 @@ export function setMultiplayerConnectionStatus(
     return;
   }
 
-  store.state = {
-    ...state,
-    connectionStatus,
-    connectionError,
-  };
+  state.connectionStatus = connectionStatus;
+  state.connectionError = connectionError;
   emitChanged(store);
 }
 
@@ -153,14 +177,12 @@ export function setMultiplayerIdentity(
   store: MultiplayerStore,
   localIdentity: string | null,
 ) {
-  if (store.state.localIdentity === localIdentity) {
+  const state = store.state;
+  if (state.localIdentity === localIdentity) {
     return;
   }
 
-  store.state = {
-    ...store.state,
-    localIdentity,
-  };
+  state.localIdentity = localIdentity;
   emitChanged(store);
 }
 
@@ -168,14 +190,12 @@ export function setLocalDisplayName(
   store: MultiplayerStore,
   localDisplayName: string,
 ) {
-  if (store.state.localDisplayName === localDisplayName) {
+  const state = store.state;
+  if (state.localDisplayName === localDisplayName) {
     return;
   }
 
-  store.state = {
-    ...store.state,
-    localDisplayName,
-  };
+  state.localDisplayName = localDisplayName;
   emitChanged(store);
 }
 
@@ -184,23 +204,21 @@ export function setWorldDayCycleConfig(
   dayCycleAnchorMs: number | null,
   dayCycleDurationSeconds: number,
 ) {
+  const state = store.state;
   const normalizedDurationSeconds =
     Number.isFinite(dayCycleDurationSeconds) && dayCycleDurationSeconds > 0
       ? dayCycleDurationSeconds
       : DEFAULT_DAY_CYCLE_DURATION_SECONDS;
 
   if (
-    store.state.dayCycleAnchorMs === dayCycleAnchorMs &&
-    store.state.dayCycleDurationSeconds === normalizedDurationSeconds
+    state.dayCycleAnchorMs === dayCycleAnchorMs &&
+    state.dayCycleDurationSeconds === normalizedDurationSeconds
   ) {
     return;
   }
 
-  store.state = {
-    ...store.state,
-    dayCycleAnchorMs,
-    dayCycleDurationSeconds: normalizedDurationSeconds,
-  };
+  state.dayCycleAnchorMs = dayCycleAnchorMs;
+  state.dayCycleDurationSeconds = normalizedDurationSeconds;
   emitChanged(store);
 }
 
@@ -208,14 +226,12 @@ export function setServerTimeOffsetMs(
   store: MultiplayerStore,
   serverTimeOffsetMs: number | null,
 ) {
-  if (store.state.serverTimeOffsetMs === serverTimeOffsetMs) {
+  const state = store.state;
+  if (state.serverTimeOffsetMs === serverTimeOffsetMs) {
     return;
   }
 
-  store.state = {
-    ...store.state,
-    serverTimeOffsetMs,
-  };
+  state.serverTimeOffsetMs = serverTimeOffsetMs;
   emitChanged(store);
 }
 
@@ -223,14 +239,12 @@ export function setAuthoritativeLocalPlayerState(
   store: MultiplayerStore,
   nextState: AuthoritativePlayerState | null,
 ) {
-  if (store.state.authoritativeLocalPlayerState === nextState) {
+  const state = store.state;
+  if (state.authoritativeLocalPlayerState === nextState) {
     return;
   }
 
-  store.state = {
-    ...store.state,
-    authoritativeLocalPlayerState: nextState,
-  };
+  state.authoritativeLocalPlayerState = nextState;
   emitChanged(store);
 }
 
@@ -238,14 +252,10 @@ export function setRemotePlayers(
   store: MultiplayerStore,
   remotePlayers: Map<string, AuthoritativePlayerState>,
 ) {
-  if (!hasMapContentChanged(store.state.remotePlayers, remotePlayers)) {
+  if (!syncMapInPlace(store.state.remotePlayers, remotePlayers)) {
     return;
   }
 
-  store.state = {
-    ...store.state,
-    remotePlayers: new Map(remotePlayers),
-  };
   emitChanged(store);
 }
 
@@ -253,14 +263,10 @@ export function setPlayerInventories(
   store: MultiplayerStore,
   playerInventories: Map<string, PlayerInventorySnapshot>,
 ) {
-  if (!hasMapContentChanged(store.state.playerInventories, playerInventories)) {
+  if (!syncMapInPlace(store.state.playerInventories, playerInventories)) {
     return;
   }
 
-  store.state = {
-    ...store.state,
-    playerInventories: new Map(playerInventories),
-  };
   emitChanged(store);
 }
 
@@ -268,14 +274,10 @@ export function setPlayerStats(
   store: MultiplayerStore,
   playerStats: Map<string, PlayerStatsSnapshot>,
 ) {
-  if (!hasMapContentChanged(store.state.playerStats, playerStats)) {
+  if (!syncMapInPlace(store.state.playerStats, playerStats)) {
     return;
   }
 
-  store.state = {
-    ...store.state,
-    playerStats: new Map(playerStats),
-  };
   emitChanged(store);
 }
 
@@ -283,14 +285,10 @@ export function setGoombas(
   store: MultiplayerStore,
   goombas: Map<string, GoombaState>,
 ) {
-  if (!hasMapContentChanged(store.state.goombas, goombas)) {
+  if (!syncMapInPlace(store.state.goombas, goombas)) {
     return;
   }
 
-  store.state = {
-    ...store.state,
-    goombas: new Map(goombas),
-  };
   emitChanged(store);
 }
 
@@ -298,14 +296,10 @@ export function setMysteryBoxes(
   store: MultiplayerStore,
   mysteryBoxes: Map<string, MysteryBoxState>,
 ) {
-  if (!hasMapContentChanged(store.state.mysteryBoxes, mysteryBoxes)) {
+  if (!syncMapInPlace(store.state.mysteryBoxes, mysteryBoxes)) {
     return;
   }
 
-  store.state = {
-    ...store.state,
-    mysteryBoxes: new Map(mysteryBoxes),
-  };
   emitChanged(store);
 }
 
@@ -313,14 +307,10 @@ export function setCollectedRingIds(
   store: MultiplayerStore,
   collectedRingIds: Set<string>,
 ) {
-  if (!hasSetContentChanged(store.state.collectedRingIds, collectedRingIds)) {
+  if (!syncSetInPlace(store.state.collectedRingIds, collectedRingIds)) {
     return;
   }
 
-  store.state = {
-    ...store.state,
-    collectedRingIds: new Set(collectedRingIds),
-  };
   emitChanged(store);
 }
 
@@ -338,10 +328,10 @@ export function setMultiplayerDiagnostics(
     return;
   }
 
-  store.state = {
-    ...store.state,
-    diagnostics,
-  };
+  current.playerRowCount = diagnostics.playerRowCount;
+  current.ringRowCount = diagnostics.ringRowCount;
+  current.fireballEventRowCount = diagnostics.fireballEventRowCount;
+  current.chatMessageRowCount = diagnostics.chatMessageRowCount;
   emitChanged(store);
 }
 
@@ -365,9 +355,9 @@ export function setChatMessages(
     }
   }
 
-  store.state = {
-    ...store.state,
-    chatMessages: [...chatMessages],
-  };
+  currentMessages.length = chatMessages.length;
+  for (let index = 0; index < chatMessages.length; index += 1) {
+    currentMessages[index] = chatMessages[index];
+  }
   emitChanged(store);
 }

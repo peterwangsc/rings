@@ -10,7 +10,10 @@ import type { MutableRefObject } from "react";
 import type { MotionState } from "../../lib/CharacterActor";
 import { RING_HOVER_HEIGHT, RING_PLACEMENTS } from "../../utils/constants";
 import { sampleTerrainHeight } from "../../utils/terrain";
-import type { WorldEntityManager } from "../../scene/world/worldEntityManager";
+import type {
+  WorldEntityManager,
+  WorldRingSnapshot,
+} from "../../scene/world/worldEntityManager";
 import {
   applyServerRingRows,
   setWorldLocalRingCount,
@@ -282,6 +285,20 @@ export function useMultiplayerSync({
   const activeFireballEventsRef = useRef<Set<string>>(new Set());
   const hasConnectedOnceRef = useRef(false);
   const serverTimeOffsetEstimateRef = useRef<number | null>(null);
+  const remotePlayersBufferRef = useRef<Map<string, AuthoritativePlayerState>>(
+    new Map(),
+  );
+  const playerInventoriesBufferRef = useRef<Map<string, PlayerInventorySnapshot>>(
+    new Map(),
+  );
+  const playerStatsBufferRef = useRef<Map<string, PlayerStatsSnapshot>>(
+    new Map(),
+  );
+  const collectedStarterRingIdsBufferRef = useRef<Set<string>>(new Set());
+  const projectedRingsBufferRef = useRef<WorldRingSnapshot[]>([]);
+  const goombasBufferRef = useRef<Map<string, GoombaState>>(new Map());
+  const mysteryBoxesBufferRef = useRef<Map<string, MysteryBoxState>>(new Map());
+  const chatMessagesBufferRef = useRef<ChatMessageEvent[]>([]);
 
   const localIdentity = connectionState.identity?.toHexString() ?? null;
 
@@ -374,7 +391,8 @@ export function useMultiplayerSync({
   ]);
 
   useEffect(() => {
-    const remotePlayers = new Map<string, AuthoritativePlayerState>();
+    const remotePlayers = remotePlayersBufferRef.current;
+    remotePlayers.clear();
     let authoritativeLocalPlayer: AuthoritativePlayerState | null = null;
     let freshestUpdatedAtMs = -1;
 
@@ -423,7 +441,8 @@ export function useMultiplayerSync({
   }, [store, worldStateRows]);
 
   useEffect(() => {
-    const inventoryByIdentity = new Map<string, PlayerInventorySnapshot>();
+    const inventoryByIdentity = playerInventoriesBufferRef.current;
+    inventoryByIdentity.clear();
     for (const row of playerInventoryRows) {
       inventoryByIdentity.set(row.identity, toPlayerInventorySnapshot(row));
     }
@@ -431,7 +450,8 @@ export function useMultiplayerSync({
   }, [playerInventoryRows, store]);
 
   useEffect(() => {
-    const statsByIdentity = new Map<string, PlayerStatsSnapshot>();
+    const statsByIdentity = playerStatsBufferRef.current;
+    statsByIdentity.clear();
     for (const row of playerStatsRows) {
       statsByIdentity.set(row.identity, toPlayerStatsSnapshot(row));
     }
@@ -443,17 +463,10 @@ export function useMultiplayerSync({
       return;
     }
 
-    const collectedStarterRingIds = new Set<string>();
-    const projectedRings: {
-      id: string;
-      x: number;
-      y: number;
-      z: number;
-      collected: boolean;
-      collectedBy?: string;
-      source: "starter" | "drop";
-      spawnedAtMs?: number;
-    }[] = [];
+    const collectedStarterRingIds = collectedStarterRingIdsBufferRef.current;
+    collectedStarterRingIds.clear();
+    const projectedRings = projectedRingsBufferRef.current;
+    projectedRings.length = 0;
 
     for (const ring of ringRows) {
       const starterPosition = STARTER_RING_POSITIONS.get(ring.ringId);
@@ -513,7 +526,8 @@ export function useMultiplayerSync({
   ]);
 
   useEffect(() => {
-    const goombas = new Map<string, GoombaState>();
+    const goombas = goombasBufferRef.current;
+    goombas.clear();
     for (const row of goombaRows) {
       goombas.set(row.goombaId, toGoombaState(row));
     }
@@ -521,7 +535,8 @@ export function useMultiplayerSync({
   }, [goombaRows, store]);
 
   useEffect(() => {
-    const mysteryBoxes = new Map<string, MysteryBoxState>();
+    const mysteryBoxes = mysteryBoxesBufferRef.current;
+    mysteryBoxes.clear();
     for (const row of mysteryBoxRows) {
       mysteryBoxes.set(row.mysteryBoxId, toMysteryBoxState(row));
     }
@@ -549,7 +564,8 @@ export function useMultiplayerSync({
   }, [fireballRows, localIdentity, networkFireballSpawnQueueRef]);
 
   useEffect(() => {
-    const chatMessages: ChatMessageEvent[] = [];
+    const chatMessages = chatMessagesBufferRef.current;
+    chatMessages.length = 0;
     let previousCreatedAtMs = -Infinity;
     let isSortedAscending = true;
 

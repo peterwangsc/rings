@@ -203,7 +203,6 @@ function CharacterRigSceneContent({
   } = useGameAudio();
 
   const multiplayerVersion = useMultiplayerStoreSnapshot(multiplayerStore);
-  void multiplayerVersion;
 
   const {
     sendLocalPlayerSnapshot,
@@ -221,19 +220,20 @@ function CharacterRigSceneContent({
   const multiplayerState = multiplayerStore.state;
   const hasAuthoritativeMultiplayer =
     multiplayerState.connectionStatus === "connected";
-  const remotePlayers = useMemo(
-    () => Array.from(multiplayerState.remotePlayers.values()),
-    [multiplayerState.remotePlayers],
-  );
-  const goombas = useMemo(
-    () => Array.from(multiplayerState.goombas.values()),
-    [multiplayerState.goombas],
-  );
-  const mysteryBoxes = useMemo(
-    () => Array.from(multiplayerState.mysteryBoxes.values()),
-    [multiplayerState.mysteryBoxes],
-  );
+  const remotePlayers = useMemo(() => {
+    void multiplayerVersion;
+    return Array.from(multiplayerState.remotePlayers.values());
+  }, [multiplayerState.remotePlayers, multiplayerVersion]);
+  const goombas = useMemo(() => {
+    void multiplayerVersion;
+    return Array.from(multiplayerState.goombas.values());
+  }, [multiplayerState.goombas, multiplayerVersion]);
+  const mysteryBoxes = useMemo(() => {
+    void multiplayerVersion;
+    return Array.from(multiplayerState.mysteryBoxes.values());
+  }, [multiplayerState.mysteryBoxes, multiplayerVersion]);
   const activeChatMessages = useMemo(() => {
+    void multiplayerVersion;
     const visible = multiplayerState.chatMessages.filter(
       (message) => message.expiresAtMs > chatNowMs,
     );
@@ -241,7 +241,7 @@ function CharacterRigSceneContent({
       return visible;
     }
     return visible.slice(visible.length - CHAT_LOG_MAX_MESSAGES);
-  }, [chatNowMs, multiplayerState.chatMessages]);
+  }, [chatNowMs, multiplayerState.chatMessages, multiplayerVersion]);
   const activeChatByIdentity = useMemo(() => {
     const next = new Map<string, string>();
     for (const message of activeChatMessages) {
@@ -250,6 +250,7 @@ function CharacterRigSceneContent({
     return next;
   }, [activeChatMessages]);
   const onlineLeaderboardEntries = useMemo(() => {
+    void multiplayerVersion;
     const entries: OnlineLeaderboardEntry[] = [];
     const inventoryByIdentity = multiplayerState.playerInventories;
     const statsByIdentity = multiplayerState.playerStats;
@@ -307,9 +308,11 @@ function CharacterRigSceneContent({
     multiplayerState.localDisplayName,
     multiplayerState.playerInventories,
     multiplayerState.playerStats,
+    multiplayerVersion,
     remotePlayers,
   ]);
   const allTimeLeaderboardEntries = useMemo(() => {
+    void multiplayerVersion;
     const entries: AllTimeLeaderboardEntry[] = Array.from(
       multiplayerState.playerStats.values(),
     )
@@ -332,7 +335,7 @@ function CharacterRigSceneContent({
     });
 
     return entries.slice(0, LEADERBOARD_ROW_LIMIT);
-  }, [multiplayerState.playerStats]);
+  }, [multiplayerState.playerStats, multiplayerVersion]);
 
   const handleToggleCameraMode = useCallback(() => {
     setCameraMode((currentMode) => {
@@ -767,7 +770,7 @@ function CharacterRigSceneContent({
 
       return nextHistory;
     });
-  }, [multiplayerState.chatMessages]);
+  }, [multiplayerState.chatMessages, multiplayerVersion]);
 
   return (
     <div className="relative h-full w-full">
