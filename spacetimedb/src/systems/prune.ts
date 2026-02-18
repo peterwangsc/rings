@@ -1,4 +1,5 @@
 import {
+  PRUNE_MIN_INTERVAL_MS,
   RING_DROP_LIFETIME_MS,
   RING_DROP_PRUNE_AFTER_COLLECT_MS,
 } from '../shared/constants';
@@ -25,7 +26,14 @@ type PruneContext = {
   };
 };
 
+let lastPruneAtMs = -Infinity;
+
 export function pruneExpiredRows(ctx: PruneContext, timestampMs: number) {
+  if (timestampMs - lastPruneAtMs < PRUNE_MIN_INTERVAL_MS) {
+    return;
+  }
+  lastPruneAtMs = timestampMs;
+
   for (const event of ctx.db.fireballEvent.iter()) {
     if (event.expiresAtMs <= timestampMs) {
       ctx.db.fireballEvent.delete(event);

@@ -65,6 +65,9 @@ spacetimedb.reducer(
     for (const event of ctx.db.fireballEvent.iter()) {
       if (event.ownerIdentity === identity) {
         activeOwnedFireballCount += 1;
+        if (activeOwnedFireballCount >= ringCount) {
+          break;
+        }
       }
     }
     if (activeOwnedFireballCount >= ringCount) {

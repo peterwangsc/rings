@@ -5,7 +5,6 @@ import type {
   AuthoritativePlayerState,
   ChatMessageEvent,
   ConnectionStatus,
-  FireballSpawnEvent,
   GoombaState,
   MultiplayerDiagnostics,
   MultiplayerState,
@@ -32,17 +31,30 @@ function emitChanged(store: MultiplayerStore) {
   store.listeners.forEach((listener) => listener());
 }
 
-function cloneState(state: MultiplayerState): MultiplayerState {
-  return {
-    ...state,
-    remotePlayers: new Map(state.remotePlayers),
-    playerInventories: new Map(state.playerInventories),
-    playerStats: new Map(state.playerStats),
-    goombas: new Map(state.goombas),
-    collectedRingIds: new Set(state.collectedRingIds),
-    pendingRemoteFireballSpawns: [...state.pendingRemoteFireballSpawns],
-    chatMessages: [...state.chatMessages],
-  };
+function areShallowValuesEqual<T>(a: T, b: T) {
+  if (Object.is(a, b)) {
+    return true;
+  }
+  if (
+    typeof a !== "object" ||
+    typeof b !== "object" ||
+    a === null ||
+    b === null
+  ) {
+    return false;
+  }
+  const aRecord = a as Record<string, unknown>;
+  const bRecord = b as Record<string, unknown>;
+  const aKeys = Object.keys(aRecord);
+  if (aKeys.length !== Object.keys(bRecord).length) {
+    return false;
+  }
+  for (const key of aKeys) {
+    if (!Object.is(aRecord[key], bRecord[key])) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function hasMapContentChanged<T>(a: Map<string, T>, b: Map<string, T>) {
@@ -50,7 +62,8 @@ function hasMapContentChanged<T>(a: Map<string, T>, b: Map<string, T>) {
     return true;
   }
   for (const [key, value] of a.entries()) {
-    if (b.get(key) !== value) {
+    const nextValue = b.get(key);
+    if (nextValue === undefined || !areShallowValuesEqual(value, nextValue)) {
       return true;
     }
   }
@@ -89,7 +102,6 @@ export function createMultiplayerStore(
       playerStats: new Map(),
       goombas: new Map(),
       collectedRingIds: new Set(),
-      pendingRemoteFireballSpawns: [],
       chatMessages: [],
       diagnostics: { ...EMPTY_DIAGNOSTICS },
     },
@@ -228,9 +240,10 @@ export function setRemotePlayers(
     return;
   }
 
-  const nextState = cloneState(store.state);
-  nextState.remotePlayers = new Map(remotePlayers);
-  store.state = nextState;
+  store.state = {
+    ...store.state,
+    remotePlayers: new Map(remotePlayers),
+  };
   emitChanged(store);
 }
 
@@ -242,9 +255,10 @@ export function setPlayerInventories(
     return;
   }
 
-  const nextState = cloneState(store.state);
-  nextState.playerInventories = new Map(playerInventories);
-  store.state = nextState;
+  store.state = {
+    ...store.state,
+    playerInventories: new Map(playerInventories),
+  };
   emitChanged(store);
 }
 
@@ -256,9 +270,10 @@ export function setPlayerStats(
     return;
   }
 
-  const nextState = cloneState(store.state);
-  nextState.playerStats = new Map(playerStats);
-  store.state = nextState;
+  store.state = {
+    ...store.state,
+    playerStats: new Map(playerStats),
+  };
   emitChanged(store);
 }
 
@@ -270,9 +285,10 @@ export function setGoombas(
     return;
   }
 
-  const nextState = cloneState(store.state);
-  nextState.goombas = new Map(goombas);
-  store.state = nextState;
+  store.state = {
+    ...store.state,
+    goombas: new Map(goombas),
+  };
   emitChanged(store);
 }
 
@@ -284,9 +300,10 @@ export function setCollectedRingIds(
     return;
   }
 
-  const nextState = cloneState(store.state);
-  nextState.collectedRingIds = new Set(collectedRingIds);
-  store.state = nextState;
+  store.state = {
+    ...store.state,
+    collectedRingIds: new Set(collectedRingIds),
+  };
   emitChanged(store);
 }
 
@@ -319,7 +336,9 @@ export function setChatMessages(
   if (currentMessages.length === chatMessages.length) {
     let hasDiff = false;
     for (let index = 0; index < currentMessages.length; index += 1) {
-      if (currentMessages[index] !== chatMessages[index]) {
+      if (
+        !areShallowValuesEqual(currentMessages[index], chatMessages[index])
+      ) {
         hasDiff = true;
         break;
       }
@@ -329,35 +348,9 @@ export function setChatMessages(
     }
   }
 
-  const nextState = cloneState(store.state);
-  nextState.chatMessages = [...chatMessages];
-  store.state = nextState;
+  store.state = {
+    ...store.state,
+    chatMessages: [...chatMessages],
+  };
   emitChanged(store);
-}
-
-export function enqueueRemoteFireballSpawns(
-  store: MultiplayerStore,
-  events: readonly FireballSpawnEvent[],
-) {
-  if (events.length === 0) {
-    return;
-  }
-
-  const nextState = cloneState(store.state);
-  nextState.pendingRemoteFireballSpawns.push(...events);
-  store.state = nextState;
-  emitChanged(store);
-}
-
-export function consumeRemoteFireballSpawns(store: MultiplayerStore) {
-  if (store.state.pendingRemoteFireballSpawns.length === 0) {
-    return [] as FireballSpawnEvent[];
-  }
-
-  const pending = store.state.pendingRemoteFireballSpawns;
-  const nextState = cloneState(store.state);
-  nextState.pendingRemoteFireballSpawns = [];
-  store.state = nextState;
-  emitChanged(store);
-  return pending;
 }

@@ -118,8 +118,13 @@ function buildRingEntities() {
 }
 
 function syncVisibleRings(world: WorldEntityManager) {
-  const visible = world.ringEntities.filter((ring) => !ring.collected);
-  world.visibleRingEntities.splice(0, world.visibleRingEntities.length, ...visible);
+  world.visibleRingEntities.length = 0;
+  for (let index = 0; index < world.ringEntities.length; index += 1) {
+    const ring = world.ringEntities[index];
+    if (!ring.collected) {
+      world.visibleRingEntities.push(ring);
+    }
+  }
 }
 
 function applyRingCountToHudAndFireballManager(
@@ -347,23 +352,21 @@ export function applyServerRingRows(
   world: WorldEntityManager,
   ringRows: readonly WorldRingSnapshot[],
 ) {
-  const nextById = new Map(ringRows.map((ring) => [ring.id, ring]));
-  let didChange = false;
-
-  for (let index = world.ringEntities.length - 1; index >= 0; index -= 1) {
-    const existing = world.ringEntities[index];
-    if (nextById.has(existing.id)) {
-      continue;
-    }
-    world.ringEntities.splice(index, 1);
-    didChange = true;
+  const existingById = new Map<string, WorldRingEntity>();
+  for (let index = 0; index < world.ringEntities.length; index += 1) {
+    const ring = world.ringEntities[index];
+    existingById.set(ring.id, ring);
   }
 
-  for (const [id, snapshot] of nextById.entries()) {
-    const existing = world.ringEntities.find((candidate) => candidate.id === id);
+  const nextRingEntities: WorldRingEntity[] = [];
+  let didChange = false;
+
+  for (let index = 0; index < ringRows.length; index += 1) {
+    const snapshot = ringRows[index];
+    const existing = existingById.get(snapshot.id);
     if (!existing) {
-      world.ringEntities.push({
-        id,
+      nextRingEntities.push({
+        id: snapshot.id,
         position: [snapshot.x, snapshot.y, snapshot.z],
         collected: snapshot.collected,
         source: snapshot.source,
@@ -373,6 +376,7 @@ export function applyServerRingRows(
       continue;
     }
 
+    existingById.delete(snapshot.id);
     const [x, y, z] = existing.position;
     if (
       x !== snapshot.x ||
@@ -388,13 +392,19 @@ export function applyServerRingRows(
       existing.spawnedAtMs = snapshot.spawnedAtMs;
       didChange = true;
     }
+    nextRingEntities.push(existing);
+  }
+
+  if (existingById.size > 0) {
+    didChange = true;
   }
 
   if (!didChange) {
     return;
   }
 
-  world.ringEntities.sort((a, b) => a.id.localeCompare(b.id));
+  nextRingEntities.sort((a, b) => a.id.localeCompare(b.id));
+  world.ringEntities.splice(0, world.ringEntities.length, ...nextRingEntities);
   syncVisibleRings(world);
   emitWorldManagerChanged(world);
 }

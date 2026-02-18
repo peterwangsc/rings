@@ -107,7 +107,6 @@ export interface MultiplayerState {
   playerStats: Map<string, PlayerStatsSnapshot>;
   goombas: Map<string, GoombaState>;
   collectedRingIds: Set<string>;
-  pendingRemoteFireballSpawns: FireballSpawnEvent[];
   chatMessages: ChatMessageEvent[];
   diagnostics: MultiplayerDiagnostics;
 }

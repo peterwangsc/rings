@@ -26,6 +26,7 @@ export interface FireballManager {
   cooldownSeconds: number;
   pendingSpawnCount: number;
   pendingSpawnRequests: FireballSpawnRequest[];
+  pendingSpawnRequestReadIndex: number;
   accumulatorSeconds: number;
   activeStates: FireballRuntimeState[];
   renderFrame: FireballRenderFrame;
@@ -104,6 +105,7 @@ export function createFireballManager(
     cooldownSeconds: 0,
     pendingSpawnCount: 0,
     pendingSpawnRequests: [],
+    pendingSpawnRequestReadIndex: 0,
     accumulatorSeconds: 0,
     activeStates: [],
     renderFrame: {
@@ -175,6 +177,7 @@ export function stepFireballSimulation(
   manager: FireballManager,
   params: FireballManagerStepParams,
 ) {
+  const onAfterSimulateFireballStep = params.onAfterSimulateFireballStep;
   const frameDelta = Math.min(
     MAX_FRAME_DELTA_SECONDS,
     Math.max(0, params.deltaSeconds),
@@ -192,10 +195,15 @@ export function stepFireballSimulation(
       0,
       manager.cooldownSeconds - FIREBALL_FIXED_STEP_SECONDS,
     );
-    if (manager.pendingSpawnRequests.length > 0) {
-      const nextSpawnRequest = manager.pendingSpawnRequests.shift();
-      if (nextSpawnRequest) {
-        spawnFireball(manager, nextSpawnRequest);
+    if (manager.pendingSpawnRequestReadIndex < manager.pendingSpawnRequests.length) {
+      spawnFireball(
+        manager,
+        manager.pendingSpawnRequests[manager.pendingSpawnRequestReadIndex],
+      );
+      manager.pendingSpawnRequestReadIndex += 1;
+      if (manager.pendingSpawnRequestReadIndex >= manager.pendingSpawnRequests.length) {
+        manager.pendingSpawnRequests.length = 0;
+        manager.pendingSpawnRequestReadIndex = 0;
       }
     } else if (manager.pendingSpawnCount > 0 && manager.cooldownSeconds <= 0) {
       const didSpawn = spawnFireball(manager, params.buildSpawnRequest());
@@ -218,16 +226,23 @@ export function stepFireballSimulation(
         castSolidHit: params.castSolidHit,
         sampleTerrainHeight: params.sampleTerrainHeight,
       });
-      if (!state.isDead) {
-        params.onAfterSimulateFireballStep?.(state);
+      if (!state.isDead && onAfterSimulateFireballStep) {
+        onAfterSimulateFireballStep(state);
       }
     }
 
     // Pass 4 - deactivate and compact dead entries.
-    if (manager.activeStates.some((fireball) => fireball.isDead)) {
-      manager.activeStates = manager.activeStates.filter(
-        (fireball) => !fireball.isDead,
-      );
+    let writeIndex = 0;
+    for (let readIndex = 0; readIndex < manager.activeStates.length; readIndex += 1) {
+      const fireball = manager.activeStates[readIndex];
+      if (fireball.isDead) {
+        continue;
+      }
+      manager.activeStates[writeIndex] = fireball;
+      writeIndex += 1;
+    }
+    if (writeIndex < manager.activeStates.length) {
+      manager.activeStates.length = writeIndex;
     }
 
     manager.accumulatorSeconds -= FIREBALL_FIXED_STEP_SECONDS;
@@ -235,9 +250,4 @@ export function stepFireballSimulation(
 
   // Pass 5 - publish render frame.
   publishRenderFrame(manager);
-}
-
-export function buildFireballRenderFrame(manager: FireballManager) {
-  publishRenderFrame(manager);
-  return manager.renderFrame;
 }

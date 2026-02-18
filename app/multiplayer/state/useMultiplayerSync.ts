@@ -26,8 +26,6 @@ import {
 } from "../protocol";
 import { persistMultiplayerToken } from "../spacetime/client";
 import {
-  consumeRemoteFireballSpawns,
-  enqueueRemoteFireballSpawns,
   setAuthoritativeLocalPlayerState,
   setChatMessages,
   setCollectedRingIds,
@@ -515,11 +513,7 @@ export function useMultiplayerSync({
     }
 
     if (newRemoteEvents.length > 0) {
-      enqueueRemoteFireballSpawns(store, newRemoteEvents);
-      const pending = consumeRemoteFireballSpawns(store);
-      if (pending.length > 0) {
-        networkFireballSpawnQueueRef.current.push(...pending);
-      }
+      networkFireballSpawnQueueRef.current.push(...newRemoteEvents);
     }
   }, [fireballRows, localIdentity, networkFireballSpawnQueueRef, store]);
 

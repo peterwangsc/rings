@@ -20,6 +20,7 @@ export const RING_DROP_LIFETIME_MS = 12_000;
 export const RING_DROP_PRUNE_AFTER_COLLECT_MS = 20_000;
 export const MAX_SPILL_RING_COUNT = 24;
 export const MAX_RING_COUNT = 999;
+export const PRUNE_MIN_INTERVAL_MS = 125;
 
 export const GOOMBA_ENRAGE_RADIUS = 16;
 export const GOOMBA_RUN_SPEED = 5.5;

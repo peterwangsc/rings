@@ -192,6 +192,8 @@ export const RING_ENV_MAP_INTENSITY = 6.8;
 export const RING_LIGHT_INTENSITY = 3.4;
 export const RING_LIGHT_DISTANCE = 5.5;
 export const RING_LIGHT_DECAY = 2;
+export const RING_DROP_POINT_LIGHT_ENABLED = true;
+export const RING_DROP_MAX_ACTIVE_POINT_LIGHTS = 8;
 export const RING_ROTATION_SPEED = 2.2;
 export const RING_BOB_AMPLITUDE = 0.18;
 export const RING_BOB_SPEED = 2.0;
@@ -239,6 +241,7 @@ export const FIREBALL_HIT_FADE_DECAY = 13;
 export const FIREBALL_HIT_FADE_MAX_SECONDS = 0.25;
 export const FIREBALL_EMISSIVE_INTENSITY = 2.8;
 export const FIREBALL_LIGHT_INTENSITY = 2.1;
+export const FIREBALL_MAX_ACTIVE_POINT_LIGHTS = 4;
 
 // --- Goomba enemy ---
 export const GOOMBA_MODEL_PATH =

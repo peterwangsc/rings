@@ -16,6 +16,7 @@ import {
   Vector4,
 } from "three";
 import {
+  FIREBALL_MAX_ACTIVE_POINT_LIGHTS,
   FIREBALL_LIGHT_INTENSITY,
   FIREBALL_MAX_ACTIVE_COUNT,
   FIREBALL_RADIUS,
@@ -259,16 +260,21 @@ export function FireballRenderLayer({
 
   useFrame((state) => {
     const elapsedTime = state.clock.getElapsedTime();
+    let activeLightCount = 0;
 
     for (let index = 0; index < FIREBALL_MAX_ACTIVE_COUNT; index += 1) {
       const group = groupRefs.current[index];
       if (!group) {
         continue;
       }
+      const light = lightRefs.current[index];
 
       const slot = renderFrame.slots[index];
       if (!slot || !slot.active) {
         group.visible = false;
+        if (light) {
+          light.visible = false;
+        }
         continue;
       }
 
@@ -290,9 +296,14 @@ export function FireballRenderLayer({
           .multiplyScalar(slot.intensityFactor);
       }
 
-      const light = lightRefs.current[index];
       if (light) {
-        light.intensity = FIREBALL_LIGHT_INTENSITY * slot.intensityFactor;
+        if (activeLightCount < FIREBALL_MAX_ACTIVE_POINT_LIGHTS) {
+          light.visible = true;
+          light.intensity = FIREBALL_LIGHT_INTENSITY * slot.intensityFactor;
+          activeLightCount += 1;
+        } else {
+          light.visible = false;
+        }
       }
     }
   });

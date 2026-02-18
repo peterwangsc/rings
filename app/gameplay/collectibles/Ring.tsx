@@ -30,11 +30,12 @@ import { getDropRingFallOffset } from "./ringTiming";
 interface RingProps {
   readonly position: readonly [number, number, number];
   readonly spawnedAtMs?: number;
+  readonly withPointLight?: boolean;
 }
 
 const RING_SHADER_CACHE_KEY = "ring-polished-reflective-v1";
 
-export function Ring({ position, spawnedAtMs }: RingProps) {
+export function Ring({ position, spawnedAtMs, withPointLight = true }: RingProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const materialRef = useRef<THREE.MeshPhysicalMaterial>(null);
   const lightRef = useRef<THREE.PointLight>(null);
@@ -192,13 +193,15 @@ float ringSaturate(float value) {
         metalness={RING_METALNESS}
         envMapIntensity={RING_ENV_MAP_INTENSITY}
       />
-      <pointLight
-        ref={lightRef}
-        color={RING_EMISSIVE_COLOR}
-        intensity={RING_LIGHT_INTENSITY}
-        distance={RING_LIGHT_DISTANCE}
-        decay={RING_LIGHT_DECAY}
-      />
+      {withPointLight ? (
+        <pointLight
+          ref={lightRef}
+          color={RING_EMISSIVE_COLOR}
+          intensity={RING_LIGHT_INTENSITY}
+          distance={RING_LIGHT_DISTANCE}
+          decay={RING_LIGHT_DECAY}
+        />
+      ) : null}
     </mesh>
   );
 }

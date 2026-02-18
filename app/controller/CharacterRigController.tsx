@@ -15,7 +15,6 @@ import {
 } from "../camera/cameraRig";
 import { FireballRenderLayer } from "../gameplay/abilities/FireballRenderLayer";
 import {
-  buildFireballRenderFrame,
   createFireballManager,
   enqueueFireballSpawn,
   enqueueFireballSpawnRequest,
@@ -90,6 +89,8 @@ const IDENTITY_ROTATION = { x: 0, y: 0, z: 0, w: 1 } as const;
 const SNAPSHOT_INTERVAL_SECONDS = 1 / 20;
 const RECONCILIATION_SOFT_DISTANCE = 0.08;
 const RECONCILIATION_HARD_DISTANCE = 2.5;
+const MAX_LOCAL_FIREBALL_REQUESTS_PER_FRAME = 4;
+const MAX_NETWORK_FIREBALL_SPAWNS_PER_FRAME = 6;
 
 function getSegmentToSegmentDistanceSquared(
   segmentAStartX: number,
@@ -641,16 +642,24 @@ export function CharacterRigController({
     const pendingFireballRequests =
       fireballRequestCountRef.current - lastProcessedFireballRequestCountRef.current;
     if (pendingFireballRequests > 0) {
-      enqueueFireballSpawn(activeFireballManager, pendingFireballRequests);
-      for (let index = 0; index < pendingFireballRequests; index += 1) {
+      const requestsToProcess = Math.min(
+        pendingFireballRequests,
+        MAX_LOCAL_FIREBALL_REQUESTS_PER_FRAME,
+      );
+      enqueueFireballSpawn(activeFireballManager, requestsToProcess);
+      for (let index = 0; index < requestsToProcess; index += 1) {
         onLocalFireballCast?.(buildSpawnRequest());
       }
-      lastProcessedFireballRequestCountRef.current += pendingFireballRequests;
+      lastProcessedFireballRequestCountRef.current += requestsToProcess;
     }
 
     const pendingNetworkSpawns = networkFireballSpawnQueueRef?.current;
     if (pendingNetworkSpawns && pendingNetworkSpawns.length > 0) {
-      for (let index = 0; index < pendingNetworkSpawns.length; index += 1) {
+      const spawnCountToProcess = Math.min(
+        pendingNetworkSpawns.length,
+        MAX_NETWORK_FIREBALL_SPAWNS_PER_FRAME,
+      );
+      for (let index = 0; index < spawnCountToProcess; index += 1) {
         const spawn = pendingNetworkSpawns[index];
         enqueueFireballSpawnRequest(activeFireballManager, {
           originX: spawn.originX,
@@ -662,7 +671,10 @@ export function CharacterRigController({
         });
       }
       if (networkFireballSpawnQueueRef) {
-        networkFireballSpawnQueueRef.current = [];
+        networkFireballSpawnQueueRef.current =
+          pendingNetworkSpawns.length <= spawnCountToProcess
+            ? []
+            : pendingNetworkSpawns.slice(spawnCountToProcess);
       }
     }
 
@@ -748,7 +760,6 @@ export function CharacterRigController({
         }
       },
     });
-    buildFireballRenderFrame(activeFireballManager);
 
     getLookDirection(
       cameraYawRef.current,

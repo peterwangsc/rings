@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { RING_COLLECT_RADIUS } from "../../utils/constants";
+import {
+  RING_COLLECT_RADIUS,
+  RING_DROP_MAX_ACTIVE_POINT_LIGHTS,
+  RING_DROP_POINT_LIGHT_ENABLED,
+} from "../../utils/constants";
 import {
   collectWorldRing,
   type WorldEntityManager,
@@ -22,6 +26,29 @@ export function RingField({
 }) {
   const worldVersion = useWorldEntityVersion(worldEntityManager);
   const lastCollectAttemptByRingRef = useRef<Map<string, number>>(new Map());
+  const ringsWithPointLight = new Set<string>();
+  const droppedCandidates: { id: string; spawnedAtMs: number }[] = [];
+  for (const ring of worldEntityManager.visibleRingEntities) {
+    if (ring.source === "starter") {
+      ringsWithPointLight.add(ring.id);
+      continue;
+    }
+    if (!RING_DROP_POINT_LIGHT_ENABLED) {
+      continue;
+    }
+    droppedCandidates.push({
+      id: ring.id,
+      spawnedAtMs: ring.spawnedAtMs ?? 0,
+    });
+  }
+  droppedCandidates.sort((a, b) => b.spawnedAtMs - a.spawnedAtMs);
+  const dropLights = Math.min(
+    RING_DROP_MAX_ACTIVE_POINT_LIGHTS,
+    droppedCandidates.length,
+  );
+  for (let index = 0; index < dropLights; index += 1) {
+    ringsWithPointLight.add(droppedCandidates[index].id);
+  }
 
   const handleCollect = useCallback(
     (ringId: string) => {
@@ -93,6 +120,7 @@ export function RingField({
           key={ring.id}
           position={ring.position}
           spawnedAtMs={ring.spawnedAtMs}
+          withPointLight={ringsWithPointLight.has(ring.id)}
         />
       ))}
     </>
