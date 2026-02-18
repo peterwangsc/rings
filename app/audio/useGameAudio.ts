@@ -28,6 +28,10 @@ const ONE_SHOT_GAIN: Record<OneShotSoundId, number> = {
 const FOOTSTEPS_GAIN = 0.26;
 const MASTER_GAIN = 0.92;
 const MUSIC_GAIN = 0.4;
+const MUSIC_FADE_OUT_MS = 450;
+const MUSIC_FADE_IN_MS = 650;
+const MUSIC_NIGHT_ENTER_THRESHOLD = 0.62;
+const MUSIC_DAY_ENTER_THRESHOLD = 0.38;
 
 type AudioWindow = Window & {
   webkitAudioContext?: typeof AudioContext;
@@ -54,7 +58,12 @@ export function useGameAudio(): GameAudioController {
   const footstepsActiveRef = useRef(false);
   const dayMusicRef = useRef<HTMLAudioElement | null>(null);
   const nightMusicRef = useRef<HTMLAudioElement | null>(null);
-  const musicNightFactorRef = useRef(0);
+  const musicFadeFrameRef = useRef<number | null>(null);
+  const currentMusicModeRef = useRef<MusicTrackId>("day");
+  const desiredMusicModeRef = useRef<MusicTrackId>("day");
+  const musicTransitioningRef = useRef(false);
+  const musicUnlockedRef = useRef(false);
+  const runMusicTransitionRef = useRef<() => void>(() => {});
 
   const ensureAudioGraph = useCallback(() => {
     if (audioContextRef.current && masterGainRef.current) {
@@ -236,6 +245,23 @@ export function useGameAudio(): GameAudioController {
     [startFootsteps, stopFootsteps],
   );
 
+  const cancelMusicFade = useCallback(() => {
+    if (musicFadeFrameRef.current === null) {
+      return;
+    }
+    cancelAnimationFrame(musicFadeFrameRef.current);
+    musicFadeFrameRef.current = null;
+  }, []);
+
+  const getTrackForMode = useCallback((mode: MusicTrackId) => {
+    return mode === "day" ? dayMusicRef.current : nightMusicRef.current;
+  }, []);
+
+  const getOppositeMode = useCallback(
+    (mode: MusicTrackId): MusicTrackId => (mode === "day" ? "night" : "day"),
+    [],
+  );
+
   const ensureMusicTracks = useCallback(() => {
     if (dayMusicRef.current && nightMusicRef.current) {
       return;
@@ -253,39 +279,124 @@ export function useGameAudio(): GameAudioController {
     nightMusicRef.current = nightTrack;
   }, []);
 
-  const syncMusicVolumes = useCallback(() => {
-    const dayTrack = dayMusicRef.current;
-    const nightTrack = nightMusicRef.current;
-    if (!dayTrack || !nightTrack) {
+  const rampTrackVolume = useCallback(
+    (
+      track: HTMLAudioElement,
+      targetVolume: number,
+      durationMs: number,
+      onComplete?: () => void,
+    ) => {
+      cancelMusicFade();
+      const clampedTarget = Math.max(0, Math.min(MUSIC_GAIN, targetVolume));
+      if (durationMs <= 0) {
+        track.volume = clampedTarget;
+        onComplete?.();
+        return;
+      }
+
+      const startVolume = track.volume;
+      const volumeDelta = clampedTarget - startVolume;
+      const startedAtMs = performance.now();
+
+      const step = () => {
+        const elapsedMs = performance.now() - startedAtMs;
+        const progress = Math.min(1, elapsedMs / durationMs);
+        track.volume = startVolume + volumeDelta * progress;
+        if (progress >= 1) {
+          musicFadeFrameRef.current = null;
+          onComplete?.();
+          return;
+        }
+        musicFadeFrameRef.current = requestAnimationFrame(step);
+      };
+
+      musicFadeFrameRef.current = requestAnimationFrame(step);
+    },
+    [cancelMusicFade],
+  );
+
+  const runMusicTransition = useCallback(() => {
+    if (!musicUnlockedRef.current || musicTransitioningRef.current) {
+      return;
+    }
+    if (desiredMusicModeRef.current === currentMusicModeRef.current) {
       return;
     }
 
-    const clampedNightFactor = Math.max(0, Math.min(1, musicNightFactorRef.current));
-    dayTrack.volume = MUSIC_GAIN * (1 - clampedNightFactor);
-    nightTrack.volume = MUSIC_GAIN * clampedNightFactor;
-  }, []);
+    ensureMusicTracks();
+    const fromMode = currentMusicModeRef.current;
+    const toMode = desiredMusicModeRef.current;
+    const fromTrack = getTrackForMode(fromMode);
+    const toTrack = getTrackForMode(toMode);
+    if (!fromTrack || !toTrack) {
+      return;
+    }
+
+    musicTransitioningRef.current = true;
+    rampTrackVolume(fromTrack, 0, MUSIC_FADE_OUT_MS, () => {
+      fromTrack.pause();
+      fromTrack.currentTime = 0;
+
+      toTrack.currentTime = 0;
+      toTrack.volume = 0;
+      void toTrack.play().catch(() => {});
+      rampTrackVolume(toTrack, MUSIC_GAIN, MUSIC_FADE_IN_MS, () => {
+        currentMusicModeRef.current = toMode;
+        musicTransitioningRef.current = false;
+        if (desiredMusicModeRef.current !== currentMusicModeRef.current) {
+          runMusicTransitionRef.current();
+        }
+      });
+    });
+  }, [ensureMusicTracks, getTrackForMode, rampTrackVolume]);
+
+  useEffect(() => {
+    runMusicTransitionRef.current = runMusicTransition;
+  }, [runMusicTransition]);
 
   const resumeMusicPlayback = useCallback(() => {
+    musicUnlockedRef.current = true;
     ensureMusicTracks();
-    syncMusicVolumes();
+    cancelMusicFade();
 
-    const dayTrack = dayMusicRef.current;
-    const nightTrack = nightMusicRef.current;
-    if (!dayTrack || !nightTrack) {
+    const startingMode = desiredMusicModeRef.current;
+    currentMusicModeRef.current = startingMode;
+
+    const activeTrack = getTrackForMode(startingMode);
+    const inactiveTrack = getTrackForMode(getOppositeMode(startingMode));
+    if (!activeTrack || !inactiveTrack) {
       return;
     }
 
-    void dayTrack.play().catch(() => {});
-    void nightTrack.play().catch(() => {});
-  }, [ensureMusicTracks, syncMusicVolumes]);
+    inactiveTrack.pause();
+    inactiveTrack.currentTime = 0;
+    inactiveTrack.volume = 0;
+
+    activeTrack.volume = MUSIC_GAIN;
+    void activeTrack.play().catch(() => {});
+  }, [cancelMusicFade, ensureMusicTracks, getOppositeMode, getTrackForMode]);
 
   const setDayNightMusicBlend = useCallback(
     (nightFactor: number) => {
-      musicNightFactorRef.current = nightFactor;
-      ensureMusicTracks();
-      syncMusicVolumes();
+      const clampedNightFactor = Math.max(0, Math.min(1, nightFactor));
+      const desiredMode = desiredMusicModeRef.current;
+      const nextMode =
+        desiredMode === "day"
+          ? clampedNightFactor >= MUSIC_NIGHT_ENTER_THRESHOLD
+            ? "night"
+            : "day"
+          : clampedNightFactor <= MUSIC_DAY_ENTER_THRESHOLD
+            ? "day"
+            : "night";
+
+      desiredMusicModeRef.current = nextMode;
+      if (!musicUnlockedRef.current) {
+        currentMusicModeRef.current = nextMode;
+        return;
+      }
+      runMusicTransitionRef.current();
     },
-    [ensureMusicTracks, syncMusicVolumes],
+    [],
   );
 
   useEffect(() => {
@@ -311,6 +422,9 @@ export function useGameAudio(): GameAudioController {
     return () => {
       footstepsActiveRef.current = false;
       stopFootsteps();
+      cancelMusicFade();
+      musicUnlockedRef.current = false;
+      musicTransitioningRef.current = false;
 
       const context = audioContextRef.current;
       audioContextRef.current = null;
@@ -331,7 +445,7 @@ export function useGameAudio(): GameAudioController {
         void context.close();
       }
     };
-  }, [stopFootsteps]);
+  }, [cancelMusicFade, stopFootsteps]);
 
   return useMemo(
     () => ({
