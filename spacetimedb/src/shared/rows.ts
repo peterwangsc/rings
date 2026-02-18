@@ -68,6 +68,29 @@ export type GoombaChunkSpawnStateRow = {
   updatedAtMs: number;
 };
 
+export type MysteryBoxStateRow = {
+  mysteryBoxId: string;
+  spawnX: number;
+  spawnY: number;
+  spawnZ: number;
+  x: number;
+  y: number;
+  z: number;
+  state: string;
+  respawnAtMs: number | undefined;
+  updatedAtMs: number;
+};
+
+export type MysteryBoxChunkSpawnStateRow = {
+  chunkKey: string;
+  chunkX: number;
+  chunkZ: number;
+  nextSpawnAtMs: number;
+  spawnSequence: number;
+  activeMysteryBoxId: string | undefined;
+  updatedAtMs: number;
+};
+
 export type FireballEventRow = {
   eventId: string;
   ownerIdentity: string;

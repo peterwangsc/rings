@@ -46,6 +46,8 @@ import CollectRingReducer from "./collect_ring_reducer";
 export { CollectRingReducer };
 import HitGoombaReducer from "./hit_goomba_reducer";
 export { HitGoombaReducer };
+import HitMysteryBoxReducer from "./hit_mystery_box_reducer";
+export { HitMysteryBoxReducer };
 import SendChatMessageReducer from "./send_chat_message_reducer";
 export { SendChatMessageReducer };
 
@@ -60,6 +62,10 @@ import GoombaChunkSpawnStateRow from "./goomba_chunk_spawn_state_table";
 export { GoombaChunkSpawnStateRow };
 import GoombaStateRow from "./goomba_state_table";
 export { GoombaStateRow };
+import MysteryBoxChunkSpawnStateRow from "./mystery_box_chunk_spawn_state_table";
+export { MysteryBoxChunkSpawnStateRow };
+import MysteryBoxStateRow from "./mystery_box_state_table";
+export { MysteryBoxStateRow };
 import PlayerInventoryRow from "./player_inventory_table";
 export { PlayerInventoryRow };
 import PlayerStateRow from "./player_state_table";
@@ -90,8 +96,14 @@ import GoombaState from "./goomba_state_type";
 export { GoombaState };
 import HitGoomba from "./hit_goomba_type";
 export { HitGoomba };
+import HitMysteryBox from "./hit_mystery_box_type";
+export { HitMysteryBox };
 import Init from "./init_type";
 export { Init };
+import MysteryBoxChunkSpawnState from "./mystery_box_chunk_spawn_state_type";
+export { MysteryBoxChunkSpawnState };
+import MysteryBoxState from "./mystery_box_state_type";
+export { MysteryBoxState };
 import OnConnect from "./on_connect_type";
 export { OnConnect };
 import OnDisconnect from "./on_disconnect_type";
@@ -161,6 +173,28 @@ const tablesSchema = __schema(
       { name: 'goomba_state_goombaId_key', constraint: 'unique', columns: ['goombaId'] },
     ],
   }, GoombaStateRow),
+  __table({
+    name: 'mystery_box_chunk_spawn_state',
+    indexes: [
+      { name: 'chunkKey', algorithm: 'btree', columns: [
+        'chunkKey',
+      ] },
+    ],
+    constraints: [
+      { name: 'mystery_box_chunk_spawn_state_chunkKey_key', constraint: 'unique', columns: ['chunkKey'] },
+    ],
+  }, MysteryBoxChunkSpawnStateRow),
+  __table({
+    name: 'mystery_box_state',
+    indexes: [
+      { name: 'mysteryBoxId', algorithm: 'btree', columns: [
+        'mysteryBoxId',
+      ] },
+    ],
+    constraints: [
+      { name: 'mystery_box_state_mysteryBoxId_key', constraint: 'unique', columns: ['mysteryBoxId'] },
+    ],
+  }, MysteryBoxStateRow),
   __table({
     name: 'player_inventory',
     indexes: [
@@ -246,6 +280,7 @@ const reducersSchema = __reducers(
   __reducerSchema("cast_fireball", CastFireballReducer),
   __reducerSchema("collect_ring", CollectRingReducer),
   __reducerSchema("hit_goomba", HitGoombaReducer),
+  __reducerSchema("hit_mystery_box", HitMysteryBoxReducer),
   __reducerSchema("send_chat_message", SendChatMessageReducer),
 );
 

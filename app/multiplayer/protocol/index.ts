@@ -2,6 +2,7 @@ export type {
   CastFireballCommand,
   CollectRingCommand,
   HitGoombaCommand,
+  HitMysteryBoxCommand,
   LocalPlayerSnapshot,
   SendChatMessageCommand,
   UpsertPlayerStateCommand,
@@ -11,6 +12,7 @@ export {
   toCastFireballCommand,
   toCollectRingCommand,
   toHitGoombaCommand,
+  toHitMysteryBoxCommand,
   toSendChatMessageCommand,
   toUpsertPlayerStateCommand,
 } from "./sanity";

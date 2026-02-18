@@ -65,6 +65,7 @@ export interface WorldRingEntity {
   id: string;
   position: readonly [number, number, number];
   collected: boolean;
+  collectedBy?: string;
   source: "starter" | "drop";
   spawnedAtMs?: number;
 }
@@ -75,6 +76,7 @@ export interface WorldRingSnapshot {
   y: number;
   z: number;
   collected: boolean;
+  collectedBy?: string;
   source: "starter" | "drop";
   spawnedAtMs?: number;
 }
@@ -111,6 +113,7 @@ function buildRingEntities() {
       xz[1],
     ] as const,
     collected: false,
+    collectedBy: undefined,
     source: "starter" as const,
     spawnedAtMs: undefined,
   }));
@@ -307,6 +310,7 @@ export function collectWorldRing(world: WorldEntityManager, ringId: string) {
   }
 
   ring.collected = true;
+  ring.collectedBy = undefined;
   syncVisibleRings(world);
   applyRingCountToHud(
     world,
@@ -336,6 +340,7 @@ export function applyServerRingRows(
         id: snapshot.id,
         position: [snapshot.x, snapshot.y, snapshot.z],
         collected: snapshot.collected,
+        collectedBy: snapshot.collectedBy,
         source: snapshot.source,
         spawnedAtMs: snapshot.spawnedAtMs,
       });
@@ -350,11 +355,13 @@ export function applyServerRingRows(
       y !== snapshot.y ||
       z !== snapshot.z ||
       existing.collected !== snapshot.collected ||
+      existing.collectedBy !== snapshot.collectedBy ||
       existing.source !== snapshot.source ||
       existing.spawnedAtMs !== snapshot.spawnedAtMs
     ) {
       existing.position = [snapshot.x, snapshot.y, snapshot.z];
       existing.collected = snapshot.collected;
+      existing.collectedBy = snapshot.collectedBy;
       existing.source = snapshot.source;
       existing.spawnedAtMs = snapshot.spawnedAtMs;
       didChange = true;

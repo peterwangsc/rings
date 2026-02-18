@@ -11,6 +11,7 @@ import type { PlayerStateRow } from '../shared/rows';
 import { nowMs } from '../shared/time';
 import { spacetimedb } from '../schema';
 import { tickGoombas } from '../systems/goombas';
+import { tickMysteryBoxes } from '../systems/mysteryBoxes';
 import { pruneExpiredRows } from '../systems/prune';
 import {
   isFiniteNumber,
@@ -130,6 +131,7 @@ spacetimedb.reducer(
       }
     }
     tickGoombas(ctx, timestampMs);
+    tickMysteryBoxes(ctx, timestampMs);
     pruneExpiredRows(ctx, timestampMs);
 
     return { tag: 'ok' };

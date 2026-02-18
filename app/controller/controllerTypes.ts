@@ -1,10 +1,7 @@
 import type { CameraMode } from "../camera/cameraTypes";
 import type { FireballManager } from "../gameplay/abilities/fireballManager";
 import type { MutableRefObject } from "react";
-import type {
-  CastFireballCommand,
-  HitGoombaCommand,
-} from "../multiplayer/protocol";
+import type { CastFireballCommand, HitGoombaCommand } from "../multiplayer/protocol";
 import type {
   AuthoritativePlayerState,
   FireballSpawnEvent,

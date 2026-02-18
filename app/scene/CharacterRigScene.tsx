@@ -18,6 +18,7 @@ import { CharacterRigController } from "../controller/CharacterRigController";
 import type { MobileMoveInput } from "../controller/controllerTypes";
 import { RingField } from "../gameplay/collectibles/RingField";
 import { GoombaLayer } from "../gameplay/goombas/GoombaLayer";
+import { MysteryBoxLayer } from "../gameplay/mysteryBoxes/MysteryBoxLayer";
 import { RemotePlayersLayer } from "../gameplay/multiplayer/RemotePlayersLayer";
 import { ChatOverlay } from "../hud/ChatOverlay";
 import { GameHUD } from "../hud/GameHUD";
@@ -47,6 +48,7 @@ import { DEFAULT_GUEST_DISPLAY_NAME } from "../multiplayer/spacetime/guestDispla
 import {
   FPS_TOGGLE_KEY,
   GOOMBA_INTERACT_DISABLED_STATE,
+  MYSTERY_BOX_INTERACT_DISABLED_STATE,
   HORIZON_COLOR,
   SKY_FOG_FAR,
   SKY_FOG_NEAR,
@@ -182,8 +184,13 @@ function CharacterRigSceneContent({
   const networkFireballSpawnQueueRef = useRef<FireballSpawnEvent[]>([]);
   const previousLocalRingCountRef = useRef(worldEntityManager.hud.ringCount);
   const hasRingCountSnapshotRef = useRef(false);
+  const previousLocallyCollectedRingIdsRef = useRef<Set<string>>(new Set());
+  const hasLocalRingCollectionSnapshotRef = useRef(false);
+  const localRingCollectionSnapshotIdentityRef = useRef<string | null>(null);
   const previousGoombaStateByIdRef = useRef<Map<string, string>>(new Map());
   const hasGoombaSnapshotRef = useRef(false);
+  const previousMysteryBoxStateByIdRef = useRef<Map<string, string>>(new Map());
+  const hasMysteryBoxSnapshotRef = useRef(false);
   const fallbackMusicCycleAnchorMsRef = useRef<number | null>(null);
 
   const {
@@ -204,6 +211,7 @@ function CharacterRigSceneContent({
     sendRingCollect,
     sendChatMessage,
     sendGoombaHit,
+    sendMysteryBoxHit,
   } = useMultiplayerSync({
     store: multiplayerStore,
     worldEntityManager,
@@ -220,6 +228,10 @@ function CharacterRigSceneContent({
   const goombas = useMemo(
     () => Array.from(multiplayerState.goombas.values()),
     [multiplayerState.goombas],
+  );
+  const mysteryBoxes = useMemo(
+    () => Array.from(multiplayerState.mysteryBoxes.values()),
+    [multiplayerState.mysteryBoxes],
   );
   const activeChatMessages = useMemo(() => {
     const visible = multiplayerState.chatMessages.filter(
@@ -428,6 +440,58 @@ function CharacterRigSceneContent({
   }, [worldEntityManager]);
 
   useEffect(() => {
+    const localIdentity = multiplayerState.localIdentity;
+    if (
+      !hasAuthoritativeMultiplayer ||
+      !localIdentity ||
+      multiplayerState.diagnostics.ringRowCount <= 0
+    ) {
+      hasLocalRingCollectionSnapshotRef.current = false;
+      localRingCollectionSnapshotIdentityRef.current = null;
+      previousLocallyCollectedRingIdsRef.current.clear();
+      return;
+    }
+
+    if (localRingCollectionSnapshotIdentityRef.current !== localIdentity) {
+      hasLocalRingCollectionSnapshotRef.current = false;
+      localRingCollectionSnapshotIdentityRef.current = localIdentity;
+      previousLocallyCollectedRingIdsRef.current.clear();
+    }
+
+    const nextLocallyCollectedRingIds = new Set<string>();
+    for (const ring of worldEntityManager.ringEntities) {
+      if (ring.collected && ring.collectedBy === localIdentity) {
+        nextLocallyCollectedRingIds.add(ring.id);
+      }
+    }
+
+    if (!hasLocalRingCollectionSnapshotRef.current) {
+      hasLocalRingCollectionSnapshotRef.current = true;
+      previousLocallyCollectedRingIdsRef.current = nextLocallyCollectedRingIds;
+      return;
+    }
+
+    const previousLocallyCollectedRingIds = previousLocallyCollectedRingIdsRef.current;
+    let newlyCollectedRingCount = 0;
+    for (const ringId of nextLocallyCollectedRingIds) {
+      if (!previousLocallyCollectedRingIds.has(ringId)) {
+        newlyCollectedRingCount += 1;
+      }
+    }
+    previousLocallyCollectedRingIdsRef.current = nextLocallyCollectedRingIds;
+    for (let index = 0; index < newlyCollectedRingCount; index += 1) {
+      playCoin();
+    }
+  }, [
+    hasAuthoritativeMultiplayer,
+    multiplayerState.diagnostics.ringRowCount,
+    multiplayerState.localIdentity,
+    playCoin,
+    worldEntityManager,
+    worldVersion,
+  ]);
+
+  useEffect(() => {
     const ringCount = worldEntityManager.hud.ringCount;
     if (!hasRingCountSnapshotRef.current) {
       hasRingCountSnapshotRef.current = true;
@@ -438,9 +502,11 @@ function CharacterRigSceneContent({
     const ringCountDelta = ringCount - previousLocalRingCountRef.current;
     previousLocalRingCountRef.current = ringCount;
     if (ringCountDelta > 0) {
-      const playbackCount = Math.min(ringCountDelta, 4);
-      for (let index = 0; index < playbackCount; index += 1) {
-        playCoin();
+      if (!hasAuthoritativeMultiplayer) {
+        const playbackCount = Math.min(ringCountDelta, 4);
+        for (let index = 0; index < playbackCount; index += 1) {
+          playCoin();
+        }
       }
       return;
     }
@@ -449,7 +515,13 @@ function CharacterRigSceneContent({
       damageEventCounterRef.current += 1;
       playGoombaDefeated();
     }
-  }, [playCoin, playGoombaDefeated, worldEntityManager, worldVersion]);
+  }, [
+    hasAuthoritativeMultiplayer,
+    playCoin,
+    playGoombaDefeated,
+    worldEntityManager,
+    worldVersion,
+  ]);
 
   useEffect(() => {
     if (fallbackMusicCycleAnchorMsRef.current === null) {
@@ -509,6 +581,37 @@ function CharacterRigSceneContent({
       playGoombaDefeated();
     }
   }, [goombas, playGoombaDefeated]);
+
+  useEffect(() => {
+    const nextStateById = new Map<string, string>();
+
+    if (!hasMysteryBoxSnapshotRef.current) {
+      for (const mysteryBox of mysteryBoxes) {
+        nextStateById.set(mysteryBox.mysteryBoxId, mysteryBox.state);
+      }
+      previousMysteryBoxStateByIdRef.current = nextStateById;
+      hasMysteryBoxSnapshotRef.current = true;
+      return;
+    }
+
+    const previousStateById = previousMysteryBoxStateByIdRef.current;
+    let activatedTransitions = 0;
+    for (const mysteryBox of mysteryBoxes) {
+      const previousState = previousStateById.get(mysteryBox.mysteryBoxId);
+      nextStateById.set(mysteryBox.mysteryBoxId, mysteryBox.state);
+      if (
+        mysteryBox.state === MYSTERY_BOX_INTERACT_DISABLED_STATE &&
+        previousState !== MYSTERY_BOX_INTERACT_DISABLED_STATE
+      ) {
+        activatedTransitions += 1;
+      }
+    }
+
+    previousMysteryBoxStateByIdRef.current = nextStateById;
+    for (let index = 0; index < activatedTransitions; index += 1) {
+      playGoombaDefeated();
+    }
+  }, [mysteryBoxes, playGoombaDefeated]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -701,6 +804,10 @@ function CharacterRigSceneContent({
               }
             />
             <GoombaLayer goombas={goombas} />
+            <MysteryBoxLayer
+              mysteryBoxes={mysteryBoxes}
+              onLocalMysteryBoxHit={sendMysteryBoxHit}
+            />
             <RemotePlayersLayer
               players={remotePlayers}
               activeChatByIdentity={activeChatByIdentity}

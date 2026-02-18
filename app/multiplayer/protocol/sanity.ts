@@ -3,6 +3,7 @@ import type {
   CastFireballCommand,
   CollectRingCommand,
   HitGoombaCommand,
+  HitMysteryBoxCommand,
   LocalPlayerSnapshot,
   SendChatMessageCommand,
   UpsertPlayerStateCommand,
@@ -111,6 +112,16 @@ export function toHitGoombaCommand(
     return null;
   }
   return { goombaId: normalizedGoombaId };
+}
+
+export function toHitMysteryBoxCommand(
+  mysteryBoxId: string,
+): HitMysteryBoxCommand | null {
+  const normalizedMysteryBoxId = mysteryBoxId.trim();
+  if (!isNonEmptyString(normalizedMysteryBoxId)) {
+    return null;
+  }
+  return { mysteryBoxId: normalizedMysteryBoxId };
 }
 
 export function toSendChatMessageCommand(

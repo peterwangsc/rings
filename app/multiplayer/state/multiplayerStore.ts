@@ -6,6 +6,7 @@ import type {
   ChatMessageEvent,
   ConnectionStatus,
   GoombaState,
+  MysteryBoxState,
   MultiplayerDiagnostics,
   MultiplayerState,
   PlayerInventorySnapshot,
@@ -101,6 +102,7 @@ export function createMultiplayerStore(
       playerInventories: new Map(),
       playerStats: new Map(),
       goombas: new Map(),
+      mysteryBoxes: new Map(),
       collectedRingIds: new Set(),
       chatMessages: [],
       diagnostics: { ...EMPTY_DIAGNOSTICS },
@@ -288,6 +290,21 @@ export function setGoombas(
   store.state = {
     ...store.state,
     goombas: new Map(goombas),
+  };
+  emitChanged(store);
+}
+
+export function setMysteryBoxes(
+  store: MultiplayerStore,
+  mysteryBoxes: Map<string, MysteryBoxState>,
+) {
+  if (!hasMapContentChanged(store.state.mysteryBoxes, mysteryBoxes)) {
+    return;
+  }
+
+  store.state = {
+    ...store.state,
+    mysteryBoxes: new Map(mysteryBoxes),
   };
   emitChanged(store);
 }
