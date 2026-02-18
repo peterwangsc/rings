@@ -178,6 +178,7 @@ function CharacterRigSceneContent({
   const mobileMoveInputRef = useRef<MobileMoveInput>({ x: 0, y: 0 });
   const mobileJumpPressedRef = useRef(false);
   const mobileFireballTriggerRef = useRef(0);
+  const damageEventCounterRef = useRef(0);
   const networkFireballSpawnQueueRef = useRef<FireballSpawnEvent[]>([]);
   const previousLocalRingCountRef = useRef(worldEntityManager.hud.ringCount);
   const hasRingCountSnapshotRef = useRef(false);
@@ -434,17 +435,21 @@ function CharacterRigSceneContent({
       return;
     }
 
-    const gainedRingCount = ringCount - previousLocalRingCountRef.current;
+    const ringCountDelta = ringCount - previousLocalRingCountRef.current;
     previousLocalRingCountRef.current = ringCount;
-    if (gainedRingCount <= 0) {
+    if (ringCountDelta > 0) {
+      const playbackCount = Math.min(ringCountDelta, 4);
+      for (let index = 0; index < playbackCount; index += 1) {
+        playCoin();
+      }
       return;
     }
 
-    const playbackCount = Math.min(gainedRingCount, 4);
-    for (let index = 0; index < playbackCount; index += 1) {
-      playCoin();
+    if (ringCountDelta < 0) {
+      damageEventCounterRef.current += 1;
+      playGoombaDefeated();
     }
-  }, [playCoin, worldEntityManager, worldVersion]);
+  }, [playCoin, playGoombaDefeated, worldEntityManager, worldVersion]);
 
   useEffect(() => {
     if (fallbackMusicCycleAnchorMsRef.current === null) {
@@ -711,6 +716,7 @@ function CharacterRigSceneContent({
               mobileMoveInputRef={mobileMoveInputRef}
               mobileJumpPressedRef={mobileJumpPressedRef}
               mobileFireballTriggerRef={mobileFireballTriggerRef}
+              damageEventCounterRef={damageEventCounterRef}
               fireballManager={worldEntityManager.fireballManager}
               onLocalPlayerSnapshot={sendLocalPlayerSnapshot}
               onLocalFireballCast={sendLocalFireballCast}

@@ -43,6 +43,7 @@ export interface CharacterRigControllerProps {
   readonly onLocalFireballSound?: () => void;
   readonly onLocalJump?: () => void;
   readonly onLocalFootstepsActiveChange?: (isActive: boolean) => void;
+  readonly damageEventCounterRef?: MutableRefObject<number>;
   readonly goombas?: readonly GoombaState[];
   readonly onLocalGoombaHit?: (goombaId: HitGoombaCommand["goombaId"]) => void;
   readonly authoritativeLocalPlayerState?: AuthoritativePlayerState | null;

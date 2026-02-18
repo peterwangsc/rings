@@ -89,6 +89,9 @@ const RECONCILIATION_HARD_DISTANCE_SQUARED = 2.5 * 2.5;
 const MAX_LOCAL_FIREBALL_REQUESTS_PER_FRAME = 4;
 const MAX_NETWORK_FIREBALL_SPAWNS_PER_FRAME = 6;
 const FOOTSTEPS_MIN_PLANAR_SPEED = 0.32;
+const DAMAGE_KNOCKBACK_HORIZONTAL_SPEED = 36.25;
+const DAMAGE_KNOCKBACK_VERTICAL_VELOCITY = 23.2;
+const DAMAGE_DIRECTION_EPSILON_SQUARED = 1e-6;
 const GOOMBA_STOMP_RADIUS_SQUARED = GOOMBA_STOMP_RADIUS * GOOMBA_STOMP_RADIUS;
 const FIREBALL_GOOMBA_HIT_RADIUS_SQUARED =
   (GOOMBA_FIREBALL_HITBOX_RADIUS + FIREBALL_RADIUS) *
@@ -185,8 +188,10 @@ function getSegmentToSegmentDistanceSquared(
     }
   }
 
-  const s = Math.abs(sNumerator) <= SEGMENT_EPSILON ? 0 : sNumerator / sDenominator;
-  const t = Math.abs(tNumerator) <= SEGMENT_EPSILON ? 0 : tNumerator / tDenominator;
+  const s =
+    Math.abs(sNumerator) <= SEGMENT_EPSILON ? 0 : sNumerator / sDenominator;
+  const t =
+    Math.abs(tNumerator) <= SEGMENT_EPSILON ? 0 : tNumerator / tDenominator;
 
   const dx = offsetX + directionAX * s - directionBX * t;
   const dy = offsetY + directionAY * s - directionBY * t;
@@ -194,9 +199,9 @@ function getSegmentToSegmentDistanceSquared(
   return dx * dx + dy * dy + dz * dz;
 }
 
-function shouldCollideFireball(
-  collider: { parent(): { userData?: { kind?: string } } | null },
-) {
+function shouldCollideFireball(collider: {
+  parent(): { userData?: { kind?: string } } | null;
+}) {
   const parentBody = collider.parent();
   const userData = parentBody?.userData as { kind?: string } | undefined;
   return userData?.kind !== "terrain";
@@ -213,6 +218,7 @@ export function CharacterRigController({
   mobileMoveInputRef,
   mobileJumpPressedRef,
   mobileFireballTriggerRef,
+  damageEventCounterRef,
   fireballManager,
   onLocalPlayerSnapshot,
   onLocalFireballCast,
@@ -249,6 +255,7 @@ export function CharacterRigController({
   const networkFireballQueueReadIndexRef = useRef(0);
   const snapshotAccumulatorSecondsRef = useRef(0);
   const localInputSequenceRef = useRef(0);
+  const lastProcessedDamageEventCounterRef = useRef(0);
   const goombaHitTimestampsRef = useRef(new Map<string, number>());
   const footstepsAudioActiveRef = useRef(false);
   const motionStateRef = useRef<MotionState>("idle");
@@ -288,7 +295,10 @@ export function CharacterRigController({
     () => new rapier.Ball(THIRD_PERSON_CAMERA_COLLISION_RADIUS),
     [rapier],
   );
-  const fireballCastShape = useMemo(() => new rapier.Ball(FIREBALL_RADIUS), [rapier]);
+  const fireballCastShape = useMemo(
+    () => new rapier.Ball(FIREBALL_RADIUS),
+    [rapier],
+  );
   const groundingRay = useMemo(
     () => new rapier.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 }),
     [rapier],
@@ -306,7 +316,10 @@ export function CharacterRigController({
       fireballLaunchDirectionRef.current.z,
     );
     if (fireballPlanarDirectionRef.current.lengthSq() < 1e-6) {
-      getForwardFromYaw(cameraYawRef.current, fireballPlanarDirectionRef.current);
+      getForwardFromYaw(
+        cameraYawRef.current,
+        fireballPlanarDirectionRef.current,
+      );
     }
     fireballPlanarDirectionRef.current.normalize();
 
@@ -394,7 +407,9 @@ export function CharacterRigController({
       return;
     }
     const targetFov =
-      cameraMode === "first_person" ? FIRST_PERSON_CAMERA_FOV : THIRD_PERSON_CAMERA_FOV;
+      cameraMode === "first_person"
+        ? FIRST_PERSON_CAMERA_FOV
+        : THIRD_PERSON_CAMERA_FOV;
     if (perspectiveCamera.fov !== targetFov) {
       perspectiveCamera.fov = targetFov;
       perspectiveCamera.updateProjectionMatrix();
@@ -447,10 +462,20 @@ export function CharacterRigController({
       jumpIntentTimerRef.current = JUMP_INPUT_BUFFER_SECONDS;
     }
     mobileJumpWasPressedRef.current = mobileJumpPressed;
-    if (mobileFireballTriggerCount > lastProcessedMobileFireballTriggerRef.current) {
+    if (
+      mobileFireballTriggerCount > lastProcessedMobileFireballTriggerRef.current
+    ) {
       fireballRequestCountRef.current +=
-        mobileFireballTriggerCount - lastProcessedMobileFireballTriggerRef.current;
-      lastProcessedMobileFireballTriggerRef.current = mobileFireballTriggerCount;
+        mobileFireballTriggerCount -
+        lastProcessedMobileFireballTriggerRef.current;
+      lastProcessedMobileFireballTriggerRef.current =
+        mobileFireballTriggerCount;
+    }
+    const damageCounter = damageEventCounterRef?.current ?? 0;
+    const hasPendingDamageEvent =
+      damageCounter > lastProcessedDamageEventCounterRef.current;
+    if (hasPendingDamageEvent) {
+      lastProcessedDamageEventCounterRef.current = damageCounter;
     }
 
     const translation = body.translation();
@@ -520,7 +545,8 @@ export function CharacterRigController({
       groundedRecoveryLatchRef.current;
     const canConsumeJumpIntent = isGroundedStable;
 
-    const keyboardForwardInput = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
+    const keyboardForwardInput =
+      (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
     const keyboardRightInput = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     const moveForwardInput = THREE.MathUtils.clamp(
       keyboardForwardInput - (mobileMoveInput?.y ?? 0),
@@ -574,10 +600,47 @@ export function CharacterRigController({
       const nextPlanarSpeedSquared =
         nextVelocityX * nextVelocityX + nextVelocityZ * nextVelocityZ;
       if (nextPlanarSpeedSquared > targetSpeed * targetSpeed) {
-        const planarSpeedScale = targetSpeed / Math.sqrt(nextPlanarSpeedSquared);
+        const planarSpeedScale =
+          targetSpeed / Math.sqrt(nextPlanarSpeedSquared);
         nextVelocityX *= planarSpeedScale;
         nextVelocityZ *= planarSpeedScale;
       }
+    }
+    if (hasPendingDamageEvent) {
+      let knockbackDirectionX = 0;
+      let knockbackDirectionZ = 0;
+      let nearestGoombaDistanceSquared = Infinity;
+      if (goombas) {
+        for (let index = 0; index < goombas.length; index += 1) {
+          const goomba = goombas[index];
+          if (goomba.state === GOOMBA_INTERACT_DISABLED_STATE) {
+            continue;
+          }
+          const dx = translation.x - goomba.x;
+          const dz = translation.z - goomba.z;
+          const distanceSquared = dx * dx + dz * dz;
+          if (
+            distanceSquared >= nearestGoombaDistanceSquared ||
+            distanceSquared <= DAMAGE_DIRECTION_EPSILON_SQUARED
+          ) {
+            continue;
+          }
+          const inverseDistance = 1 / Math.sqrt(distanceSquared);
+          knockbackDirectionX = dx * inverseDistance;
+          knockbackDirectionZ = dz * inverseDistance;
+          nearestGoombaDistanceSquared = distanceSquared;
+        }
+      }
+      if (
+        knockbackDirectionX * knockbackDirectionX +
+          knockbackDirectionZ * knockbackDirectionZ <=
+        DAMAGE_DIRECTION_EPSILON_SQUARED
+      ) {
+        knockbackDirectionX = -forwardRef.current.x;
+        knockbackDirectionZ = -forwardRef.current.z;
+      }
+      nextVelocityX = knockbackDirectionX * DAMAGE_KNOCKBACK_HORIZONTAL_SPEED;
+      nextVelocityZ = knockbackDirectionZ * DAMAGE_KNOCKBACK_HORIZONTAL_SPEED;
     }
 
     let didJump = false;
@@ -594,13 +657,28 @@ export function CharacterRigController({
     if (didJump) {
       onLocalJump?.();
     }
+    if (hasPendingDamageEvent) {
+      nextVelocityY = Math.max(
+        nextVelocityY,
+        DAMAGE_KNOCKBACK_VERTICAL_VELOCITY,
+      );
+      jumpIntentTimerRef.current = 0;
+      ungroundedTimerRef.current = GROUNDED_GRACE_SECONDS;
+      verticalStillTimerRef.current = 0;
+      isInVerticalStillBandRef.current = false;
+      groundedRecoveryLatchRef.current = false;
+    }
 
     body.setLinvel(
       { x: nextVelocityX, y: nextVelocityY, z: nextVelocityZ },
       true,
     );
 
-    if (goombas && onLocalGoombaHit && nextVelocityY < -GOOMBA_STOMP_MIN_FALL_SPEED) {
+    if (
+      goombas &&
+      onLocalGoombaHit &&
+      nextVelocityY < -GOOMBA_STOMP_MIN_FALL_SPEED
+    ) {
       const playerFeetY =
         translation.y - (PLAYER_CAPSULE_HALF_HEIGHT + PLAYER_CAPSULE_RADIUS);
       for (let index = 0; index < goombas.length; index += 1) {
@@ -686,7 +764,11 @@ export function CharacterRigController({
       previousState: motionStateRef.current,
     });
 
-    setMotionStateIfChanged(targetMotionState, motionStateRef, setActorMotionState);
+    setMotionStateIfChanged(
+      targetMotionState,
+      motionStateRef,
+      setActorMotionState,
+    );
 
     playerPositionRef.current.set(translation.x, translation.y, translation.z);
     onPlayerPositionUpdate?.(translation.x, translation.y, translation.z);
@@ -748,7 +830,8 @@ export function CharacterRigController({
     }
 
     const pendingFireballRequests =
-      fireballRequestCountRef.current - lastProcessedFireballRequestCountRef.current;
+      fireballRequestCountRef.current -
+      lastProcessedFireballRequestCountRef.current;
     if (pendingFireballRequests > 0) {
       const requestsToProcess = Math.min(
         pendingFireballRequests,
@@ -805,7 +888,11 @@ export function CharacterRigController({
           return;
         }
 
-        for (let goombaIndex = 0; goombaIndex < goombas.length; goombaIndex += 1) {
+        for (
+          let goombaIndex = 0;
+          goombaIndex < goombas.length;
+          goombaIndex += 1
+        ) {
           const goomba = goombas[goombaIndex];
           if (goomba.state === GOOMBA_INTERACT_DISABLED_STATE) {
             continue;
@@ -870,7 +957,8 @@ export function CharacterRigController({
     cameraCollisionOrigin.x = cameraPivotRef.current.x;
     cameraCollisionOrigin.y = cameraPivotRef.current.y;
     cameraCollisionOrigin.z = cameraPivotRef.current.z;
-    const cameraCollisionCastDirection = cameraCollisionCastDirectionRef.current;
+    const cameraCollisionCastDirection =
+      cameraCollisionCastDirectionRef.current;
     cameraCollisionCastDirection.x = cameraCollisionDirectionRef.current.x;
     cameraCollisionCastDirection.y = cameraCollisionDirectionRef.current.y;
     cameraCollisionCastDirection.z = cameraCollisionDirectionRef.current.z;
