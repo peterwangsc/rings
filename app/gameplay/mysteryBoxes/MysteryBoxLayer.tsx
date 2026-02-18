@@ -33,6 +33,8 @@ const BOX_GLOW_DISTANCE = 4.2;
 const BOX_GLOW_DECAY = 2;
 const UNDERSIDE_SENSOR_HALF_HEIGHT = 0.07;
 const UNDERSIDE_SENSOR_INSET = 0.03;
+const UNDERSIDE_SENSOR_HALF_EXTENT =
+  MYSTERY_BOX_HALF_EXTENT - UNDERSIDE_SENSOR_INSET;
 const LOCAL_HIT_RETRY_COOLDOWN_MS = 120;
 const LOCAL_SENSOR_MIN_UPWARD_VELOCITY = 0.1;
 
@@ -45,29 +47,30 @@ function hashStringToUint32(value: string) {
   return hash >>> 0;
 }
 
-function setObjectOpacity(root: THREE.Object3D, opacity: number) {
-  const clampedOpacity = THREE.MathUtils.clamp(opacity, 0, 1);
-
+function collectMaterials(root: THREE.Object3D) {
+  const materials: THREE.Material[] = [];
   root.traverse((object) => {
     const materialCandidate = (object as THREE.Mesh).material;
     if (!materialCandidate) {
       return;
     }
-
-    const applyOpacity = (material: THREE.Material) => {
-      material.transparent = true;
-      material.opacity = clampedOpacity;
-    };
-
     if (Array.isArray(materialCandidate)) {
-      for (const material of materialCandidate) {
-        applyOpacity(material);
-      }
+      materials.push(...materialCandidate);
       return;
     }
-
-    applyOpacity(materialCandidate);
+    materials.push(materialCandidate);
   });
+  return materials;
+}
+
+function setMaterialsOpacity(materials: readonly THREE.Material[], opacity: number) {
+  const clampedOpacity = THREE.MathUtils.clamp(opacity, 0, 1);
+
+  for (let index = 0; index < materials.length; index += 1) {
+    const material = materials[index];
+    material.transparent = true;
+    material.opacity = clampedOpacity;
+  }
 }
 
 function createQuestionMarkTexture() {
@@ -127,9 +130,10 @@ function MysteryBoxActor({
   material: THREE.MeshStandardMaterial;
   onLocalMysteryBoxHit?: (mysteryBoxId: string) => void;
 }) {
-  const rootRef = useRef<THREE.Group>(null);
   const boxRef = useRef<THREE.Mesh>(null);
   const poofRef = useRef<THREE.Group>(null);
+  const poofMaterialsRef = useRef<THREE.Material[]>([]);
+  const poofOpacityRef = useRef(DEPLETION_POOF_BASE_OPACITY);
   const wasDepletedRef = useRef(
     mysteryBox.state === MYSTERY_BOX_INTERACT_DISABLED_STATE,
   );
@@ -146,13 +150,18 @@ function MysteryBoxActor({
     }
     poof.visible = false;
     poof.scale.setScalar(DEPLETION_POOF_START_SCALE);
-    setObjectOpacity(poof, DEPLETION_POOF_BASE_OPACITY);
+    const poofMaterials = collectMaterials(poof);
+    poofMaterialsRef.current = poofMaterials;
+    poofOpacityRef.current = DEPLETION_POOF_BASE_OPACITY;
+    setMaterialsOpacity(poofMaterials, DEPLETION_POOF_BASE_OPACITY);
+    return () => {
+      poofMaterialsRef.current = [];
+    };
   }, []);
 
   useFrame((state) => {
-    const root = rootRef.current;
     const box = boxRef.current;
-    if (!root || !box) {
+    if (!box) {
       return;
     }
     const poof = poofRef.current;
@@ -232,13 +241,16 @@ function MysteryBoxActor({
         easedPoof,
       ),
     );
-    setObjectOpacity(poof, DEPLETION_POOF_BASE_OPACITY * (1 - poofProgress));
+    const nextPoofOpacity = DEPLETION_POOF_BASE_OPACITY * (1 - poofProgress);
+    if (Math.abs(nextPoofOpacity - poofOpacityRef.current) < 0.001) {
+      return;
+    }
+    poofOpacityRef.current = nextPoofOpacity;
+    setMaterialsOpacity(poofMaterialsRef.current, nextPoofOpacity);
   });
 
   const hasSolidCollider =
     mysteryBox.state !== MYSTERY_BOX_INTERACT_DISABLED_STATE;
-  const undersideSensorHalfExtent =
-    MYSTERY_BOX_HALF_EXTENT - UNDERSIDE_SENSOR_INSET;
 
   const handleUndersideIntersection = useCallback(
     (payload: IntersectionEnterPayload) => {
@@ -292,15 +304,15 @@ function MysteryBoxActor({
               0,
             ]}
             args={[
-              undersideSensorHalfExtent,
+              UNDERSIDE_SENSOR_HALF_EXTENT,
               UNDERSIDE_SENSOR_HALF_HEIGHT,
-              undersideSensorHalfExtent,
+              UNDERSIDE_SENSOR_HALF_EXTENT,
             ]}
             onIntersectionEnter={handleUndersideIntersection}
           />
         </>
       ) : null}
-      <group ref={rootRef}>
+      <group>
         <mesh
           ref={boxRef}
           castShadow

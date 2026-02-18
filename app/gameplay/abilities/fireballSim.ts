@@ -130,12 +130,13 @@ export function simulateFireballStep(
     const stepX = resolvedNextX - state.x;
     const stepY = resolvedNextY - state.y;
     const stepZ = resolvedNextZ - state.z;
-    const stepLength = Math.hypot(stepX, stepY, stepZ);
+    const stepLengthSquared = stepX * stepX + stepY * stepY + stepZ * stepZ;
+    const stepLength = Math.sqrt(stepLengthSquared);
 
     let advancedDistance = stepLength;
     let hitSolidObstacle = false;
 
-    if (stepLength > 1e-6) {
+    if (stepLengthSquared > 1e-12) {
       const inverseStepLength = 1 / stepLength;
       const dirX = stepX * inverseStepLength;
       const dirY = stepY * inverseStepLength;

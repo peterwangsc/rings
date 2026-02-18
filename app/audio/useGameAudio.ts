@@ -2,16 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
-type SoundId = "coin" | "fireball" | "footsteps" | "goomba" | "jump";
+type SoundId = "coin" | "footsteps" | "goomba" | "jump" | "shoot";
 type OneShotSoundId = Exclude<SoundId, "footsteps">;
 type MusicTrackId = "day" | "night";
 
 const SOUND_PATH_BY_ID: Record<SoundId, string> = {
   coin: "/sounds/coin.mp3",
-  fireball: "/sounds/fireball.mp3",
   footsteps: "/sounds/footsteps.mp3",
   goomba: "/sounds/goomba.mp3",
   jump: "/sounds/jump.mp3",
+  shoot: "/sounds/fireball.mp3",
 };
 const MUSIC_PATH_BY_ID: Record<MusicTrackId, string> = {
   day: "/music/day.mp3",
@@ -20,9 +20,9 @@ const MUSIC_PATH_BY_ID: Record<MusicTrackId, string> = {
 
 const ONE_SHOT_GAIN: Record<OneShotSoundId, number> = {
   coin: 0.58,
-  fireball: 0.5,
   goomba: 0.6,
   jump: 0.62,
+  shoot: 0.5,
 };
 
 const FOOTSTEPS_GAIN = 0.26;
@@ -39,7 +39,7 @@ type AudioWindow = Window & {
 
 export interface GameAudioController {
   playCoin: () => void;
-  playFireball: () => void;
+  playShoot: () => void;
   playJump: () => void;
   playGoombaDefeated: () => void;
   setFootstepsActive: (isActive: boolean) => void;
@@ -403,10 +403,10 @@ export function useGameAudio(): GameAudioController {
     const warmAudio = () => {
       void unlockAudio();
       void loadBuffer("coin");
-      void loadBuffer("fireball");
       void loadBuffer("footsteps");
       void loadBuffer("goomba");
       void loadBuffer("jump");
+      void loadBuffer("shoot");
       resumeMusicPlayback();
     };
 
@@ -450,7 +450,7 @@ export function useGameAudio(): GameAudioController {
   return useMemo(
     () => ({
       playCoin: () => playOneShot("coin"),
-      playFireball: () => playOneShot("fireball"),
+      playShoot: () => playOneShot("shoot"),
       playJump: () => playOneShot("jump"),
       playGoombaDefeated: () => playOneShot("goomba"),
       setFootstepsActive,
