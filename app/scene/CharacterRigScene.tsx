@@ -195,7 +195,7 @@ function CharacterRigSceneContent({
 
   const {
     playCoin,
-    playFireball,
+    playShoot,
     playJump,
     playGoombaDefeated,
     setFootstepsActive,
@@ -827,7 +827,7 @@ function CharacterRigSceneContent({
               fireballManager={worldEntityManager.fireballManager}
               onLocalPlayerSnapshot={sendLocalPlayerSnapshot}
               onLocalFireballCast={sendLocalFireballCast}
-              onLocalFireballSound={playFireball}
+              onLocalShootSound={playShoot}
               onLocalJump={playJump}
               onLocalFootstepsActiveChange={setFootstepsActive}
               goombas={goombas}

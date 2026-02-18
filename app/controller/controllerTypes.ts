@@ -37,7 +37,7 @@ export interface CharacterRigControllerProps {
   readonly fireballManager?: FireballManager;
   readonly onLocalPlayerSnapshot?: (snapshot: NetPlayerSnapshot) => void;
   readonly onLocalFireballCast?: (request: CastFireballCommand) => void;
-  readonly onLocalFireballSound?: () => void;
+  readonly onLocalShootSound?: () => void;
   readonly onLocalJump?: () => void;
   readonly onLocalFootstepsActiveChange?: (isActive: boolean) => void;
   readonly damageEventCounterRef?: MutableRefObject<number>;

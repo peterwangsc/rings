@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { WORLD_UP } from "./constants";
 
 export function normalizeAngle(angle: number): number {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
@@ -15,16 +14,24 @@ export function getForwardFromYaw(
 ): THREE.Vector3 {
   // Right-handed world: yaw = 0 faces -Z, positive yaw rotates toward +X.
   target.set(Math.sin(yaw), 0, -Math.cos(yaw));
-  return target.normalize();
+  return target;
 }
 
 export function getRightFromForward(
   forward: THREE.Vector3,
   target: THREE.Vector3,
 ): THREE.Vector3 {
-  // RH basis: right = forward x up.
-  target.crossVectors(forward, WORLD_UP);
-  return target.normalize();
+  // RH basis with up=(0,1,0): right = (-forward.z, 0, forward.x).
+  const rightX = -forward.z;
+  const rightZ = forward.x;
+  const planarLengthSquared = rightX * rightX + rightZ * rightZ;
+  if (planarLengthSquared <= 1e-12) {
+    target.set(1, 0, 0);
+    return target;
+  }
+  const inversePlanarLength = 1 / Math.sqrt(planarLengthSquared);
+  target.set(rightX * inversePlanarLength, 0, rightZ * inversePlanarLength);
+  return target;
 }
 
 export function getLookDirection(
@@ -38,5 +45,5 @@ export function getLookDirection(
     Math.sin(pitch),
     -Math.cos(yaw) * cosPitch,
   );
-  return target.normalize();
+  return target;
 }
