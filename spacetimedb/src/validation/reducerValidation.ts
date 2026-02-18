@@ -8,9 +8,12 @@ import {
   GOOMBA_STATE_DEFEATED,
   GOOMBA_STATE_ENRAGED,
   GOOMBA_STATE_IDLE,
+  MYSTERY_BOX_STATE_DEPLETED,
+  MYSTERY_BOX_STATE_READY,
   MAX_RING_COUNT,
   MOTION_STATES,
   type GoombaStateTag,
+  type MysteryBoxStateTag,
   type MotionState,
 } from '../shared/constants';
 import { getIdentitySeededGuestDisplayName } from '../shared/guestDisplayNames';
@@ -47,6 +50,17 @@ export function sanitizeGoombaState(state: string): GoombaStateTag {
       return GOOMBA_STATE_DEFEATED;
     default:
       return GOOMBA_STATE_IDLE;
+  }
+}
+
+export function sanitizeMysteryBoxState(state: string): MysteryBoxStateTag {
+  switch (state) {
+    case MYSTERY_BOX_STATE_READY:
+      return MYSTERY_BOX_STATE_READY;
+    case MYSTERY_BOX_STATE_DEPLETED:
+      return MYSTERY_BOX_STATE_DEPLETED;
+    default:
+      return MYSTERY_BOX_STATE_READY;
   }
 }
 

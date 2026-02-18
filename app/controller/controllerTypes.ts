@@ -4,11 +4,13 @@ import type { MutableRefObject } from "react";
 import type {
   CastFireballCommand,
   HitGoombaCommand,
+  HitMysteryBoxCommand,
 } from "../multiplayer/protocol";
 import type {
   AuthoritativePlayerState,
   FireballSpawnEvent,
   GoombaState,
+  MysteryBoxState,
   NetPlayerSnapshot,
 } from "../multiplayer/state/multiplayerTypes";
 
@@ -46,6 +48,10 @@ export interface CharacterRigControllerProps {
   readonly damageEventCounterRef?: MutableRefObject<number>;
   readonly goombas?: readonly GoombaState[];
   readonly onLocalGoombaHit?: (goombaId: HitGoombaCommand["goombaId"]) => void;
+  readonly mysteryBoxes?: readonly MysteryBoxState[];
+  readonly onLocalMysteryBoxHit?: (
+    mysteryBoxId: HitMysteryBoxCommand["mysteryBoxId"],
+  ) => void;
   readonly authoritativeLocalPlayerState?: AuthoritativePlayerState | null;
   readonly networkFireballSpawnQueueRef?: MutableRefObject<FireballSpawnEvent[]>;
 }

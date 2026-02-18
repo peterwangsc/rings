@@ -6,4 +6,5 @@ import './reducers/upsertPlayerState';
 import './reducers/castFireball';
 import './reducers/collectRing';
 import './reducers/hitGoomba';
+import './reducers/hitMysteryBox';
 import './reducers/sendChatMessage';

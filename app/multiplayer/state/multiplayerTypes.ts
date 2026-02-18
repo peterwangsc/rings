@@ -3,6 +3,7 @@ import {
   ChatMessageEventRow,
   FireballEventRow,
   GoombaStateRow,
+  MysteryBoxStateRow,
   PlayerInventoryRow,
   PlayerStateRow,
   PlayerStatsRow,
@@ -13,6 +14,7 @@ import {
 import type {
   CastFireballCommand,
   CollectRingCommand,
+  HitMysteryBoxCommand,
   LocalPlayerSnapshot,
   SendChatMessageCommand,
 } from "../protocol";
@@ -25,6 +27,7 @@ export type NetRingDropRow = Infer<typeof RingDropStateRow>;
 export type NetPlayerInventoryRow = Infer<typeof PlayerInventoryRow>;
 export type NetPlayerStatsRow = Infer<typeof PlayerStatsRow>;
 export type NetGoombaRow = Infer<typeof GoombaStateRow>;
+export type NetMysteryBoxRow = Infer<typeof MysteryBoxStateRow>;
 export type NetWorldStateRow = Infer<typeof WorldStateRow>;
 
 export type ConnectionStatus =
@@ -73,6 +76,14 @@ export interface GoombaState {
   state: "idle" | "charge" | "enraged" | "cooldown" | "defeated";
 }
 
+export interface MysteryBoxState {
+  mysteryBoxId: string;
+  x: number;
+  y: number;
+  z: number;
+  state: "ready" | "depleted";
+}
+
 export interface PlayerInventorySnapshot {
   identity: string;
   ringCount: number;
@@ -106,6 +117,7 @@ export interface MultiplayerState {
   playerInventories: Map<string, PlayerInventorySnapshot>;
   playerStats: Map<string, PlayerStatsSnapshot>;
   goombas: Map<string, GoombaState>;
+  mysteryBoxes: Map<string, MysteryBoxState>;
   collectedRingIds: Set<string>;
   chatMessages: ChatMessageEvent[];
   diagnostics: MultiplayerDiagnostics;
@@ -116,4 +128,5 @@ export interface MultiplayerReducerFns {
   castFireball: (request: CastFireballCommand) => void;
   sendChatMessage: (request: SendChatMessageCommand) => void;
   collectRing: (request: CollectRingCommand) => void;
+  hitMysteryBox: (request: HitMysteryBoxCommand) => void;
 }

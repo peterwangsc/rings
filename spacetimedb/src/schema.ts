@@ -98,6 +98,35 @@ const goombaChunkSpawnState = table(
   },
 );
 
+const mysteryBoxState = table(
+  { name: 'mystery_box_state', public: true },
+  {
+    mysteryBoxId: t.string().primaryKey(),
+    spawnX: t.f64(),
+    spawnY: t.f64(),
+    spawnZ: t.f64(),
+    x: t.f64(),
+    y: t.f64(),
+    z: t.f64(),
+    state: t.string(),
+    respawnAtMs: t.option(t.f64()),
+    updatedAtMs: t.f64(),
+  },
+);
+
+const mysteryBoxChunkSpawnState = table(
+  { name: 'mystery_box_chunk_spawn_state' },
+  {
+    chunkKey: t.string().primaryKey(),
+    chunkX: t.f64(),
+    chunkZ: t.f64(),
+    nextSpawnAtMs: t.f64(),
+    spawnSequence: t.f64(),
+    activeMysteryBoxId: t.option(t.string()),
+    updatedAtMs: t.f64(),
+  },
+);
+
 const worldState = table(
   { name: 'world_state', public: true },
   {
@@ -152,6 +181,8 @@ export const spacetimedb = schema(
   ringDropState,
   goombaState,
   goombaChunkSpawnState,
+  mysteryBoxState,
+  mysteryBoxChunkSpawnState,
   worldState,
   fireballEvent,
   chatMessageEvent,

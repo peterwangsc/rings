@@ -21,6 +21,7 @@ import {
   toCastFireballCommand,
   toCollectRingCommand,
   toHitGoombaCommand,
+  toHitMysteryBoxCommand,
   toSendChatMessageCommand,
   toUpsertPlayerStateCommand,
 } from "../protocol";
@@ -30,6 +31,7 @@ import {
   setChatMessages,
   setCollectedRingIds,
   setGoombas,
+  setMysteryBoxes,
   setMultiplayerConnectionStatus as setConnectionStatusInStore,
   setMultiplayerDiagnostics,
   setMultiplayerIdentity,
@@ -45,9 +47,11 @@ import type {
   ChatMessageEvent,
   FireballSpawnEvent,
   GoombaState,
+  MysteryBoxState,
   NetChatMessageEventRow,
   NetFireballEventRow,
   NetGoombaRow,
+  NetMysteryBoxRow,
   NetPlayerInventoryRow,
   NetPlayerRow,
   NetPlayerSnapshot,
@@ -61,6 +65,7 @@ const MOTION_STATE_FALLBACK: MotionState = "idle";
 const DEFAULT_DAY_CYCLE_DURATION_SECONDS = 300;
 const SERVER_TIME_OFFSET_SMOOTHING = 0.2;
 const GOOMBA_STATE_FALLBACK: GoombaState["state"] = "idle";
+const MYSTERY_BOX_STATE_FALLBACK: MysteryBoxState["state"] = "ready";
 const STARTER_RING_POSITIONS = new Map(
   RING_PLACEMENTS.map((placement, index) => [
     `ring-${index}`,
@@ -161,6 +166,26 @@ function toGoombaState(row: NetGoombaRow): GoombaState {
   };
 }
 
+function toValidMysteryBoxState(value: string): MysteryBoxState["state"] {
+  switch (value) {
+    case "ready":
+    case "depleted":
+      return value;
+    default:
+      return MYSTERY_BOX_STATE_FALLBACK;
+  }
+}
+
+function toMysteryBoxState(row: NetMysteryBoxRow): MysteryBoxState {
+  return {
+    mysteryBoxId: row.mysteryBoxId,
+    x: row.x,
+    y: row.y,
+    z: row.z,
+    state: toValidMysteryBoxState(row.state),
+  };
+}
+
 function toPlayerInventorySnapshot(
   row: NetPlayerInventoryRow,
 ): PlayerInventorySnapshot {
@@ -239,6 +264,7 @@ export function useMultiplayerSync({
   const [playerInventoryRows] = useTable(tables.playerInventory);
   const [playerStatsRows] = useTable(tables.playerStats);
   const [goombaRows] = useTable(tables.goombaState);
+  const [mysteryBoxRows] = useTable(tables.mysteryBoxState);
   const [ringRows] = useTable(tables.ringState);
   const [ringDropRows] = useTable(tables.ringDropState);
   const [worldStateRows] = useTable(tables.worldState);
@@ -249,6 +275,7 @@ export function useMultiplayerSync({
   const sendCastFireball = useSpacetimeReducer(reducers.castFireball);
   const sendCollectRing = useSpacetimeReducer(reducers.collectRing);
   const sendHitGoomba = useSpacetimeReducer(reducers.hitGoomba);
+  const sendHitMysteryBox = useSpacetimeReducer(reducers.hitMysteryBox);
   const sendChatMessageReducer = useSpacetimeReducer(reducers.sendChatMessage);
 
   const seenFireballEventsRef = useRef<Set<string>>(new Set());
@@ -491,6 +518,14 @@ export function useMultiplayerSync({
   }, [goombaRows, store]);
 
   useEffect(() => {
+    const mysteryBoxes = new Map<string, MysteryBoxState>();
+    for (const row of mysteryBoxRows) {
+      mysteryBoxes.set(row.mysteryBoxId, toMysteryBoxState(row));
+    }
+    setMysteryBoxes(store, mysteryBoxes);
+  }, [mysteryBoxRows, store]);
+
+  useEffect(() => {
     const previousSeenIds = seenFireballEventsRef.current;
     const nextSeenIds = activeFireballEventsRef.current;
     nextSeenIds.clear();
@@ -611,11 +646,27 @@ export function useMultiplayerSync({
     [connectionState.isActive, sendHitGoomba],
   );
 
+  const sendMysteryBoxHit = useCallback(
+    (mysteryBoxId: string) => {
+      if (!connectionState.isActive) {
+        return;
+      }
+      const command = toHitMysteryBoxCommand(mysteryBoxId);
+      if (!command) {
+        warnInvalidCommand("hit_mystery_box", { mysteryBoxId });
+        return;
+      }
+      sendHitMysteryBox(command);
+    },
+    [connectionState.isActive, sendHitMysteryBox],
+  );
+
   return {
     sendLocalPlayerSnapshot,
     sendLocalFireballCast,
     sendRingCollect,
     sendChatMessage,
     sendGoombaHit,
+    sendMysteryBoxHit,
   };
 }

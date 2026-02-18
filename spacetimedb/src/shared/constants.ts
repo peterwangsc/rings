@@ -42,6 +42,21 @@ export const GOOMBA_CHUNK_SPAWN_MARGIN = 6;
 export const GOOMBA_CHUNK_HASH_SEED = 191.37;
 export const GOOMBA_DISABLE_ORIGIN_CHUNK_SPAWN = false;
 
+export const MYSTERY_BOX_HALF_EXTENT = 0.45;
+export const MYSTERY_BOX_HOVER_HEIGHT = 2.4;
+export const MYSTERY_BOX_PLAYER_HEAD_OFFSET = 0.8;
+export const MYSTERY_BOX_MIN_UPWARD_VELOCITY = 1.8;
+export const MYSTERY_BOX_HIT_VALIDATION_RADIUS = 1.35;
+export const MYSTERY_BOX_HIT_VERTICAL_TOLERANCE = 0.55;
+export const MYSTERY_BOX_DEPLETED_DESPAWN_MS = 900;
+export const MYSTERY_BOX_RING_BURST_COUNT = 5;
+export const MYSTERY_BOX_CHUNK_ACTIVE_RADIUS = 1;
+export const MYSTERY_BOX_CHUNK_SPAWN_THRESHOLD = 0.0;
+export const MYSTERY_BOX_CHUNK_SPAWN_COOLDOWN_MS = 12_000;
+export const MYSTERY_BOX_CHUNK_SPAWN_MARGIN = 10;
+export const MYSTERY_BOX_CHUNK_HASH_SEED = 313.73;
+export const MYSTERY_BOX_DISABLE_ORIGIN_CHUNK_SPAWN = false;
+
 export const WORLD_STATE_ROW_ID = "global";
 export const WORLD_DAY_CYCLE_DURATION_SECONDS = 300;
 
@@ -50,9 +65,12 @@ export const GOOMBA_STATE_ENRAGED = "enraged";
 export const GOOMBA_STATE_DEFEATED = "defeated";
 export const GOOMBA_STATE_CHARGE = "charge";
 export const GOOMBA_STATE_COOLDOWN = "cooldown";
+export const MYSTERY_BOX_STATE_READY = "ready";
+export const MYSTERY_BOX_STATE_DEPLETED = "depleted";
 
 export const RING_DROP_SOURCE_GOOMBA = "goomba_reward";
 export const RING_DROP_SOURCE_SPILL = "spill";
+export const RING_DROP_SOURCE_MYSTERY_BOX = "mystery_box";
 
 export type GoombaStateTag =
   | typeof GOOMBA_STATE_IDLE
@@ -61,9 +79,14 @@ export type GoombaStateTag =
   | typeof GOOMBA_STATE_COOLDOWN
   | typeof GOOMBA_STATE_DEFEATED;
 
+export type MysteryBoxStateTag =
+  | typeof MYSTERY_BOX_STATE_READY
+  | typeof MYSTERY_BOX_STATE_DEPLETED;
+
 export type RingDropSource =
   | typeof RING_DROP_SOURCE_GOOMBA
-  | typeof RING_DROP_SOURCE_SPILL;
+  | typeof RING_DROP_SOURCE_SPILL
+  | typeof RING_DROP_SOURCE_MYSTERY_BOX;
 
 export const MOTION_STATES = new Set([
   "idle",

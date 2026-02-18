@@ -18,6 +18,7 @@ import { CharacterRigController } from "../controller/CharacterRigController";
 import type { MobileMoveInput } from "../controller/controllerTypes";
 import { RingField } from "../gameplay/collectibles/RingField";
 import { GoombaLayer } from "../gameplay/goombas/GoombaLayer";
+import { MysteryBoxLayer } from "../gameplay/mysteryBoxes/MysteryBoxLayer";
 import { RemotePlayersLayer } from "../gameplay/multiplayer/RemotePlayersLayer";
 import { ChatOverlay } from "../hud/ChatOverlay";
 import { GameHUD } from "../hud/GameHUD";
@@ -204,6 +205,7 @@ function CharacterRigSceneContent({
     sendRingCollect,
     sendChatMessage,
     sendGoombaHit,
+    sendMysteryBoxHit,
   } = useMultiplayerSync({
     store: multiplayerStore,
     worldEntityManager,
@@ -220,6 +222,10 @@ function CharacterRigSceneContent({
   const goombas = useMemo(
     () => Array.from(multiplayerState.goombas.values()),
     [multiplayerState.goombas],
+  );
+  const mysteryBoxes = useMemo(
+    () => Array.from(multiplayerState.mysteryBoxes.values()),
+    [multiplayerState.mysteryBoxes],
   );
   const activeChatMessages = useMemo(() => {
     const visible = multiplayerState.chatMessages.filter(
@@ -701,6 +707,7 @@ function CharacterRigSceneContent({
               }
             />
             <GoombaLayer goombas={goombas} />
+            <MysteryBoxLayer mysteryBoxes={mysteryBoxes} />
             <RemotePlayersLayer
               players={remotePlayers}
               activeChatByIdentity={activeChatByIdentity}
@@ -725,6 +732,8 @@ function CharacterRigSceneContent({
               onLocalFootstepsActiveChange={setFootstepsActive}
               goombas={goombas}
               onLocalGoombaHit={sendGoombaHit}
+              mysteryBoxes={mysteryBoxes}
+              onLocalMysteryBoxHit={sendMysteryBoxHit}
               authoritativeLocalPlayerState={
                 multiplayerState.authoritativeLocalPlayerState
               }

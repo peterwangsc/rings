@@ -43,6 +43,13 @@ import {
   GROUNDED_GRACE_SECONDS,
   JUMP_INPUT_BUFFER_SECONDS,
   MAX_FRAME_DELTA_SECONDS,
+  MYSTERY_BOX_HALF_EXTENT,
+  MYSTERY_BOX_HIT_RETRY_COOLDOWN_MS,
+  MYSTERY_BOX_HIT_VALIDATION_RADIUS,
+  MYSTERY_BOX_HIT_VERTICAL_TOLERANCE,
+  MYSTERY_BOX_INTERACT_DISABLED_STATE,
+  MYSTERY_BOX_MIN_UPWARD_VELOCITY,
+  MYSTERY_BOX_PLAYER_HEAD_OFFSET,
   PLAYER_ACCELERATION,
   PLAYER_CAPSULE_HALF_HEIGHT,
   PLAYER_CAPSULE_RADIUS,
@@ -227,6 +234,8 @@ export function CharacterRigController({
   onLocalFootstepsActiveChange,
   goombas,
   onLocalGoombaHit,
+  mysteryBoxes,
+  onLocalMysteryBoxHit,
   authoritativeLocalPlayerState,
   networkFireballSpawnQueueRef,
 }: CharacterRigControllerProps) {
@@ -257,6 +266,7 @@ export function CharacterRigController({
   const localInputSequenceRef = useRef(0);
   const lastProcessedDamageEventCounterRef = useRef(0);
   const goombaHitTimestampsRef = useRef(new Map<string, number>());
+  const mysteryBoxHitTimestampsRef = useRef(new Map<string, number>());
   const footstepsAudioActiveRef = useRef(false);
   const motionStateRef = useRef<MotionState>("idle");
   const [actorMotionState, setActorMotionState] = useState<MotionState>("idle");
@@ -491,6 +501,17 @@ export function CharacterRigController({
         }
       }
     }
+    const mysteryBoxHitTimestamps = mysteryBoxHitTimestampsRef.current;
+    if (mysteryBoxHitTimestamps.size > 0) {
+      for (const [
+        mysteryBoxId,
+        lastHitAtMs,
+      ] of mysteryBoxHitTimestamps.entries()) {
+        if (nowMs - lastHitAtMs > MYSTERY_BOX_HIT_RETRY_COOLDOWN_MS) {
+          mysteryBoxHitTimestamps.delete(mysteryBoxId);
+        }
+      }
+    }
     const currentVelocity = body.linvel();
     const verticalSpeedAbs = Math.abs(currentVelocity.y);
     groundingRay.origin.x = translation.x;
@@ -709,6 +730,43 @@ export function CharacterRigController({
           },
           true,
         );
+        break;
+      }
+    }
+
+    if (
+      mysteryBoxes &&
+      onLocalMysteryBoxHit &&
+      nextVelocityY >= MYSTERY_BOX_MIN_UPWARD_VELOCITY
+    ) {
+      const playerHeadY = translation.y + MYSTERY_BOX_PLAYER_HEAD_OFFSET;
+      const mysteryBoxHitRangeSquared =
+        MYSTERY_BOX_HIT_VALIDATION_RADIUS * MYSTERY_BOX_HIT_VALIDATION_RADIUS;
+      for (let index = 0; index < mysteryBoxes.length; index += 1) {
+        const mysteryBox = mysteryBoxes[index];
+        if (mysteryBox.state === MYSTERY_BOX_INTERACT_DISABLED_STATE) {
+          continue;
+        }
+        if (mysteryBoxHitTimestamps.has(mysteryBox.mysteryBoxId)) {
+          continue;
+        }
+
+        const dx = translation.x - mysteryBox.x;
+        const dz = translation.z - mysteryBox.z;
+        if (dx * dx + dz * dz > mysteryBoxHitRangeSquared) {
+          continue;
+        }
+
+        const boxBottomY = mysteryBox.y - MYSTERY_BOX_HALF_EXTENT;
+        if (
+          Math.abs(playerHeadY - boxBottomY) >
+          MYSTERY_BOX_HIT_VERTICAL_TOLERANCE
+        ) {
+          continue;
+        }
+
+        mysteryBoxHitTimestamps.set(mysteryBox.mysteryBoxId, nowMs);
+        onLocalMysteryBoxHit(mysteryBox.mysteryBoxId);
         break;
       }
     }
