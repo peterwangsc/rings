@@ -9,18 +9,14 @@ export interface FireballSpawnRequest {
   directionZ: number;
 }
 
-export interface FireballCastQuery {
-  x: number;
-  y: number;
-  z: number;
-  dirX: number;
-  dirY: number;
-  dirZ: number;
-  distance: number;
-}
-
 export type FireballCastSolidHitFn = (
-  query: FireballCastQuery,
+  x: number,
+  y: number,
+  z: number,
+  dirX: number,
+  dirY: number,
+  dirZ: number,
+  distance: number,
 ) => number | null;
 
 export type FireballTerrainHeightFn = (x: number, z: number) => number;

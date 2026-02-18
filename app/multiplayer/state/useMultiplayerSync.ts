@@ -252,6 +252,7 @@ export function useMultiplayerSync({
   const sendChatMessageReducer = useSpacetimeReducer(reducers.sendChatMessage);
 
   const seenFireballEventsRef = useRef<Set<string>>(new Set());
+  const activeFireballEventsRef = useRef<Set<string>>(new Set());
   const hasConnectedOnceRef = useRef(false);
   const serverTimeOffsetEstimateRef = useRef<number | null>(null);
 
@@ -490,37 +491,43 @@ export function useMultiplayerSync({
   }, [goombaRows, store]);
 
   useEffect(() => {
-    const seenIds = seenFireballEventsRef.current;
-    const activeEventIds = new Set<string>();
-    const newRemoteEvents: FireballSpawnEvent[] = [];
+    const previousSeenIds = seenFireballEventsRef.current;
+    const nextSeenIds = activeFireballEventsRef.current;
+    nextSeenIds.clear();
 
     for (const event of fireballRows) {
-      activeEventIds.add(event.eventId);
-      if (seenIds.has(event.eventId)) {
+      nextSeenIds.add(event.eventId);
+      if (previousSeenIds.has(event.eventId)) {
         continue;
       }
-      seenIds.add(event.eventId);
       if (localIdentity && event.ownerIdentity === localIdentity) {
         continue;
       }
-      newRemoteEvents.push(toFireballSpawnEvent(event));
+      networkFireballSpawnQueueRef.current.push(toFireballSpawnEvent(event));
     }
 
-    for (const eventId of seenIds) {
-      if (!activeEventIds.has(eventId)) {
-        seenIds.delete(eventId);
-      }
-    }
-
-    if (newRemoteEvents.length > 0) {
-      networkFireballSpawnQueueRef.current.push(...newRemoteEvents);
-    }
-  }, [fireballRows, localIdentity, networkFireballSpawnQueueRef, store]);
+    seenFireballEventsRef.current = nextSeenIds;
+    activeFireballEventsRef.current = previousSeenIds;
+  }, [fireballRows, localIdentity, networkFireballSpawnQueueRef]);
 
   useEffect(() => {
-    const chatMessages = chatMessageRows
-      .map(toChatMessageEvent)
-      .sort((a, b) => a.createdAtMs - b.createdAtMs);
+    const chatMessages: ChatMessageEvent[] = [];
+    let previousCreatedAtMs = -Infinity;
+    let isSortedAscending = true;
+
+    for (const row of chatMessageRows) {
+      const message = toChatMessageEvent(row);
+      chatMessages.push(message);
+      if (message.createdAtMs < previousCreatedAtMs) {
+        isSortedAscending = false;
+      }
+      previousCreatedAtMs = message.createdAtMs;
+    }
+
+    if (!isSortedAscending) {
+      chatMessages.sort((a, b) => a.createdAtMs - b.createdAtMs);
+    }
+
     setChatMessages(store, chatMessages);
   }, [chatMessageRows, store]);
 

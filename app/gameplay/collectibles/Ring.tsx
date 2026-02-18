@@ -42,6 +42,7 @@ export function Ring({ position, spawnedAtMs, withPointLight = true }: RingProps
   const baseY = position[1];
   const despawnAtMs =
     spawnedAtMs === undefined ? null : spawnedAtMs + RING_DROP_LIFETIME_MS;
+  const isDroppedRing = despawnAtMs !== null;
 
   useEffect(() => {
     const material = materialRef.current;
@@ -123,12 +124,20 @@ float ringSaturate(float value) {
 
     const time = state.clock.getElapsedTime();
     mesh.rotation.y = time * RING_ROTATION_SPEED;
+    mesh.position.y =
+      baseY + Math.sin(time * RING_BOB_SPEED) * RING_BOB_AMPLITUDE;
+
+    if (!isDroppedRing) {
+      mesh.visible = true;
+      if (light) {
+        light.visible = true;
+      }
+      return;
+    }
 
     const nowMs = Date.now();
-    const fallOffset =
-      spawnedAtMs === undefined ? 0 : getDropRingFallOffset(spawnedAtMs, nowMs);
-    mesh.position.y =
-      baseY + fallOffset + Math.sin(time * RING_BOB_SPEED) * RING_BOB_AMPLITUDE;
+    const fallOffset = getDropRingFallOffset(spawnedAtMs ?? nowMs, nowMs);
+    mesh.position.y += fallOffset;
 
     let opacity = 1;
     let emissiveScale = 1;

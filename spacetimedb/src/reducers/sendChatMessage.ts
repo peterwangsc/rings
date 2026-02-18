@@ -30,7 +30,7 @@ spacetimedb.reducer(
 
     pruneExpiredRows(ctx, timestampMs);
 
-    const messageId = `${identity}-${Math.floor(timestampMs)}-${ctx.newUuidV4().toString()}`;
+    const messageId = `${identity}-${timestampMs}-${ctx.newUuidV4().toString()}`;
     ctx.db.chatMessageEvent.insert({
       messageId,
       ownerIdentity: identity,

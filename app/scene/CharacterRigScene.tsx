@@ -500,43 +500,32 @@ function CharacterRigSceneContent({
       return;
     }
 
-    const timeoutId = window.setTimeout(() => {
-      setChatSessionHistory((currentHistory) => {
-        const nextHistory = [...currentHistory];
-        const knownIds = new Set(
-          nextHistory.map((message) => message.messageId),
+    setChatSessionHistory((currentHistory) => {
+      const nextHistory = [...currentHistory];
+      const knownIds = new Set(nextHistory.map((message) => message.messageId));
+      let didChange = false;
+
+      for (const message of multiplayerState.chatMessages) {
+        if (knownIds.has(message.messageId)) {
+          continue;
+        }
+        knownIds.add(message.messageId);
+        nextHistory.push(message);
+        didChange = true;
+      }
+
+      if (!didChange) {
+        return currentHistory;
+      }
+
+      if (nextHistory.length > CHAT_SESSION_HISTORY_MAX_MESSAGES) {
+        return nextHistory.slice(
+          nextHistory.length - CHAT_SESSION_HISTORY_MAX_MESSAGES,
         );
-        const incoming = [...multiplayerState.chatMessages].sort(
-          (a, b) => a.createdAtMs - b.createdAtMs,
-        );
-        let didChange = false;
+      }
 
-        for (const message of incoming) {
-          if (knownIds.has(message.messageId)) {
-            continue;
-          }
-          knownIds.add(message.messageId);
-          nextHistory.push(message);
-          didChange = true;
-        }
-
-        if (!didChange) {
-          return currentHistory;
-        }
-
-        if (nextHistory.length > CHAT_SESSION_HISTORY_MAX_MESSAGES) {
-          return nextHistory.slice(
-            nextHistory.length - CHAT_SESSION_HISTORY_MAX_MESSAGES,
-          );
-        }
-
-        return nextHistory;
-      });
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
+      return nextHistory;
+    });
   }, [multiplayerState.chatMessages]);
 
   return (

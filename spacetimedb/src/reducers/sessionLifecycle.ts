@@ -28,7 +28,12 @@ spacetimedb.clientConnected((ctx) => {
 
   const existing = ctx.db.session.connectionId.find(connectionId);
   if (existing) {
-    ctx.db.session.delete(existing);
+    ctx.db.session.connectionId.update({
+      ...existing,
+      identity,
+      connectedAtMs: timestampMs,
+    });
+    return;
   }
 
   ctx.db.session.insert({
@@ -51,9 +56,13 @@ spacetimedb.clientDisconnected((ctx) => {
     ctx.db.session.delete(existingSession);
   }
 
-  const hasAnySession = Array.from(ctx.db.session.iter()).some(
-    (candidate) => candidate.identity === identity,
-  );
+  let hasAnySession = false;
+  for (const candidate of ctx.db.session.iter()) {
+    if (candidate.identity === identity) {
+      hasAnySession = true;
+      break;
+    }
+  }
 
   if (!hasAnySession) {
     const player = ctx.db.playerState.identity.find(identity);

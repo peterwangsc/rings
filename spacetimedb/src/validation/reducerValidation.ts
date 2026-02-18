@@ -19,10 +19,6 @@ export function isFiniteNumber(value: number) {
   return Number.isFinite(value) && !Number.isNaN(value);
 }
 
-export function hasInvalidNumericPayload(values: readonly number[]) {
-  return values.some((value) => !isFiniteNumber(value));
-}
-
 export function sanitizeMotionState(motionState: string): MotionState {
   return MOTION_STATES.has(motionState as MotionState)
     ? (motionState as MotionState)
@@ -61,16 +57,27 @@ export function normalizeRingCount(value: number) {
   return Math.max(0, Math.min(MAX_RING_COUNT, Math.floor(value)));
 }
 
-export function isValidFireballDirectionLength(directionLength: number) {
+const FIREBALL_MIN_DIR_LENGTH_SQUARED =
+  FIREBALL_MIN_DIR_LENGTH * FIREBALL_MIN_DIR_LENGTH;
+const FIREBALL_MAX_DIR_LENGTH_SQUARED =
+  FIREBALL_MAX_DIR_LENGTH * FIREBALL_MAX_DIR_LENGTH;
+const FIREBALL_MIN_SPAWN_DISTANCE_SQUARED =
+  FIREBALL_MIN_SPAWN_DISTANCE * FIREBALL_MIN_SPAWN_DISTANCE;
+const FIREBALL_MAX_SPAWN_DISTANCE_SQUARED =
+  FIREBALL_MAX_SPAWN_DISTANCE * FIREBALL_MAX_SPAWN_DISTANCE;
+
+export function isValidFireballDirectionLengthSquared(
+  directionLengthSquared: number,
+) {
   return (
-    directionLength >= FIREBALL_MIN_DIR_LENGTH &&
-    directionLength <= FIREBALL_MAX_DIR_LENGTH
+    directionLengthSquared >= FIREBALL_MIN_DIR_LENGTH_SQUARED &&
+    directionLengthSquared <= FIREBALL_MAX_DIR_LENGTH_SQUARED
   );
 }
 
-export function isValidFireballSpawnDistance(spawnDistance: number) {
+export function isValidFireballSpawnDistanceSquared(spawnDistanceSquared: number) {
   return (
-    spawnDistance >= FIREBALL_MIN_SPAWN_DISTANCE &&
-    spawnDistance <= FIREBALL_MAX_SPAWN_DISTANCE
+    spawnDistanceSquared >= FIREBALL_MIN_SPAWN_DISTANCE_SQUARED &&
+    spawnDistanceSquared <= FIREBALL_MAX_SPAWN_DISTANCE_SQUARED
   );
 }

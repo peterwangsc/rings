@@ -140,15 +140,15 @@ export function simulateFireballStep(
       const dirX = stepX * inverseStepLength;
       const dirY = stepY * inverseStepLength;
       const dirZ = stepZ * inverseStepLength;
-      const timeOfImpact = castSolidHit({
-        x: state.x,
-        y: state.y,
-        z: state.z,
+      const timeOfImpact = castSolidHit(
+        state.x,
+        state.y,
+        state.z,
         dirX,
         dirY,
         dirZ,
-        distance: stepLength,
-      });
+        stepLength,
+      );
 
       if (timeOfImpact !== null) {
         const hitTravelDistance = Math.max(

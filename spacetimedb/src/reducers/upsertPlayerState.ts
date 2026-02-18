@@ -13,7 +13,7 @@ import { spacetimedb } from '../schema';
 import { tickGoombas } from '../systems/goombas';
 import { pruneExpiredRows } from '../systems/prune';
 import {
-  hasInvalidNumericPayload,
+  isFiniteNumber,
   sanitizeDisplayName,
   sanitizeMotionState,
 } from '../validation/reducerValidation';
@@ -38,20 +38,18 @@ spacetimedb.reducer(
     const identity = ctx.sender.toHexString();
     const timestampMs = nowMs(ctx);
 
-    const numericValues = [
-      payload.x,
-      payload.y,
-      payload.z,
-      payload.yaw,
-      payload.pitch,
-      payload.vx,
-      payload.vy,
-      payload.vz,
-      payload.planarSpeed,
-      payload.lastInputSeq,
-    ];
-
-    if (hasInvalidNumericPayload(numericValues)) {
+    if (
+      !isFiniteNumber(payload.x) ||
+      !isFiniteNumber(payload.y) ||
+      !isFiniteNumber(payload.z) ||
+      !isFiniteNumber(payload.yaw) ||
+      !isFiniteNumber(payload.pitch) ||
+      !isFiniteNumber(payload.vx) ||
+      !isFiniteNumber(payload.vy) ||
+      !isFiniteNumber(payload.vz) ||
+      !isFiniteNumber(payload.planarSpeed) ||
+      !isFiniteNumber(payload.lastInputSeq)
+    ) {
       return { tag: 'err', value: 'invalid_numeric_payload' };
     }
 
@@ -68,10 +66,10 @@ spacetimedb.reducer(
 
       const deltaX = nextX - previous.x;
       const deltaZ = nextZ - previous.z;
-      const planarStep = Math.hypot(deltaX, deltaZ);
-
-      if (planarStep > maxPlanarStep && planarStep > 1e-6) {
-        const scale = maxPlanarStep / planarStep;
+      const planarStepSquared = deltaX * deltaX + deltaZ * deltaZ;
+      const maxPlanarStepSquared = maxPlanarStep * maxPlanarStep;
+      if (planarStepSquared > maxPlanarStepSquared && planarStepSquared > 1e-12) {
+        const scale = maxPlanarStep / Math.sqrt(planarStepSquared);
         nextX = previous.x + deltaX * scale;
         nextZ = previous.z + deltaZ * scale;
       }
@@ -85,7 +83,14 @@ spacetimedb.reducer(
     nextX = Math.max(-MAX_WORLD_ABS, Math.min(MAX_WORLD_ABS, nextX));
     nextY = Math.max(-MAX_WORLD_ABS, Math.min(MAX_WORLD_ABS, nextY));
     nextZ = Math.max(-MAX_WORLD_ABS, Math.min(MAX_WORLD_ABS, nextZ));
-    const sanitizedDisplayName = sanitizeDisplayName(payload.displayName, identity);
+    const sanitizedDisplayName =
+      previous && payload.displayName === previous.displayName
+        ? previous.displayName
+        : sanitizeDisplayName(payload.displayName, identity);
+    const motionState =
+      previous && payload.motionState === previous.motionState
+        ? previous.motionState
+        : sanitizeMotionState(payload.motionState);
 
     const nextRow: PlayerStateRow = {
       identity,
@@ -99,25 +104,30 @@ spacetimedb.reducer(
       vy: payload.vy,
       vz: payload.vz,
       planarSpeed: Math.max(0, payload.planarSpeed),
-      motionState: sanitizeMotionState(payload.motionState),
+      motionState,
       lastInputSeq: Math.max(0, payload.lastInputSeq),
       updatedAtMs: timestampMs,
       lastCastAtMs: previous?.lastCastAtMs ?? -1,
     };
 
     if (previous) {
-      ctx.db.playerState.delete(previous);
+      ctx.db.playerState.identity.update(nextRow);
+    } else {
+      ctx.db.playerState.insert(nextRow);
     }
-    ctx.db.playerState.insert(nextRow);
 
-    ensurePlayerInventory(ctx, identity, timestampMs);
-    const playerStats = ensurePlayerStats(ctx, identity, timestampMs);
-    if (playerStats.displayName !== sanitizedDisplayName) {
-      ctx.db.playerStats.identity.update({
-        ...playerStats,
-        displayName: sanitizedDisplayName,
-        updatedAtMs: timestampMs,
-      });
+    if (!previous) {
+      ensurePlayerInventory(ctx, identity, timestampMs);
+    }
+    if (!previous || previous.displayName !== sanitizedDisplayName) {
+      const playerStats = ensurePlayerStats(ctx, identity, timestampMs);
+      if (playerStats.displayName !== sanitizedDisplayName) {
+        ctx.db.playerStats.identity.update({
+          ...playerStats,
+          displayName: sanitizedDisplayName,
+          updatedAtMs: timestampMs,
+        });
+      }
     }
     tickGoombas(ctx, timestampMs);
     pruneExpiredRows(ctx, timestampMs);

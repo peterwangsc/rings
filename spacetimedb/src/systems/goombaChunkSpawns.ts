@@ -111,18 +111,6 @@ function sampleSpawnYaw(chunkX: number, chunkZ: number, spawnSequence: number) {
   return yawRatio * TWO_PI;
 }
 
-function upsertSpawnState(
-  ctx: GoombaChunkSpawnTickContext,
-  state: GoombaChunkSpawnStateRow,
-) {
-  const existing = ctx.db.goombaChunkSpawnState.chunkKey.find(state.chunkKey);
-  if (existing) {
-    ctx.db.goombaChunkSpawnState.chunkKey.update(state);
-    return;
-  }
-  ctx.db.goombaChunkSpawnState.insert(state);
-}
-
 function spawnGoombaForChunk(
   ctx: GoombaChunkSpawnTickContext,
   chunkX: number,
@@ -224,8 +212,8 @@ export function tickGoombaChunkSpawns(
     next.activeGoombaId = spawnedGoombaId;
     next.nextSpawnAtMs = timestampMs + GOOMBA_CHUNK_SPAWN_COOLDOWN_MS;
     next.updatedAtMs = timestampMs;
-    upsertSpawnState(ctx, next);
+    ctx.db.goombaChunkSpawnState.chunkKey.update(next);
   }
 
-  return new Set(activeChunks.keys());
+  return activeChunks;
 }

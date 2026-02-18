@@ -18,6 +18,7 @@ spacetimedb.reducer(
   (ctx, { ringId }) => {
     const identity = ctx.sender.toHexString();
     const timestampMs = nowMs(ctx);
+    const collectRadiusSquared = RING_COLLECT_RADIUS * RING_COLLECT_RADIUS;
     const updatePlayerRingProgress = () => {
       const inventory = ensurePlayerInventory(ctx, identity, timestampMs);
       const nextRingCount = normalizeRingCount(inventory.ringCount + 1);
@@ -51,13 +52,10 @@ spacetimedb.reducer(
           return { tag: 'err', value: 'ring_position_missing' };
         }
 
-        const distanceToRing = Math.hypot(
-          player.x - ringPosition.x,
-          player.y - ringPosition.y,
-          player.z - ringPosition.z,
-        );
-
-        if (distanceToRing > RING_COLLECT_RADIUS) {
+        const dx = player.x - ringPosition.x;
+        const dy = player.y - ringPosition.y;
+        const dz = player.z - ringPosition.z;
+        if (dx * dx + dy * dy + dz * dz > collectRadiusSquared) {
           return { tag: 'err', value: 'ring_out_of_range' };
         }
 
@@ -87,13 +85,10 @@ spacetimedb.reducer(
       return { tag: 'ok' };
     }
 
-    const distanceToRing = Math.hypot(
-      player.x - dropRing.x,
-      player.y - dropRing.y,
-      player.z - dropRing.z,
-    );
-
-    if (distanceToRing > RING_COLLECT_RADIUS) {
+    const dx = player.x - dropRing.x;
+    const dy = player.y - dropRing.y;
+    const dz = player.z - dropRing.z;
+    if (dx * dx + dy * dy + dz * dz > collectRadiusSquared) {
       return { tag: 'err', value: 'ring_out_of_range' };
     }
 

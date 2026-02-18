@@ -8,9 +8,9 @@ import { nowMs } from '../shared/time';
 import { spacetimedb } from '../schema';
 import { pruneExpiredRows } from '../systems/prune';
 import {
-  hasInvalidNumericPayload,
-  isValidFireballDirectionLength,
-  isValidFireballSpawnDistance,
+  isFiniteNumber,
+  isValidFireballDirectionLengthSquared,
+  isValidFireballSpawnDistanceSquared,
   normalizeRingCount,
 } from '../validation/reducerValidation';
 
@@ -33,18 +33,14 @@ spacetimedb.reducer(
       return { tag: 'err', value: 'player_missing' };
     }
 
-    const inventory = ensurePlayerInventory(ctx, identity, timestampMs);
-    const ringCount = normalizeRingCount(inventory.ringCount);
-
-    const numericValues = [
-      payload.originX,
-      payload.originY,
-      payload.originZ,
-      payload.directionX,
-      payload.directionY,
-      payload.directionZ,
-    ];
-    if (hasInvalidNumericPayload(numericValues)) {
+    if (
+      !isFiniteNumber(payload.originX) ||
+      !isFiniteNumber(payload.originY) ||
+      !isFiniteNumber(payload.originZ) ||
+      !isFiniteNumber(payload.directionX) ||
+      !isFiniteNumber(payload.directionY) ||
+      !isFiniteNumber(payload.directionZ)
+    ) {
       return { tag: 'err', value: 'invalid_numeric_payload' };
     }
 
@@ -57,6 +53,8 @@ spacetimedb.reducer(
 
     pruneExpiredRows(ctx, timestampMs);
 
+    const inventory = ensurePlayerInventory(ctx, identity, timestampMs);
+    const ringCount = normalizeRingCount(inventory.ringCount);
     if (ringCount <= 0) {
       return { tag: 'err', value: 'fireball_limit_reached' };
     }
@@ -74,36 +72,37 @@ spacetimedb.reducer(
       return { tag: 'err', value: 'fireball_limit_reached' };
     }
 
-    const directionLength = Math.hypot(
-      payload.directionX,
-      payload.directionY,
-      payload.directionZ,
-    );
-    if (!isValidFireballDirectionLength(directionLength)) {
+    const directionLengthSquared =
+      payload.directionX * payload.directionX +
+      payload.directionY * payload.directionY +
+      payload.directionZ * payload.directionZ;
+    if (!isValidFireballDirectionLengthSquared(directionLengthSquared)) {
       return { tag: 'err', value: 'invalid_direction' };
     }
 
-    const spawnDistance = Math.hypot(
-      payload.originX - player.x,
-      payload.originY - player.y,
-      payload.originZ - player.z,
-    );
-    if (!isValidFireballSpawnDistance(spawnDistance)) {
+    const spawnDeltaX = payload.originX - player.x;
+    const spawnDeltaY = payload.originY - player.y;
+    const spawnDeltaZ = payload.originZ - player.z;
+    const spawnDistanceSquared =
+      spawnDeltaX * spawnDeltaX +
+      spawnDeltaY * spawnDeltaY +
+      spawnDeltaZ * spawnDeltaZ;
+    if (!isValidFireballSpawnDistanceSquared(spawnDistanceSquared)) {
       return { tag: 'err', value: 'invalid_spawn_distance' };
     }
 
+    const directionLength = Math.sqrt(directionLengthSquared);
     const normalizedDirectionX = payload.directionX / directionLength;
     const normalizedDirectionY = payload.directionY / directionLength;
     const normalizedDirectionZ = payload.directionZ / directionLength;
 
-    ctx.db.playerState.delete(player);
-    ctx.db.playerState.insert({
+    ctx.db.playerState.identity.update({
       ...player,
       lastCastAtMs: timestampMs,
       updatedAtMs: timestampMs,
     });
 
-    const eventId = `${identity}-${Math.floor(timestampMs)}-${ctx.newUuidV4().toString()}`;
+    const eventId = `${identity}-${timestampMs}-${ctx.newUuidV4().toString()}`;
     ctx.db.fireballEvent.insert({
       eventId,
       ownerIdentity: identity,

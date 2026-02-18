@@ -7,7 +7,7 @@ import {
   type RapierRigidBody,
 } from "@react-three/rapier";
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import {
   applyFirstPersonCamera,
@@ -20,10 +20,7 @@ import {
   enqueueFireballSpawnRequest,
   stepFireballSimulation,
 } from "../gameplay/abilities/fireballManager";
-import type {
-  FireballCastQuery,
-  FireballSpawnRequest,
-} from "../gameplay/abilities/fireballTypes";
+import type { FireballSpawnRequest } from "../gameplay/abilities/fireballTypes";
 import { CharacterActor, type MotionState } from "../lib/CharacterActor";
 import type {
   CharacterInputState,
@@ -87,10 +84,14 @@ import { useControllerInputHandlers } from "./useControllerInputHandlers";
 
 const IDENTITY_ROTATION = { x: 0, y: 0, z: 0, w: 1 } as const;
 const SNAPSHOT_INTERVAL_SECONDS = 1 / 20;
-const RECONCILIATION_SOFT_DISTANCE = 0.08;
-const RECONCILIATION_HARD_DISTANCE = 2.5;
+const RECONCILIATION_SOFT_DISTANCE_SQUARED = 0.08 * 0.08;
+const RECONCILIATION_HARD_DISTANCE_SQUARED = 2.5 * 2.5;
 const MAX_LOCAL_FIREBALL_REQUESTS_PER_FRAME = 4;
 const MAX_NETWORK_FIREBALL_SPAWNS_PER_FRAME = 6;
+const GOOMBA_STOMP_RADIUS_SQUARED = GOOMBA_STOMP_RADIUS * GOOMBA_STOMP_RADIUS;
+const FIREBALL_GOOMBA_HIT_RADIUS_SQUARED =
+  (GOOMBA_FIREBALL_HITBOX_RADIUS + FIREBALL_RADIUS) *
+  (GOOMBA_FIREBALL_HITBOX_RADIUS + FIREBALL_RADIUS);
 
 function getSegmentToSegmentDistanceSquared(
   segmentAStartX: number,
@@ -192,6 +193,14 @@ function getSegmentToSegmentDistanceSquared(
   return dx * dx + dy * dy + dz * dz;
 }
 
+function shouldCollideFireball(
+  collider: { parent(): { userData?: { kind?: string } } | null },
+) {
+  const parentBody = collider.parent();
+  const userData = parentBody?.userData as { kind?: string } | undefined;
+  return userData?.kind !== "terrain";
+}
+
 export function CharacterRigController({
   cameraMode,
   onToggleCameraMode,
@@ -233,6 +242,7 @@ export function CharacterRigController({
   const fireballRequestCountRef = useRef(0);
   const lastProcessedFireballRequestCountRef = useRef(0);
   const lastProcessedMobileFireballTriggerRef = useRef(0);
+  const networkFireballQueueReadIndexRef = useRef(0);
   const snapshotAccumulatorSecondsRef = useRef(0);
   const localInputSequenceRef = useRef(0);
   const goombaHitTimestampsRef = useRef(new Map<string, number>());
@@ -256,16 +266,118 @@ export function CharacterRigController({
   const lookTargetRef = useRef(new THREE.Vector3());
   const visualQuaternionRef = useRef(new THREE.Quaternion());
   const cameraCollisionDirectionRef = useRef(new THREE.Vector3());
+  const cameraCollisionOriginRef = useRef({ x: 0, y: 0, z: 0 });
+  const cameraCollisionCastDirectionRef = useRef({ x: 0, y: 0, z: 0 });
   const fireballLaunchDirectionRef = useRef(new THREE.Vector3());
   const fireballPlanarDirectionRef = useRef(new THREE.Vector3());
   const fireballSpawnPositionRef = useRef(new THREE.Vector3());
+  const bodyTranslationRef = useRef({
+    x: PLAYER_START_POSITION.x,
+    y: PLAYER_START_POSITION.y,
+    z: PLAYER_START_POSITION.z,
+  });
+  const fireballCastOriginRef = useRef({ x: 0, y: 0, z: 0 });
+  const fireballCastDirectionRef = useRef({ x: 0, y: 0, z: 0 });
   const perspectiveCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const cameraCollisionShape = useMemo(
     () => new rapier.Ball(THIRD_PERSON_CAMERA_COLLISION_RADIUS),
     [rapier],
   );
   const fireballCastShape = useMemo(() => new rapier.Ball(FIREBALL_RADIUS), [rapier]);
+  const groundingRay = useMemo(
+    () => new rapier.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 }),
+    [rapier],
+  );
+  const buildSpawnRequest = useCallback((): FireballSpawnRequest => {
+    getLookDirection(
+      cameraYawRef.current,
+      cameraPitchRef.current,
+      fireballLaunchDirectionRef.current,
+    );
 
+    fireballPlanarDirectionRef.current.set(
+      fireballLaunchDirectionRef.current.x,
+      0,
+      fireballLaunchDirectionRef.current.z,
+    );
+    if (fireballPlanarDirectionRef.current.lengthSq() < 1e-6) {
+      getForwardFromYaw(cameraYawRef.current, fireballPlanarDirectionRef.current);
+    }
+    fireballPlanarDirectionRef.current.normalize();
+
+    const translation = bodyTranslationRef.current;
+    fireballSpawnPositionRef.current
+      .set(
+        translation.x,
+        translation.y + PLAYER_EYE_HEIGHT_OFFSET * 0.7 + FIREBALL_RADIUS * 0.5,
+        translation.z,
+      )
+      .addScaledVector(
+        fireballPlanarDirectionRef.current,
+        PLAYER_CAPSULE_RADIUS + FIREBALL_RADIUS + 0.24,
+      );
+
+    return {
+      originX: fireballSpawnPositionRef.current.x,
+      originY: fireballSpawnPositionRef.current.y,
+      originZ: fireballSpawnPositionRef.current.z,
+      directionX: fireballPlanarDirectionRef.current.x,
+      directionY: fireballPlanarDirectionRef.current.y,
+      directionZ: fireballPlanarDirectionRef.current.z,
+    };
+  }, []);
+  const castSolidHit = useCallback(
+    (
+      x: number,
+      y: number,
+      z: number,
+      dirX: number,
+      dirY: number,
+      dirZ: number,
+      distance: number,
+    ) => {
+      const body = bodyRef.current;
+      if (!body) {
+        return null;
+      }
+      const fireballCastOrigin = fireballCastOriginRef.current;
+      fireballCastOrigin.x = x;
+      fireballCastOrigin.y = y;
+      fireballCastOrigin.z = z;
+
+      const fireballCastDirection = fireballCastDirectionRef.current;
+      fireballCastDirection.x = dirX;
+      fireballCastDirection.y = dirY;
+      fireballCastDirection.z = dirZ;
+
+      const hit = world.castShape(
+        fireballCastOrigin,
+        IDENTITY_ROTATION,
+        fireballCastDirection,
+        fireballCastShape,
+        0,
+        distance,
+        true,
+        rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+        undefined,
+        undefined,
+        body,
+        shouldCollideFireball,
+      );
+      if (!hit) {
+        return null;
+      }
+
+      const toiCandidate = hit as {
+        time_of_impact?: number;
+        timeOfImpact?: number;
+      };
+      const timeOfImpact =
+        toiCandidate.time_of_impact ?? toiCandidate.timeOfImpact;
+      return typeof timeOfImpact === "number" ? timeOfImpact : null;
+    },
+    [fireballCastShape, rapier, world],
+  );
   useEffect(() => {
     perspectiveCameraRef.current =
       camera instanceof THREE.PerspectiveCamera ? camera : null;
@@ -327,19 +439,23 @@ export function CharacterRigController({
     }
 
     const translation = body.translation();
+    bodyTranslationRef.current.x = translation.x;
+    bodyTranslationRef.current.y = translation.y;
+    bodyTranslationRef.current.z = translation.z;
     const nowMs = performance.now();
     const goombaHitTimestamps = goombaHitTimestampsRef.current;
-    for (const [goombaId, lastHitAtMs] of goombaHitTimestamps.entries()) {
-      if (nowMs - lastHitAtMs > GOOMBA_HIT_RETRY_COOLDOWN_MS) {
-        goombaHitTimestamps.delete(goombaId);
+    if (goombaHitTimestamps.size > 0) {
+      for (const [goombaId, lastHitAtMs] of goombaHitTimestamps.entries()) {
+        if (nowMs - lastHitAtMs > GOOMBA_HIT_RETRY_COOLDOWN_MS) {
+          goombaHitTimestamps.delete(goombaId);
+        }
       }
     }
     const currentVelocity = body.linvel();
     const verticalSpeedAbs = Math.abs(currentVelocity.y);
-    const groundingRay = new rapier.Ray(
-      { x: translation.x, y: translation.y, z: translation.z },
-      { x: 0, y: -1, z: 0 },
-    );
+    groundingRay.origin.x = translation.x;
+    groundingRay.origin.y = translation.y;
+    groundingRay.origin.z = translation.z;
     const groundingHit = world.castRay(
       groundingRay,
       PLAYER_GROUND_CAST_DISTANCE,
@@ -429,17 +545,21 @@ export function CharacterRigController({
     const velocityDeltaX = targetVelocityX - currentVelocity.x;
     const velocityDeltaZ = targetVelocityZ - currentVelocity.z;
     const maxVelocityDelta = PLAYER_ACCELERATION * dt;
-    const velocityDeltaMagnitude = Math.hypot(velocityDeltaX, velocityDeltaZ);
+    const velocityDeltaMagnitudeSquared =
+      velocityDeltaX * velocityDeltaX + velocityDeltaZ * velocityDeltaZ;
+    const maxVelocityDeltaSquared = maxVelocityDelta * maxVelocityDelta;
     const velocityDeltaScale =
-      velocityDeltaMagnitude > maxVelocityDelta && velocityDeltaMagnitude > 0
-        ? maxVelocityDelta / velocityDeltaMagnitude
+      velocityDeltaMagnitudeSquared > maxVelocityDeltaSquared &&
+      velocityDeltaMagnitudeSquared > 0
+        ? maxVelocityDelta / Math.sqrt(velocityDeltaMagnitudeSquared)
         : 1;
     let nextVelocityX = currentVelocity.x + velocityDeltaX * velocityDeltaScale;
     let nextVelocityZ = currentVelocity.z + velocityDeltaZ * velocityDeltaScale;
     if (hasMoveIntent && targetSpeed > 0) {
-      const nextPlanarSpeed = Math.hypot(nextVelocityX, nextVelocityZ);
-      if (nextPlanarSpeed > targetSpeed) {
-        const planarSpeedScale = targetSpeed / nextPlanarSpeed;
+      const nextPlanarSpeedSquared =
+        nextVelocityX * nextVelocityX + nextVelocityZ * nextVelocityZ;
+      if (nextPlanarSpeedSquared > targetSpeed * targetSpeed) {
+        const planarSpeedScale = targetSpeed / Math.sqrt(nextPlanarSpeedSquared);
         nextVelocityX *= planarSpeedScale;
         nextVelocityZ *= planarSpeedScale;
       }
@@ -474,11 +594,9 @@ export function CharacterRigController({
           continue;
         }
 
-        const planarDistance = Math.hypot(
-          translation.x - goomba.x,
-          translation.z - goomba.z,
-        );
-        if (planarDistance > GOOMBA_STOMP_RADIUS) {
+        const dx = translation.x - goomba.x;
+        const dz = translation.z - goomba.z;
+        if (dx * dx + dz * dz > GOOMBA_STOMP_RADIUS_SQUARED) {
           continue;
         }
         if (playerFeetY < goomba.y + 0.08) {
@@ -499,8 +617,10 @@ export function CharacterRigController({
       }
     }
 
-    const planarVelocityMagnitude = Math.hypot(nextVelocityX, nextVelocityZ);
-    if (planarVelocityMagnitude > 1e-4) {
+    const planarSpeedSquared =
+      nextVelocityX * nextVelocityX + nextVelocityZ * nextVelocityZ;
+    const planarSpeed = Math.sqrt(planarSpeedSquared);
+    if (planarSpeedSquared > 1e-8) {
       const velocityYaw = Math.atan2(nextVelocityX, -nextVelocityZ);
       characterYawRef.current = normalizeAngle(
         velocityYaw * CHARACTER_CAMERA_YAW_SIGN,
@@ -525,7 +645,6 @@ export function CharacterRigController({
       translation.z,
     );
 
-    const planarSpeed = Math.hypot(nextVelocityX, nextVelocityZ);
     const speedBlend = 1 - Math.exp(-PLANAR_SPEED_SMOOTHING * dt);
     smoothedPlanarSpeedRef.current +=
       (planarSpeed - smoothedPlanarSpeedRef.current) * speedBlend;
@@ -569,9 +688,9 @@ export function CharacterRigController({
       const dx = authoritativeLocalPlayerState.x - currentTranslation.x;
       const dy = authoritativeLocalPlayerState.y - currentTranslation.y;
       const dz = authoritativeLocalPlayerState.z - currentTranslation.z;
-      const distance = Math.hypot(dx, dy, dz);
+      const distanceSquared = dx * dx + dy * dy + dz * dz;
 
-      if (distance > RECONCILIATION_HARD_DISTANCE) {
+      if (distanceSquared > RECONCILIATION_HARD_DISTANCE_SQUARED) {
         body.setTranslation(
           {
             x: authoritativeLocalPlayerState.x,
@@ -588,7 +707,7 @@ export function CharacterRigController({
           },
           true,
         );
-      } else if (distance > RECONCILIATION_SOFT_DISTANCE) {
+      } else if (distanceSquared > RECONCILIATION_SOFT_DISTANCE_SQUARED) {
         const correctionBlend = 1 - Math.exp(-10 * dt);
         body.setTranslation(
           {
@@ -600,44 +719,6 @@ export function CharacterRigController({
         );
       }
     }
-
-    const buildSpawnRequest = (): FireballSpawnRequest => {
-      getLookDirection(
-        cameraYawRef.current,
-        cameraPitchRef.current,
-        fireballLaunchDirectionRef.current,
-      );
-
-      fireballPlanarDirectionRef.current.set(
-        fireballLaunchDirectionRef.current.x,
-        0,
-        fireballLaunchDirectionRef.current.z,
-      );
-      if (fireballPlanarDirectionRef.current.lengthSq() < 1e-6) {
-        getForwardFromYaw(cameraYawRef.current, fireballPlanarDirectionRef.current);
-      }
-      fireballPlanarDirectionRef.current.normalize();
-
-      fireballSpawnPositionRef.current
-        .set(
-          translation.x,
-          translation.y + PLAYER_EYE_HEIGHT_OFFSET * 0.7 + FIREBALL_RADIUS * 0.5,
-          translation.z,
-        )
-        .addScaledVector(
-          fireballPlanarDirectionRef.current,
-          PLAYER_CAPSULE_RADIUS + FIREBALL_RADIUS + 0.24,
-        );
-
-      return {
-        originX: fireballSpawnPositionRef.current.x,
-        originY: fireballSpawnPositionRef.current.y,
-        originZ: fireballSpawnPositionRef.current.z,
-        directionX: fireballPlanarDirectionRef.current.x,
-        directionY: fireballPlanarDirectionRef.current.y,
-        directionZ: fireballPlanarDirectionRef.current.z,
-      };
-    };
 
     const pendingFireballRequests =
       fireballRequestCountRef.current - lastProcessedFireballRequestCountRef.current;
@@ -655,62 +736,36 @@ export function CharacterRigController({
 
     const pendingNetworkSpawns = networkFireballSpawnQueueRef?.current;
     if (pendingNetworkSpawns && pendingNetworkSpawns.length > 0) {
-      const spawnCountToProcess = Math.min(
-        pendingNetworkSpawns.length,
-        MAX_NETWORK_FIREBALL_SPAWNS_PER_FRAME,
-      );
-      for (let index = 0; index < spawnCountToProcess; index += 1) {
-        const spawn = pendingNetworkSpawns[index];
-        enqueueFireballSpawnRequest(activeFireballManager, {
-          originX: spawn.originX,
-          originY: spawn.originY,
-          originZ: spawn.originZ,
-          directionX: spawn.directionX,
-          directionY: spawn.directionY,
-          directionZ: spawn.directionZ,
-        });
-      }
-      if (networkFireballSpawnQueueRef) {
-        networkFireballSpawnQueueRef.current =
-          pendingNetworkSpawns.length <= spawnCountToProcess
-            ? []
-            : pendingNetworkSpawns.slice(spawnCountToProcess);
+      const readIndex = networkFireballQueueReadIndexRef.current;
+      const remaining = pendingNetworkSpawns.length - readIndex;
+      if (remaining <= 0) {
+        networkFireballQueueReadIndexRef.current = 0;
+        pendingNetworkSpawns.length = 0;
+      } else {
+        const spawnCountToProcess = Math.min(
+          remaining,
+          MAX_NETWORK_FIREBALL_SPAWNS_PER_FRAME,
+        );
+        for (let index = 0; index < spawnCountToProcess; index += 1) {
+          const spawn = pendingNetworkSpawns[readIndex + index];
+          enqueueFireballSpawnRequest(activeFireballManager, {
+            originX: spawn.originX,
+            originY: spawn.originY,
+            originZ: spawn.originZ,
+            directionX: spawn.directionX,
+            directionY: spawn.directionY,
+            directionZ: spawn.directionZ,
+          });
+        }
+        const nextReadIndex = readIndex + spawnCountToProcess;
+        if (nextReadIndex >= pendingNetworkSpawns.length) {
+          networkFireballQueueReadIndexRef.current = 0;
+          pendingNetworkSpawns.length = 0;
+        } else {
+          networkFireballQueueReadIndexRef.current = nextReadIndex;
+        }
       }
     }
-
-    const castSolidHit = (query: FireballCastQuery) => {
-      const hit = world.castShape(
-        { x: query.x, y: query.y, z: query.z },
-        IDENTITY_ROTATION,
-        { x: query.dirX, y: query.dirY, z: query.dirZ },
-        fireballCastShape,
-        0,
-        query.distance,
-        true,
-        rapier.QueryFilterFlags.EXCLUDE_SENSORS,
-        undefined,
-        undefined,
-        body,
-        (collider) => {
-          const parentBody = collider.parent();
-          const userData = parentBody?.userData as
-            | { kind?: string }
-            | undefined;
-          return userData?.kind !== "terrain";
-        },
-      );
-      if (!hit) {
-        return null;
-      }
-
-      const toiCandidate = hit as {
-        time_of_impact?: number;
-        timeOfImpact?: number;
-      };
-      const timeOfImpact =
-        toiCandidate.time_of_impact ?? toiCandidate.timeOfImpact;
-      return typeof timeOfImpact === "number" ? timeOfImpact : null;
-    };
 
     stepFireballSimulation(activeFireballManager, {
       deltaSeconds: dt,
@@ -722,8 +777,6 @@ export function CharacterRigController({
           return;
         }
 
-        const fireballHitRadius = GOOMBA_FIREBALL_HITBOX_RADIUS + FIREBALL_RADIUS;
-        const fireballHitRadiusSquared = fireballHitRadius * fireballHitRadius;
         for (let goombaIndex = 0; goombaIndex < goombas.length; goombaIndex += 1) {
           const goomba = goombas[goombaIndex];
           if (goomba.state === GOOMBA_INTERACT_DISABLED_STATE) {
@@ -749,7 +802,7 @@ export function CharacterRigController({
             hitboxTopY,
             goomba.z,
           );
-          if (distanceSquared > fireballHitRadiusSquared) {
+          if (distanceSquared > FIREBALL_GOOMBA_HIT_RADIUS_SQUARED) {
             continue;
           }
 
@@ -785,19 +838,19 @@ export function CharacterRigController({
     cameraCollisionDirectionRef.current
       .copy(lookDirectionRef.current)
       .multiplyScalar(-1);
+    const cameraCollisionOrigin = cameraCollisionOriginRef.current;
+    cameraCollisionOrigin.x = cameraPivotRef.current.x;
+    cameraCollisionOrigin.y = cameraPivotRef.current.y;
+    cameraCollisionOrigin.z = cameraPivotRef.current.z;
+    const cameraCollisionCastDirection = cameraCollisionCastDirectionRef.current;
+    cameraCollisionCastDirection.x = cameraCollisionDirectionRef.current.x;
+    cameraCollisionCastDirection.y = cameraCollisionDirectionRef.current.y;
+    cameraCollisionCastDirection.z = cameraCollisionDirectionRef.current.z;
 
     const cameraCollisionHit = world.castShape(
-      {
-        x: cameraPivotRef.current.x,
-        y: cameraPivotRef.current.y,
-        z: cameraPivotRef.current.z,
-      },
+      cameraCollisionOrigin,
       IDENTITY_ROTATION,
-      {
-        x: cameraCollisionDirectionRef.current.x,
-        y: cameraCollisionDirectionRef.current.y,
-        z: cameraCollisionDirectionRef.current.z,
-      },
+      cameraCollisionCastDirection,
       cameraCollisionShape,
       0,
       THIRD_PERSON_CAMERA_DISTANCE,

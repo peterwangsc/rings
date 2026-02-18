@@ -324,30 +324,6 @@ export function collectWorldRing(world: WorldEntityManager, ringId: string) {
   emitWorldManagerChanged(world);
 }
 
-export function applyServerRingState(
-  world: WorldEntityManager,
-  collectedRingIds: Iterable<string>,
-) {
-  const collectedSet = new Set(collectedRingIds);
-  let didChange = false;
-
-  for (let index = 0; index < world.ringEntities.length; index += 1) {
-    const ring = world.ringEntities[index];
-    const shouldBeCollected = collectedSet.has(ring.id);
-    if (ring.collected !== shouldBeCollected) {
-      ring.collected = shouldBeCollected;
-      didChange = true;
-    }
-  }
-
-  if (!didChange) {
-    return;
-  }
-
-  syncVisibleRings(world);
-  emitWorldManagerChanged(world);
-}
-
 export function applyServerRingRows(
   world: WorldEntityManager,
   ringRows: readonly WorldRingSnapshot[],
@@ -403,7 +379,6 @@ export function applyServerRingRows(
     return;
   }
 
-  nextRingEntities.sort((a, b) => a.id.localeCompare(b.id));
   world.ringEntities.splice(0, world.ringEntities.length, ...nextRingEntities);
   syncVisibleRings(world);
   emitWorldManagerChanged(world);

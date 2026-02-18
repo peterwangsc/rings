@@ -70,10 +70,9 @@ export function stepPlanarControllerMovement(
 
   let moveX = forwardX * forwardInput + rightX * rightInput;
   let moveZ = forwardZ * forwardInput + rightZ * rightInput;
-  const moveMagnitude = Math.hypot(moveX, moveZ);
-
-  if (moveMagnitude > 1) {
-    const inverse = 1 / moveMagnitude;
+  const moveMagnitudeSquared = moveX * moveX + moveZ * moveZ;
+  if (moveMagnitudeSquared > 1) {
+    const inverse = 1 / Math.sqrt(moveMagnitudeSquared);
     moveX *= inverse;
     moveZ *= inverse;
   }

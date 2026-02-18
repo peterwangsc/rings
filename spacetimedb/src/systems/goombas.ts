@@ -74,9 +74,14 @@ type GoombaTickContext = {
 
 const RANDOM_UINT32_MAX = 4_294_967_295;
 const IDLE_RETURN_HOME_JITTER_RADIANS = 0.35;
+const IDLE_LEASH_RADIUS_SQUARED = GOOMBA_IDLE_LEASH_RADIUS * GOOMBA_IDLE_LEASH_RADIUS;
+const GOOMBA_HIT_RADIUS_SQUARED = GOOMBA_PLAYER_HIT_RADIUS * GOOMBA_PLAYER_HIT_RADIUS;
+const GOOMBA_TICK_MIN_INTERVAL_MS = 50;
+let lastGoombaTickAtMs = -Infinity;
 
 type NearestPlayer = {
   player: PlayerStateRow;
+  distanceSquared: number;
 };
 
 type RandomCursor = {
@@ -100,8 +105,9 @@ function spillPlayerRings(
   }
 
   const spillCount = Math.min(MAX_SPILL_RING_COUNT, ringCount);
+  const angleStep = (Math.PI * 2) / spillCount;
   for (let index = 0; index < spillCount; index += 1) {
-    const angle = (index / Math.max(1, spillCount)) * Math.PI * 2;
+    const angle = index * angleStep;
     const radius = 1.35 + (index % 4) * 0.65;
     insertDropRing(
       ctx,
@@ -145,26 +151,27 @@ function sampleRandom(cursor: RandomCursor) {
 }
 
 function findNearestPlayerWithinRadius(
-  ctx: GoombaTickContext,
+  players: readonly PlayerStateRow[],
   x: number,
   z: number,
   radius: number,
 ): NearestPlayer | null {
   let nearest: PlayerStateRow | null = null;
-  let nearestDistance = radius;
+  let nearestDistanceSquared = radius * radius;
 
-  for (const player of ctx.db.playerState.iter()) {
+  for (let index = 0; index < players.length; index += 1) {
+    const player = players[index];
     const dx = player.x - x;
     const dz = player.z - z;
-    const distance = Math.hypot(dx, dz);
-    if (distance > nearestDistance) {
+    const distanceSquared = dx * dx + dz * dz;
+    if (distanceSquared > nearestDistanceSquared) {
       continue;
     }
     nearest = player;
-    nearestDistance = distance;
+    nearestDistanceSquared = distanceSquared;
   }
 
-  return nearest ? { player: nearest } : null;
+  return nearest ? { player: nearest, distanceSquared: nearestDistanceSquared } : null;
 }
 
 function clampWorldAxis(value: number) {
@@ -184,7 +191,7 @@ function yawToTarget(
 ) {
   const dx = targetX - fromX;
   const dz = targetZ - fromZ;
-  if (Math.hypot(dx, dz) <= 1e-6) {
+  if (dx * dx + dz * dz <= 1e-12) {
     return normalizeYaw(fallbackYaw);
   }
   return Math.atan2(dx, -dz);
@@ -205,9 +212,7 @@ function startIdleWanderSegment(
 ) {
   const toSpawnX = goomba.spawnX - goomba.x;
   const toSpawnZ = goomba.spawnZ - goomba.z;
-  const distanceFromSpawn = Math.hypot(toSpawnX, toSpawnZ);
-
-  if (distanceFromSpawn > GOOMBA_IDLE_LEASH_RADIUS) {
+  if (toSpawnX * toSpawnX + toSpawnZ * toSpawnZ > IDLE_LEASH_RADIUS_SQUARED) {
     const towardSpawnYaw = Math.atan2(toSpawnX, -toSpawnZ);
     const jitter =
       (sampleRandom(cursor) * 2 - 1) * IDLE_RETURN_HOME_JITTER_RADIANS;
@@ -290,31 +295,6 @@ function startEnragedRun(
   goomba.stateEndsAtMs = timestampMs + GOOMBA_RUN_DURATION_MS;
 }
 
-function maybeHitNearbyPlayer(
-  ctx: GoombaTickContext,
-  goomba: GoombaStateRow,
-  timestampMs: number,
-) {
-  const nearby = findNearestPlayerWithinRadius(
-    ctx,
-    goomba.x,
-    goomba.z,
-    GOOMBA_PLAYER_HIT_RADIUS,
-  );
-  if (!nearby) {
-    return false;
-  }
-
-  spillPlayerRings(
-    ctx,
-    nearby.player.identity,
-    nearby.player.x,
-    nearby.player.z,
-    timestampMs,
-  );
-  return true;
-}
-
 function maybeReleaseChunkSlot(
   ctx: GoombaTickContext,
   goomba: GoombaStateRow,
@@ -368,8 +348,19 @@ function maybeUpdateGoomba(
 }
 
 export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
-  const activeChunkKeys = tickGoombaChunkSpawns(ctx, timestampMs);
+  if (timestampMs - lastGoombaTickAtMs < GOOMBA_TICK_MIN_INTERVAL_MS) {
+    return;
+  }
+  lastGoombaTickAtMs = timestampMs;
 
+  const activeChunks = tickGoombaChunkSpawns(ctx, timestampMs);
+  let players: PlayerStateRow[] | null = null;
+  const getPlayers = () => {
+    if (!players) {
+      players = Array.from(ctx.db.playerState.iter());
+    }
+    return players;
+  };
   for (const goomba of ctx.db.goombaState.iter()) {
     const next: GoombaStateRow = {
       ...goomba,
@@ -389,7 +380,7 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
       continue;
     }
 
-    if (!activeChunkKeys.has(spawnChunkKey)) {
+    if (!activeChunks.has(spawnChunkKey)) {
       continue;
     }
 
@@ -403,7 +394,7 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
     );
 
     const nearbyTarget = findNearestPlayerWithinRadius(
-      ctx,
+      getPlayers(),
       next.x,
       next.z,
       GOOMBA_ENRAGE_RADIUS,
@@ -465,7 +456,14 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
 
     stepGoombaForward(next, GOOMBA_RUN_SPEED, dtSeconds);
 
-    if (maybeHitNearbyPlayer(ctx, next, timestampMs)) {
+    if (nearbyTarget.distanceSquared <= GOOMBA_HIT_RADIUS_SQUARED) {
+      spillPlayerRings(
+        ctx,
+        nearbyTarget.player.identity,
+        nearbyTarget.player.x,
+        nearbyTarget.player.z,
+        timestampMs,
+      );
       setCooldownState(next, timestampMs, nearbyTarget.player);
     }
 

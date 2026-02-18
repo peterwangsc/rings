@@ -35,12 +35,12 @@ spacetimedb.reducer(
       return { tag: 'ok' };
     }
 
-    const planarDistanceToGoomba = Math.hypot(
-      player.x - goomba.x,
-      player.z - goomba.z,
-    );
-
-    if (planarDistanceToGoomba > GOOMBA_HIT_VALIDATION_RADIUS) {
+    const dx = player.x - goomba.x;
+    const dz = player.z - goomba.z;
+    if (
+      dx * dx + dz * dz >
+      GOOMBA_HIT_VALIDATION_RADIUS * GOOMBA_HIT_VALIDATION_RADIUS
+    ) {
       return { tag: 'err', value: 'goomba_out_of_range' };
     }
 
