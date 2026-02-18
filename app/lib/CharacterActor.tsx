@@ -42,7 +42,8 @@ const CLIP_HAPPY = "Happy";
 const CLIP_SAD = "Sad";
 
 export function CharacterActor({
-  motionState,
+  motionState = "idle",
+  motionStateRef,
   planarSpeedRef,
   targetHeight = DEFAULT_CHARACTER_TARGET_HEIGHT,
   hidden = false,
@@ -168,10 +169,10 @@ export function CharacterActor({
     };
     mixer.addEventListener("finished", handleActionFinished);
 
-    const initialAction = resolveMotionAction(
-      actionsRef.current,
-      activeStateRef.current,
-    );
+    if (motionStateRef) {
+      activeStateRef.current = motionStateRef.current;
+    }
+    const initialAction = resolveMotionAction(actionsRef.current, activeStateRef.current);
     if (initialAction) {
       initialAction.reset().fadeIn(DEFAULT_FADE_IN_SECONDS).play();
     }
@@ -208,39 +209,29 @@ export function CharacterActor({
         sad: null,
       };
     };
-  }, [character, onEmoteFinished]);
-
-  useEffect(() => {
-    const currentState = activeStateRef.current;
-    if (motionState === currentState) {
-      return;
-    }
-
-    const currentAction = resolveMotionAction(actionsRef.current, currentState);
-    const nextAction = resolveMotionAction(actionsRef.current, motionState);
-
-    if (!nextAction) {
-      return;
-    }
-
-    if (currentAction === nextAction) {
-      activeStateRef.current = motionState;
-      return;
-    }
-
-    if (currentAction && currentAction !== nextAction) {
-      currentAction.fadeOut(STATE_BLEND_DURATION_SECONDS);
-    }
-
-    nextAction.reset().fadeIn(STATE_BLEND_DURATION_SECONDS).play();
-    activeStateRef.current = motionState;
-  }, [motionState]);
+  }, [character, motionStateRef, onEmoteFinished]);
 
   useFrame((_, deltaSeconds) => {
     const dt = Math.max(deltaSeconds, MIN_DELTA_SECONDS);
 
     if (mixerRef.current) {
       mixerRef.current.update(dt);
+    }
+
+    const nextState = motionStateRef?.current ?? motionState;
+    const currentState = activeStateRef.current;
+    if (nextState !== currentState) {
+      const currentAction = resolveMotionAction(actionsRef.current, currentState);
+      const nextAction = resolveMotionAction(actionsRef.current, nextState);
+      if (nextAction) {
+        if (currentAction && currentAction !== nextAction) {
+          currentAction.fadeOut(STATE_BLEND_DURATION_SECONDS);
+        }
+        if (currentAction !== nextAction) {
+          nextAction.reset().fadeIn(STATE_BLEND_DURATION_SECONDS).play();
+        }
+        activeStateRef.current = nextState;
+      }
     }
 
     const speed = planarSpeedRef?.current ?? 0;

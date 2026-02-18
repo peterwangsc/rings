@@ -1,19 +1,5 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { MotionState } from "../lib/characterTypes";
 import { GROUNDED_GRACE_SECONDS, WALK_SPEED_THRESHOLD } from "./constants";
-
-export function setMotionStateIfChanged(
-  next: MotionState,
-  currentRef: MutableRefObject<MotionState>,
-  setState: Dispatch<SetStateAction<MotionState>>,
-): void {
-  if (currentRef.current === next) {
-    return;
-  }
-
-  currentRef.current = next;
-  setState(next);
-}
 
 export function updateUngroundedTimer(
   isGrounded: boolean,

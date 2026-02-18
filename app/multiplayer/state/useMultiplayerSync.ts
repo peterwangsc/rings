@@ -97,7 +97,30 @@ function toValidMotionState(value: string): MotionState {
 
 function toAuthoritativePlayerState(
   row: NetPlayerRow,
+  previous?: AuthoritativePlayerState,
 ): AuthoritativePlayerState {
+  const motionState = toValidMotionState(row.motionState);
+  if (
+    previous &&
+    previous.identity === row.identity &&
+    previous.displayName === row.displayName &&
+    previous.x === row.x &&
+    previous.y === row.y &&
+    previous.z === row.z &&
+    previous.yaw === row.yaw &&
+    previous.pitch === row.pitch &&
+    previous.vx === row.vx &&
+    previous.vy === row.vy &&
+    previous.vz === row.vz &&
+    previous.planarSpeed === row.planarSpeed &&
+    previous.motionState === motionState &&
+    previous.lastInputSeq === row.lastInputSeq &&
+    previous.updatedAtMs === row.updatedAtMs &&
+    previous.lastCastAtMs === row.lastCastAtMs
+  ) {
+    return previous;
+  }
+
   return {
     identity: row.identity,
     displayName: row.displayName,
@@ -110,7 +133,7 @@ function toAuthoritativePlayerState(
     vy: row.vy,
     vz: row.vz,
     planarSpeed: row.planarSpeed,
-    motionState: toValidMotionState(row.motionState),
+    motionState,
     lastInputSeq: row.lastInputSeq,
     updatedAtMs: row.updatedAtMs,
     lastCastAtMs: row.lastCastAtMs,
@@ -134,7 +157,22 @@ function toFireballSpawnEvent(
   };
 }
 
-function toChatMessageEvent(row: NetChatMessageEventRow): ChatMessageEvent {
+function toChatMessageEvent(
+  row: NetChatMessageEventRow,
+  previous?: ChatMessageEvent,
+): ChatMessageEvent {
+  if (
+    previous &&
+    previous.messageId === row.messageId &&
+    previous.ownerIdentity === row.ownerIdentity &&
+    previous.ownerDisplayName === row.ownerDisplayName &&
+    previous.messageText === row.messageText &&
+    previous.createdAtMs === row.createdAtMs &&
+    previous.expiresAtMs === row.expiresAtMs
+  ) {
+    return previous;
+  }
+
   return {
     messageId: row.messageId,
     ownerIdentity: row.ownerIdentity,
@@ -158,14 +196,30 @@ function toValidGoombaState(value: string): GoombaState["state"] {
   }
 }
 
-function toGoombaState(row: NetGoombaRow): GoombaState {
+function toGoombaState(
+  row: NetGoombaRow,
+  previous?: GoombaState,
+): GoombaState {
+  const state = toValidGoombaState(row.state);
+  if (
+    previous &&
+    previous.goombaId === row.goombaId &&
+    previous.x === row.x &&
+    previous.y === row.y &&
+    previous.z === row.z &&
+    previous.yaw === row.yaw &&
+    previous.state === state
+  ) {
+    return previous;
+  }
+
   return {
     goombaId: row.goombaId,
     x: row.x,
     y: row.y,
     z: row.z,
     yaw: row.yaw,
-    state: toValidGoombaState(row.state),
+    state,
   };
 }
 
@@ -179,32 +233,74 @@ function toValidMysteryBoxState(value: string): MysteryBoxState["state"] {
   }
 }
 
-function toMysteryBoxState(row: NetMysteryBoxRow): MysteryBoxState {
+function toMysteryBoxState(
+  row: NetMysteryBoxRow,
+  previous?: MysteryBoxState,
+): MysteryBoxState {
+  const state = toValidMysteryBoxState(row.state);
+  if (
+    previous &&
+    previous.mysteryBoxId === row.mysteryBoxId &&
+    previous.x === row.x &&
+    previous.y === row.y &&
+    previous.z === row.z &&
+    previous.state === state
+  ) {
+    return previous;
+  }
+
   return {
     mysteryBoxId: row.mysteryBoxId,
     x: row.x,
     y: row.y,
     z: row.z,
-    state: toValidMysteryBoxState(row.state),
+    state,
   };
 }
 
 function toPlayerInventorySnapshot(
   row: NetPlayerInventoryRow,
+  previous?: PlayerInventorySnapshot,
 ): PlayerInventorySnapshot {
+  const ringCount = Math.max(0, Math.floor(row.ringCount));
+  if (
+    previous &&
+    previous.identity === row.identity &&
+    previous.ringCount === ringCount &&
+    previous.updatedAtMs === row.updatedAtMs
+  ) {
+    return previous;
+  }
+
   return {
     identity: row.identity,
-    ringCount: Math.max(0, Math.floor(row.ringCount)),
+    ringCount,
     updatedAtMs: row.updatedAtMs,
   };
 }
 
-function toPlayerStatsSnapshot(row: NetPlayerStatsRow): PlayerStatsSnapshot {
+function toPlayerStatsSnapshot(
+  row: NetPlayerStatsRow,
+  previous?: PlayerStatsSnapshot,
+): PlayerStatsSnapshot {
   const normalizedDisplayName = row.displayName.trim();
+  const displayName =
+    normalizedDisplayName.length > 0 ? normalizedDisplayName : "Guest";
+  const highestRingCount = Math.max(0, Math.floor(row.highestRingCount));
+  if (
+    previous &&
+    previous.identity === row.identity &&
+    previous.displayName === displayName &&
+    previous.highestRingCount === highestRingCount &&
+    previous.updatedAtMs === row.updatedAtMs
+  ) {
+    return previous;
+  }
+
   return {
     identity: row.identity,
-    displayName: normalizedDisplayName.length > 0 ? normalizedDisplayName : "Guest",
-    highestRingCount: Math.max(0, Math.floor(row.highestRingCount)),
+    displayName,
+    highestRingCount,
     updatedAtMs: row.updatedAtMs,
   };
 }
@@ -299,6 +395,10 @@ export function useMultiplayerSync({
   const goombasBufferRef = useRef<Map<string, GoombaState>>(new Map());
   const mysteryBoxesBufferRef = useRef<Map<string, MysteryBoxState>>(new Map());
   const chatMessagesBufferRef = useRef<ChatMessageEvent[]>([]);
+  const chatMessageCacheRef = useRef<Map<string, ChatMessageEvent>>(new Map());
+  const nextChatMessageCacheRef = useRef<Map<string, ChatMessageEvent>>(
+    new Map(),
+  );
 
   const localIdentity = connectionState.identity?.toHexString() ?? null;
 
@@ -393,15 +493,25 @@ export function useMultiplayerSync({
   useEffect(() => {
     const remotePlayers = remotePlayersBufferRef.current;
     remotePlayers.clear();
+    const previousRemotePlayers = store.state.remotePlayers;
+    const previousLocalPlayer = store.state.authoritativeLocalPlayerState;
     let authoritativeLocalPlayer: AuthoritativePlayerState | null = null;
     let freshestUpdatedAtMs = -1;
 
     for (const row of playerRows) {
       freshestUpdatedAtMs = Math.max(freshestUpdatedAtMs, row.updatedAtMs);
-      const player = toAuthoritativePlayerState(row);
-      if (localIdentity && player.identity === localIdentity) {
-        authoritativeLocalPlayer = player;
+      if (localIdentity && row.identity === localIdentity) {
+        authoritativeLocalPlayer = toAuthoritativePlayerState(
+          row,
+          previousLocalPlayer?.identity === row.identity
+            ? previousLocalPlayer
+            : undefined,
+        );
       } else {
+        const player = toAuthoritativePlayerState(
+          row,
+          previousRemotePlayers.get(row.identity),
+        );
         remotePlayers.set(player.identity, player);
       }
     }
@@ -443,8 +553,12 @@ export function useMultiplayerSync({
   useEffect(() => {
     const inventoryByIdentity = playerInventoriesBufferRef.current;
     inventoryByIdentity.clear();
+    const previousInventories = store.state.playerInventories;
     for (const row of playerInventoryRows) {
-      inventoryByIdentity.set(row.identity, toPlayerInventorySnapshot(row));
+      inventoryByIdentity.set(
+        row.identity,
+        toPlayerInventorySnapshot(row, previousInventories.get(row.identity)),
+      );
     }
     setPlayerInventories(store, inventoryByIdentity);
   }, [playerInventoryRows, store]);
@@ -452,8 +566,12 @@ export function useMultiplayerSync({
   useEffect(() => {
     const statsByIdentity = playerStatsBufferRef.current;
     statsByIdentity.clear();
+    const previousStats = store.state.playerStats;
     for (const row of playerStatsRows) {
-      statsByIdentity.set(row.identity, toPlayerStatsSnapshot(row));
+      statsByIdentity.set(
+        row.identity,
+        toPlayerStatsSnapshot(row, previousStats.get(row.identity)),
+      );
     }
     setPlayerStats(store, statsByIdentity);
   }, [playerStatsRows, store]);
@@ -528,8 +646,12 @@ export function useMultiplayerSync({
   useEffect(() => {
     const goombas = goombasBufferRef.current;
     goombas.clear();
+    const previousGoombas = store.state.goombas;
     for (const row of goombaRows) {
-      goombas.set(row.goombaId, toGoombaState(row));
+      goombas.set(
+        row.goombaId,
+        toGoombaState(row, previousGoombas.get(row.goombaId)),
+      );
     }
     setGoombas(store, goombas);
   }, [goombaRows, store]);
@@ -537,8 +659,12 @@ export function useMultiplayerSync({
   useEffect(() => {
     const mysteryBoxes = mysteryBoxesBufferRef.current;
     mysteryBoxes.clear();
+    const previousMysteryBoxes = store.state.mysteryBoxes;
     for (const row of mysteryBoxRows) {
-      mysteryBoxes.set(row.mysteryBoxId, toMysteryBoxState(row));
+      mysteryBoxes.set(
+        row.mysteryBoxId,
+        toMysteryBoxState(row, previousMysteryBoxes.get(row.mysteryBoxId)),
+      );
     }
     setMysteryBoxes(store, mysteryBoxes);
   }, [mysteryBoxRows, store]);
@@ -566,11 +692,18 @@ export function useMultiplayerSync({
   useEffect(() => {
     const chatMessages = chatMessagesBufferRef.current;
     chatMessages.length = 0;
+    const previousMessageCache = chatMessageCacheRef.current;
+    const nextMessageCache = nextChatMessageCacheRef.current;
+    nextMessageCache.clear();
     let previousCreatedAtMs = -Infinity;
     let isSortedAscending = true;
 
     for (const row of chatMessageRows) {
-      const message = toChatMessageEvent(row);
+      const message = toChatMessageEvent(
+        row,
+        previousMessageCache.get(row.messageId),
+      );
+      nextMessageCache.set(message.messageId, message);
       chatMessages.push(message);
       if (message.createdAtMs < previousCreatedAtMs) {
         isSortedAscending = false;
@@ -582,6 +715,8 @@ export function useMultiplayerSync({
       chatMessages.sort((a, b) => a.createdAtMs - b.createdAtMs);
     }
 
+    chatMessageCacheRef.current = nextMessageCache;
+    nextChatMessageCacheRef.current = previousMessageCache;
     setChatMessages(store, chatMessages);
   }, [chatMessageRows, store]);
 

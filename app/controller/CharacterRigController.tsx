@@ -7,7 +7,7 @@ import {
   type RapierRigidBody,
 } from "@react-three/rapier";
 import { useFrame, useThree } from "@react-three/fiber";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import {
   applyFirstPersonCamera,
@@ -76,7 +76,6 @@ import {
 import {
   isGroundedWithinGracePeriod,
   resolveTargetMotionState,
-  setMotionStateIfChanged,
   updateUngroundedTimer,
 } from "../utils/physics";
 import { sampleTerrainHeight } from "../utils/terrain";
@@ -327,7 +326,6 @@ export function CharacterRigController({
   const goombaHitTimestampsRef = useRef(new Map<string, number>());
   const footstepsAudioActiveRef = useRef(false);
   const motionStateRef = useRef<MotionState>("idle");
-  const [actorMotionState, setActorMotionState] = useState<MotionState>("idle");
   const fallbackFireballManager = useMemo(
     () => createFireballManager(FIREBALL_MAX_ACTIVE_COUNT),
     [],
@@ -839,11 +837,9 @@ export function CharacterRigController({
       previousState: motionStateRef.current,
     });
 
-    setMotionStateIfChanged(
-      targetMotionState,
-      motionStateRef,
-      setActorMotionState,
-    );
+    if (motionStateRef.current !== targetMotionState) {
+      motionStateRef.current = targetMotionState;
+    }
 
     playerPositionRef.current.set(translation.x, translation.y, translation.z);
     onPlayerPositionUpdate?.(translation.x, translation.y, translation.z);
@@ -1102,7 +1098,7 @@ export function CharacterRigController({
         />
         <group ref={visualRootRef} position={[0, PLAYER_VISUAL_Y_OFFSET, 0]}>
           <CharacterActor
-            motionState={actorMotionState}
+            motionStateRef={motionStateRef}
             planarSpeedRef={smoothedPlanarSpeedRef}
             hidden={cameraMode === "first_person"}
           />
