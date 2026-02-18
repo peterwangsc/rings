@@ -4,7 +4,6 @@ import { useSyncExternalStore } from "react";
 import * as THREE from "three";
 import {
   createFireballManager,
-  setFireballManagerMaxActiveCount,
   type FireballManager,
 } from "../../gameplay/abilities/fireballManager";
 import {
@@ -127,7 +126,7 @@ function syncVisibleRings(world: WorldEntityManager) {
   }
 }
 
-function applyRingCountToHudAndFireballManager(
+function applyRingCountToHud(
   world: WorldEntityManager,
   ringCount: number,
 ) {
@@ -135,18 +134,11 @@ function applyRingCountToHudAndFireballManager(
   if (normalizedRingCount > world.hud.totalRings) {
     world.hud.totalRings = normalizedRingCount;
   }
-  if (
-    world.hud.ringCount === normalizedRingCount &&
-    world.fireballManager.maxActiveCount === normalizedRingCount
-  ) {
+  if (world.hud.ringCount === normalizedRingCount) {
     return false;
   }
 
   world.hud.ringCount = normalizedRingCount;
-  setFireballManagerMaxActiveCount(
-    world.fireballManager,
-    normalizedRingCount,
-  );
   return true;
 }
 
@@ -255,7 +247,6 @@ export function createWorldEntityManager(): WorldEntityManager {
 
   upsertActiveChunkSlots(world, centerChunk);
   syncVisibleRings(world);
-  applyRingCountToHudAndFireballManager(world, 0);
   scheduleChunkPrefetch(world, centerChunk);
   return world;
 }
@@ -317,7 +308,7 @@ export function collectWorldRing(world: WorldEntityManager, ringId: string) {
 
   ring.collected = true;
   syncVisibleRings(world);
-  applyRingCountToHudAndFireballManager(
+  applyRingCountToHud(
     world,
     world.ringEntities.length - world.visibleRingEntities.length,
   );
@@ -388,7 +379,7 @@ export function setWorldLocalRingCount(
   world: WorldEntityManager,
   ringCount: number,
 ) {
-  if (!applyRingCountToHudAndFireballManager(world, ringCount)) {
+  if (!applyRingCountToHud(world, ringCount)) {
     return;
   }
 

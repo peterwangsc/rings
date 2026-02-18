@@ -118,24 +118,6 @@ export function createFireballManager(
   };
 }
 
-export function setFireballManagerMaxActiveCount(
-  manager: FireballManager,
-  maxActiveCount: number,
-) {
-  const normalizedMaxActiveCount = Math.min(
-    manager.renderFrame.slots.length,
-    Math.max(0, Math.floor(maxActiveCount)),
-  );
-  manager.maxActiveCount = normalizedMaxActiveCount;
-
-  if (manager.activeStates.length > normalizedMaxActiveCount) {
-    manager.activeStates.splice(
-      0,
-      manager.activeStates.length - normalizedMaxActiveCount,
-    );
-  }
-}
-
 export function enqueueFireballSpawn(
   manager: FireballManager,
   count = 1,

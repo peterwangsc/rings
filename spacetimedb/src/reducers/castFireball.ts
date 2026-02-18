@@ -3,7 +3,6 @@ import {
   FIREBALL_EVENT_TTL_MS,
   PLAYER_CAST_COOLDOWN_MS,
 } from '../shared/constants';
-import { ensurePlayerInventory } from '../shared/playerInventory';
 import { nowMs } from '../shared/time';
 import { spacetimedb } from '../schema';
 import { pruneExpiredRows } from '../systems/prune';
@@ -11,7 +10,6 @@ import {
   isFiniteNumber,
   isValidFireballDirectionLengthSquared,
   isValidFireballSpawnDistanceSquared,
-  normalizeRingCount,
 } from '../validation/reducerValidation';
 
 spacetimedb.reducer(
@@ -52,25 +50,6 @@ spacetimedb.reducer(
     }
 
     pruneExpiredRows(ctx, timestampMs);
-
-    const inventory = ensurePlayerInventory(ctx, identity, timestampMs);
-    const ringCount = normalizeRingCount(inventory.ringCount);
-    if (ringCount <= 0) {
-      return { tag: 'err', value: 'fireball_limit_reached' };
-    }
-
-    let activeOwnedFireballCount = 0;
-    for (const event of ctx.db.fireballEvent.iter()) {
-      if (event.ownerIdentity === identity) {
-        activeOwnedFireballCount += 1;
-        if (activeOwnedFireballCount >= ringCount) {
-          break;
-        }
-      }
-    }
-    if (activeOwnedFireballCount >= ringCount) {
-      return { tag: 'err', value: 'fireball_limit_reached' };
-    }
 
     const directionLengthSquared =
       payload.directionX * payload.directionX +
