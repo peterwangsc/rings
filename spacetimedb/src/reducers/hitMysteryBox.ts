@@ -5,7 +5,6 @@ import {
   MYSTERY_BOX_HALF_EXTENT,
   MYSTERY_BOX_HIT_VALIDATION_RADIUS,
   MYSTERY_BOX_HIT_VERTICAL_TOLERANCE,
-  MYSTERY_BOX_MIN_UPWARD_VELOCITY,
   MYSTERY_BOX_PLAYER_HEAD_OFFSET,
   MYSTERY_BOX_RING_BURST_COUNT,
   MYSTERY_BOX_STATE_DEPLETED,
@@ -49,13 +48,15 @@ spacetimedb.reducer(
       return { tag: 'err', value: 'mystery_box_out_of_range' };
     }
 
-    if (player.vy < MYSTERY_BOX_MIN_UPWARD_VELOCITY) {
-      return { tag: 'err', value: 'mystery_box_not_rising' };
-    }
-
     const playerHeadY = player.y + MYSTERY_BOX_PLAYER_HEAD_OFFSET;
     const boxBottomY = mysteryBox.y - MYSTERY_BOX_HALF_EXTENT;
-    if (Math.abs(playerHeadY - boxBottomY) > MYSTERY_BOX_HIT_VERTICAL_TOLERANCE) {
+    if (playerHeadY > boxBottomY + MYSTERY_BOX_HIT_VERTICAL_TOLERANCE) {
+      return { tag: 'err', value: 'mystery_box_not_underneath' };
+    }
+    if (
+      boxBottomY - playerHeadY >
+      MYSTERY_BOX_HALF_EXTENT + MYSTERY_BOX_HIT_VERTICAL_TOLERANCE
+    ) {
       return { tag: 'err', value: 'mystery_box_not_underneath' };
     }
 

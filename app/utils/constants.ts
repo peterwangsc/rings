@@ -260,8 +260,3 @@ export const GOOMBA_HIT_RETRY_COOLDOWN_MS = 500;
 // Keep in sync with spacetimedb/src/shared/constants.ts.
 export const MYSTERY_BOX_INTERACT_DISABLED_STATE = "depleted";
 export const MYSTERY_BOX_HALF_EXTENT = 0.45;
-export const MYSTERY_BOX_MIN_UPWARD_VELOCITY = 1.8;
-export const MYSTERY_BOX_HIT_VALIDATION_RADIUS = 1.35;
-export const MYSTERY_BOX_HIT_VERTICAL_TOLERANCE = 0.55;
-export const MYSTERY_BOX_PLAYER_HEAD_OFFSET = 0.8;
-export const MYSTERY_BOX_HIT_RETRY_COOLDOWN_MS = 500;

@@ -450,6 +450,7 @@ export function useMultiplayerSync({
       y: number;
       z: number;
       collected: boolean;
+      collectedBy?: string;
       source: "starter" | "drop";
       spawnedAtMs?: number;
     }[] = [];
@@ -470,6 +471,7 @@ export function useMultiplayerSync({
         y: starterPosition.y,
         z: starterPosition.z,
         collected: ring.collected,
+        collectedBy: ring.collectedBy,
         source: "starter",
         spawnedAtMs: undefined,
       });
@@ -482,6 +484,7 @@ export function useMultiplayerSync({
         y: ringDrop.y,
         z: ringDrop.z,
         collected: ringDrop.collected,
+        collectedBy: ringDrop.collectedBy,
         source: "drop",
         spawnedAtMs: ringDrop.spawnedAtMs,
       });
