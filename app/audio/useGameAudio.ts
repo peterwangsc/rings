@@ -1,22 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  MUSIC_PATH_BY_ID,
+  SOUND_PATH_BY_ID,
+  type MusicTrackId,
+} from "../assets/gameAssets";
 
 type SoundId = "coin" | "footsteps" | "goomba" | "jump" | "shoot";
 type OneShotSoundId = Exclude<SoundId, "footsteps">;
-type MusicTrackId = "day" | "night";
-
-const SOUND_PATH_BY_ID: Record<SoundId, string> = {
-  coin: "/sounds/coin.mp3",
-  footsteps: "/sounds/footsteps.mp3",
-  goomba: "/sounds/goomba.mp3",
-  jump: "/sounds/jump.mp3",
-  shoot: "/sounds/fireball.mp3",
-};
-const MUSIC_PATH_BY_ID: Record<MusicTrackId, string> = {
-  day: "/music/day.mp3",
-  night: "/music/night.mp3",
-};
 
 const ONE_SHOT_GAIN: Record<OneShotSoundId, number> = {
   coin: 0.58,

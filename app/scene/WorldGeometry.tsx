@@ -6,6 +6,7 @@ import {
   useMemo,
 } from "react";
 import * as THREE from "three";
+import { SIMPLEX_NOISE_TEXTURE_PATH } from "../assets/gameAssets";
 import { ROCK_MATERIAL_COLOR } from "../utils/constants";
 import { createRockMaterial } from "../utils/shaders";
 import {
@@ -18,7 +19,6 @@ import {
   useWorldEntityVersion,
 } from "./world/worldEntityManager";
 
-const SIMPLEX_NOISE_TEXTURE_PATH = "/simplex-noise.png";
 const SIMPLEX_NOISE_TEXTURE_ANISOTROPY = 8;
 
 export function WorldGeometry({

@@ -19,6 +19,10 @@ import {
   Vector4,
 } from "three";
 import {
+  FIRE_TEXTURE_PATH,
+  FIREBALL_LOOP_SOUND_PATHS,
+} from "../../assets/gameAssets";
+import {
   FIREBALL_MAX_ACTIVE_POINT_LIGHTS,
   FIREBALL_LIGHT_INTENSITY,
   FIREBALL_MAX_ACTIVE_COUNT,
@@ -27,12 +31,6 @@ import {
 import type { FireballRenderFrame } from "./fireballTypes";
 
 const BASE_FIRE_COLOR = new Color(0xeeeeee);
-const FIREBALL_LOOP_SOUND_PATHS = [
-  "/sounds/fire/2.mp3",
-  "/sounds/fire/5.mp3",
-  "/sounds/fire/7.mp3",
-  "/sounds/fire/8.mp3",
-];
 const FIREBALL_LOOP_GAIN = 0.95;
 const FIREBALL_LOOP_REF_DISTANCE = 4.8;
 const FIREBALL_LOOP_MAX_DISTANCE = 32;
@@ -266,7 +264,7 @@ export function FireballRenderLayer({
   renderFrame: FireballRenderFrame;
 }) {
   const { camera } = useThree();
-  const loadedFireTexture = useLoader(TextureLoader, "/fire.png");
+  const loadedFireTexture = useLoader(TextureLoader, FIRE_TEXTURE_PATH);
   const loadedLoopBuffers = useLoader(AudioLoader, FIREBALL_LOOP_SOUND_PATHS);
   const loopBuffers = useMemo(
     () => (Array.isArray(loadedLoopBuffers) ? loadedLoopBuffers : [loadedLoopBuffers]),

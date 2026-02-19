@@ -59,6 +59,10 @@ import { AnimatedSun } from "./AnimatedSun";
 import { FrameRateProbe } from "./FrameRateProbe";
 import { MobileControlsOverlay } from "./MobileControlsOverlay";
 import { DesktopSplashOverlay, MobileOrientationOverlay } from "./SceneOverlays";
+import {
+  GameStartupLoadingScreen,
+  useGameStartupPreload,
+} from "./useGameStartupPreload";
 import { WorldGeometry } from "./WorldGeometry";
 import {
   ACTIVE_TERRAIN_CHUNK_RADIUS,
@@ -899,11 +903,23 @@ function CharacterRigSceneContent({
 }
 
 export function CharacterRigScene() {
+  const preloadState = useGameStartupPreload();
   const connectionBuilder = useMemo(() => createSpacetimeConnectionBuilder(), []);
   const multiplayerStore = useMemo(
     () => createMultiplayerStore(DEFAULT_GUEST_DISPLAY_NAME),
     [],
   );
+
+  if (!preloadState.isReady) {
+    return (
+      <GameStartupLoadingScreen
+        percent={preloadState.percent}
+        loaded={preloadState.loaded}
+        total={preloadState.total}
+        itemLabel={preloadState.itemLabel}
+      />
+    );
+  }
 
   return (
     <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
