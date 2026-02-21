@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import {
   RING_BOB_AMPLITUDE,
   RING_BOB_SPEED,
   RING_COLOR,
-  RING_ENV_MAP_INTENSITY,
   RING_LIGHT_DECAY,
   RING_LIGHT_DISTANCE,
   RING_LIGHT_INTENSITY,
@@ -18,9 +17,7 @@ import {
   RING_EMISSIVE_COLOR,
   RING_EMISSIVE_INTENSITY,
   RING_MAJOR_RADIUS,
-  RING_METALNESS,
   RING_ROTATION_SPEED,
-  RING_ROUGHNESS,
   RING_TORUS_SEGMENTS,
   RING_TUBE_RADIUS,
   RING_TUBE_SEGMENTS,
@@ -33,86 +30,14 @@ interface RingProps {
   readonly withPointLight?: boolean;
 }
 
-const RING_SHADER_CACHE_KEY = "ring-polished-reflective-v1";
-
 export function Ring({ position, spawnedAtMs, withPointLight = true }: RingProps) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const materialRef = useRef<THREE.MeshPhysicalMaterial>(null);
+  const materialRef = useRef<THREE.MeshStandardMaterial>(null);
   const lightRef = useRef<THREE.PointLight>(null);
   const baseY = position[1];
   const despawnAtMs =
     spawnedAtMs === undefined ? null : spawnedAtMs + RING_DROP_LIFETIME_MS;
   const isDroppedRing = despawnAtMs !== null;
-
-  useEffect(() => {
-    const material = materialRef.current;
-    if (!material) {
-      return;
-    }
-
-    material.onBeforeCompile = (shader) => {
-      shader.vertexShader = shader.vertexShader
-        .replace(
-          "#include <common>",
-          `#include <common>
-varying vec3 vRingWorldPosition;
-varying vec3 vRingWorldNormal;
-`,
-        )
-        .replace(
-          "#include <begin_vertex>",
-          `#include <begin_vertex>
-vec4 ringWorldPosition = modelMatrix * vec4(position, 1.0);
-vRingWorldPosition = ringWorldPosition.xyz;
-vRingWorldNormal = normalize(mat3(modelMatrix) * normal);
-`,
-        );
-
-      shader.fragmentShader = shader.fragmentShader
-        .replace(
-          "#include <common>",
-          `#include <common>
-varying vec3 vRingWorldPosition;
-varying vec3 vRingWorldNormal;
-
-float ringSaturate(float value) {
-  return clamp(value, 0.0, 1.0);
-}
-`,
-        )
-        .replace(
-          "#include <color_fragment>",
-          `#include <color_fragment>
-{
-  vec3 ringNormal = normalize(vRingWorldNormal);
-  vec3 ringViewDir = normalize(cameraPosition - vRingWorldPosition);
-  vec3 ringReflectDir = reflect(-ringViewDir, ringNormal);
-
-  float ringSkyMix = smoothstep(-0.2, 0.78, ringReflectDir.y);
-  vec3 ringSkyColor = vec3(1.0, 0.98, 0.9);
-  vec3 ringGroundColor = vec3(0.42, 0.34, 0.2);
-  vec3 ringEnvColor = mix(ringGroundColor, ringSkyColor, ringSkyMix);
-
-  float ringFresnel = pow(1.0 - ringSaturate(dot(ringNormal, ringViewDir)), 4.0);
-  float ringMirrorStrength = ringSaturate(0.72 + ringFresnel * 0.48);
-  diffuseColor.rgb = mix(diffuseColor.rgb, ringEnvColor * 1.45, ringMirrorStrength * 0.96);
-
-  float ringSpecSweep = pow(
-    max(dot(ringReflectDir, normalize(vec3(0.34, 1.0, 0.18))), 0.0),
-    72.0
-  );
-  diffuseColor.rgb += vec3(1.0, 0.98, 0.92) * ringSpecSweep * 0.75;
-
-  float ringRimBoost = pow(1.0 - ringSaturate(dot(ringNormal, ringViewDir)), 6.0);
-  diffuseColor.rgb += vec3(1.0, 0.95, 0.82) * ringRimBoost * 0.28;
-}
-`,
-        );
-    };
-
-    material.customProgramCacheKey = () => RING_SHADER_CACHE_KEY;
-    material.needsUpdate = true;
-  }, []);
 
   useFrame((state) => {
     const mesh = meshRef.current;
@@ -193,14 +118,13 @@ float ringSaturate(float value) {
           RING_TORUS_SEGMENTS,
         ]}
       />
-      <meshPhysicalMaterial
+      <meshStandardMaterial
         ref={materialRef}
         color={RING_COLOR}
         emissive={RING_EMISSIVE_COLOR}
         emissiveIntensity={RING_EMISSIVE_INTENSITY}
-        roughness={RING_ROUGHNESS}
-        metalness={RING_METALNESS}
-        envMapIntensity={RING_ENV_MAP_INTENSITY}
+        roughness={0.3}
+        metalness={0.8}
       />
       {withPointLight ? (
         <pointLight
