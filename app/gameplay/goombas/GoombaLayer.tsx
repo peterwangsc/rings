@@ -49,7 +49,7 @@ const FOOT_STRIDE_Z = 0.08;
 const PELVIS_BOB_Y = 0.04;
 const PELVIS_SHIFT_Z = 0.035;
 const BODY_LEAN_RADIANS = 0.12;
-const GOOMBA_PREDICTION_LAG_MS = 50;
+const GOOMBA_PREDICTION_LAG_MS = 3;
 
 const UNIT_X = new THREE.Vector3(1, 0, 0);
 const UNIT_Z = new THREE.Vector3(0, 0, 1);
