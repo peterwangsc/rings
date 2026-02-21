@@ -8,7 +8,7 @@
  *   2. Render <ConnectionStateSync> — null-renderer that owns the three
  *      connection-level tables (connectionState, worldState, diagnostics).
  *   3. Render <GameCanvas> — Three.js canvas; each slice owns its table.
- *   4. Render <GameHUD2> — HTML overlays; each slice owns its table.
+ *   4. Render <GameHUD> — HTML overlays; each slice owns its table.
  *
  * Re-render contract:
  *   - GameSceneContent itself holds no useSyncExternalStore and no useTable.
@@ -45,7 +45,7 @@ import { DEFAULT_GUEST_DISPLAY_NAME } from "../multiplayer/spacetime/guestDispla
 import { tables } from "../multiplayer/spacetime/bindings";
 import type { NetWorldStateRow } from "../multiplayer/state/multiplayerTypes";
 import { GameCanvas } from "./GameCanvas";
-import { GameHUD2 } from "./GameHUD2";
+import { GameHUD } from "./GameHUD";
 import { useGameScene } from "./useGameScene";
 import {
   GameStartupLoadingScreen,
@@ -179,6 +179,12 @@ function GameSceneContent({ multiplayerStore }: { multiplayerStore: MultiplayerS
   // Camera + gait state
   const [cameraMode, setCameraMode] = useState<CameraMode>("third_person");
   const [isWalkDefault, setIsWalkDefault] = useState(false);
+  const [isFpsVisible, setIsFpsVisible] = useState(false);
+  const [fps, setFps] = useState<number | null>(null);
+  const handleFpsUpdate = useCallback((nextFps: number) => {
+    const rounded = Math.round(nextFps);
+    setFps((cur) => (cur === rounded ? cur : rounded));
+  }, []);
 
   const CAMERA_MODE_CYCLE = useMemo<readonly CameraMode[]>(() => ["third_person", "first_person"], []);
   const handleToggleCameraMode = useCallback(() => {
@@ -220,7 +226,7 @@ function GameSceneContent({ multiplayerStore }: { multiplayerStore: MultiplayerS
   useEffect(() => { onMysteryBoxActivatedRef.current = playGoombaDefeated; }, [playGoombaDefeated]);
 
   // Pointer lock forwarding
-  // GameHUD2 handles pointer lock state internally via pointerlockchange events.
+  // GameHUD handles pointer lock state internally via pointerlockchange events.
   // The prop is kept for the GameCanvas interface but no action is needed here.
   const handlePointerLockChange = useCallback(() => {}, []);
 
@@ -281,9 +287,11 @@ function GameSceneContent({ multiplayerStore }: { multiplayerStore: MultiplayerS
           onMysteryBoxActivatedRef={onMysteryBoxActivatedRef}
           onCollect={playCoin}
           onCanvasCreated={handleCanvasCreated}
+          isFpsVisible={isFpsVisible}
+          onFpsUpdate={handleFpsUpdate}
         />
       </div>
-      <GameHUD2
+      <GameHUD
         store={multiplayerStore}
         worldEntityManager={worldEntityManager}
         canvasElementRef={canvasElementRef}
@@ -296,6 +304,9 @@ function GameSceneContent({ multiplayerStore }: { multiplayerStore: MultiplayerS
         onCameraModeChange={setCameraMode}
         isChatOpenRef={isChatOpenRef}
         isResumingFromChatRef={isResumingFromChatRef}
+        isFpsVisible={isFpsVisible}
+        onToggleFpsVisible={() => setIsFpsVisible((v) => !v)}
+        fps={fps}
       />
     </div>
   );

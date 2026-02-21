@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * GameHUD2
+ * GameHUD
  *
  * All HTML overlays (HUD, chat, leaderboard, splash, mobile controls, FPS).
  *
@@ -29,8 +29,10 @@ import {
   useTable,
 } from "spacetimedb/react";
 import { ChatOverlay } from "../hud/ChatOverlay";
-import { GameHUD } from "../hud/GameHUD";
+import { FpsWidget } from "../hud/FpsWidget";
 import { GlobalChatFeed } from "../hud/GlobalChatFeed";
+import { PlayerInfoWidget } from "../hud/PlayerInfoWidget";
+import { RingCountWidget } from "../hud/RingCountWidget";
 import {
   LeaderboardOverlay,
   type AllTimeLeaderboardEntry,
@@ -129,19 +131,12 @@ function toPlayerStatsSnapshot(
 // Isolated child components — each subscribes only to its slice
 // ---------------------------------------------------------------------------
 
-function HudSlice({
-  store,
-  worldEntityManager,
-}: {
-  store: MultiplayerStore;
-  worldEntityManager: WorldEntityManager;
-}) {
+function PlayerInfoSlice({ store }: { store: MultiplayerStore }) {
   const connectionStatus = useConnectionStatus(store);
   const localDisplayName = useLocalDisplayName(store);
   const remotePlayerCount = useRemotePlayerCount(store);
   return (
-    <GameHUD
-      worldEntityManager={worldEntityManager}
+    <PlayerInfoWidget
       localDisplayName={localDisplayName}
       connectionStatus={connectionStatus}
       remotePlayerCount={remotePlayerCount}
@@ -167,7 +162,7 @@ function ChatFeedSlice({
 }) {
   const sendChatMessageReducer = useSpacetimeReducer(reducers.sendChatMessage);
 
-  // Expose the send function to the parent (GameHUD2) via callback on mount.
+  // Expose the send function to the parent (GameHUD) via callback on mount.
   // We use a ref to keep the exposed function stable even if the reducer identity changes.
   const sendChatMessageReducerRef = useRef(sendChatMessageReducer);
   useEffect(() => { sendChatMessageReducerRef.current = sendChatMessageReducer; }, [sendChatMessageReducer]);
@@ -381,10 +376,10 @@ function ChatOverlaySlice({
 }
 
 // ---------------------------------------------------------------------------
-// GameHUD2 — the root HUD component
+// GameHUD — the root HUD component
 // ---------------------------------------------------------------------------
 
-export interface GameHUD2Props {
+export interface GameHUDProps {
   store: MultiplayerStore;
   worldEntityManager: WorldEntityManager;
   canvasElementRef: MutableRefObject<HTMLCanvasElement | null>;
@@ -397,9 +392,12 @@ export interface GameHUD2Props {
   onCameraModeChange: (mode: import("../camera/cameraTypes").CameraMode) => void;
   isChatOpenRef: MutableRefObject<boolean>;
   isResumingFromChatRef: MutableRefObject<boolean>;
+  isFpsVisible: boolean;
+  onToggleFpsVisible: () => void;
+  fps: number | null;
 }
 
-export function GameHUD2({
+export function GameHUD({
   store,
   worldEntityManager,
   canvasElementRef,
@@ -411,9 +409,10 @@ export function GameHUD2({
   onPointerLockChange,
   isChatOpenRef,
   isResumingFromChatRef,
-}: GameHUD2Props) {
-  const [isFpsVisible, setIsFpsVisible] = useState(false);
-  const [fps, setFps] = useState<number | null>(null);
+  isFpsVisible,
+  onToggleFpsVisible,
+  fps,
+}: GameHUDProps) {
   const [isPointerLocked, setIsPointerLocked] = useState(false);
   const [isSplashDismissedByTouch, setIsSplashDismissedByTouch] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -483,12 +482,6 @@ export function GameHUD2({
     setChatDraft("");
   }, [chatDraft]);
 
-  const handleFpsUpdate = useCallback((nextFps: number) => {
-    const rounded = Math.round(nextFps);
-    setFps((cur) => (cur === rounded ? cur : rounded));
-  }, []);
-  void handleFpsUpdate;
-
   // Chat clock — ticks only when there are active messages
   const chatMessages = useChatMessages(store);
   useEffect(() => {
@@ -523,7 +516,7 @@ export function GameHUD2({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.code === FPS_TOGGLE_KEY && !event.repeat) {
-        setIsFpsVisible((v) => !v);
+        onToggleFpsVisible();
       }
       if (event.code === "Tab") {
         if (isEditableEventTarget(event.target)) return;
@@ -545,7 +538,7 @@ export function GameHUD2({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleOpenChatOverlay, handleResumeGameplayFromChat, isChatOpen, isResumingFromChat]);
+  }, [handleOpenChatOverlay, handleResumeGameplayFromChat, isChatOpen, isResumingFromChat, onToggleFpsVisible]);
 
   useEffect(() => {
     const handleKeyUp = (event: KeyboardEvent) => {
@@ -596,7 +589,10 @@ export function GameHUD2({
 
   return (
     <>
-      <HudSlice store={store} worldEntityManager={worldEntityManager} />
+      <div className="ui-nonselectable pointer-events-none absolute left-4 top-4 z-20">
+        <RingCountWidget worldEntityManager={worldEntityManager} />
+        <PlayerInfoSlice store={store} />
+      </div>
       <ChatFeedSlice
         store={store}
         chatNowMs={chatNowMs}
@@ -616,12 +612,7 @@ export function GameHUD2({
         onSendMessage={handleSendChatMessage}
         onResumeGameplay={handleResumeGameplayFromChat}
       />
-      {isFpsVisible && (
-        <div className="ui-nonselectable pointer-events-none absolute right-4 top-4 z-20 rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
-          <p className="font-semibold tracking-wide text-white">FPS</p>
-          <p>{fps ?? "--"}</p>
-        </div>
-      )}
+      {isFpsVisible && <FpsWidget fps={fps} />}
       <SplashSlice
         store={store}
         isPointerLocked={isPointerLocked}
