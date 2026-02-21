@@ -34,9 +34,43 @@ const DEATH_POOF_RISE_DISTANCE = 0.22;
 const DEATH_POOF_Y_OFFSET = 0.38;
 
 const DAMAGE_EYE_NAME_PATTERN = /damageeye/i;
+const WALK_CYCLE_MIN_HZ = 1.55;
+const WALK_CYCLE_MAX_HZ = 3.1;
+const WALK_SPEED_FOR_MAX_CYCLE = 6;
+const WALK_SPEED_SMOOTHNESS = 15;
+const WALK_PHASE_OFFSET = Math.PI;
+const FOOT_SWING_RADIANS = 0.72;
+const TOE_SWING_RADIANS = 0.42;
+const PELVIS_SWAY_RADIANS = 0.2;
+const HEAD_COUNTER_RADIANS = 0.11;
+const FOOT_LIFT_Y = 0.08;
+const FOOT_STRIDE_Z = 0.08;
+const PELVIS_BOB_Y = 0.04;
+const PELVIS_SHIFT_Z = 0.035;
+const BODY_LEAN_RADIANS = 0.12;
+
+const UNIT_X = new THREE.Vector3(1, 0, 0);
+const UNIT_Z = new THREE.Vector3(0, 0, 1);
+
+type JointPose = {
+  readonly node: THREE.Object3D;
+  readonly rest: THREE.Quaternion;
+  readonly restPosition: THREE.Vector3;
+};
 
 type GoombaRig = {
   readonly damageEyes: readonly THREE.Object3D[];
+  readonly pelvis: JointPose | null;
+  readonly leftFoot: JointPose | null;
+  readonly rightFoot: JointPose | null;
+  readonly leftToeBase: JointPose | null;
+  readonly rightToeBase: JointPose | null;
+  readonly head: JointPose | null;
+};
+
+type BoneLookup = {
+  readonly nameMap: Map<string, THREE.Object3D>;
+  readonly skeletonBones: readonly THREE.Bone[];
 };
 
 function hashStringToUint32(value: string) {
@@ -48,8 +82,63 @@ function hashStringToUint32(value: string) {
   return hash >>> 0;
 }
 
+function toBoneLookup(root: THREE.Object3D): BoneLookup {
+  const nameMap = new Map<string, THREE.Object3D>();
+  const skeletonBones: THREE.Bone[] = [];
+
+  root.traverse((object) => {
+    if (typeof object.name === "string" && object.name) {
+      nameMap.set(object.name.toLowerCase(), object);
+    }
+
+    const skinned = object as THREE.SkinnedMesh;
+    if (!skinned.isSkinnedMesh || !skinned.skeleton) {
+      return;
+    }
+    for (const bone of skinned.skeleton.bones) {
+      if (bone && !skeletonBones.includes(bone)) {
+        skeletonBones.push(bone);
+        if (bone.name) {
+          nameMap.set(bone.name.toLowerCase(), bone);
+        }
+      }
+    }
+  });
+
+  return { nameMap, skeletonBones };
+}
+
+function resolveJointPose(
+  lookup: BoneLookup,
+  names: readonly string[],
+  skeletonIndex: number,
+): JointPose | null {
+  for (const name of names) {
+    const found = lookup.nameMap.get(name.toLowerCase());
+    if (found) {
+      return {
+        node: found,
+        rest: found.quaternion.clone(),
+        restPosition: found.position.clone(),
+      };
+    }
+  }
+
+  const fallbackBone = lookup.skeletonBones[skeletonIndex];
+  if (fallbackBone) {
+    return {
+      node: fallbackBone,
+      rest: fallbackBone.quaternion.clone(),
+      restPosition: fallbackBone.position.clone(),
+    };
+  }
+
+  return null;
+}
+
 function buildGoombaRig(root: THREE.Object3D): GoombaRig {
   const damageEyes: THREE.Object3D[] = [];
+  const lookup = toBoneLookup(root);
 
   root.traverse((object) => {
     const rawName = typeof object.name === "string" ? object.name : "";
@@ -60,10 +149,24 @@ function buildGoombaRig(root: THREE.Object3D): GoombaRig {
     if (DAMAGE_EYE_NAME_PATTERN.test(rawName)) {
       damageEyes.push(object);
     }
-
   });
 
-  return { damageEyes };
+  const pelvis = resolveJointPose(lookup, ["Pelvis", "joint0"], 0);
+  const leftFoot = resolveJointPose(lookup, ["LeftFoot", "joint1"], 1);
+  const leftToeBase = resolveJointPose(lookup, ["LeftToeBase", "joint2"], 2);
+  const rightFoot = resolveJointPose(lookup, ["RightFoot", "joint3"], 3);
+  const rightToeBase = resolveJointPose(lookup, ["RightToeBase", "joint4"], 4);
+  const head = resolveJointPose(lookup, ["Head", "joint6"], 6);
+
+  return {
+    damageEyes,
+    pelvis,
+    leftFoot,
+    rightFoot,
+    leftToeBase,
+    rightToeBase,
+    head,
+  };
 }
 
 function setDamageEyesVisible(rig: GoombaRig, visible: boolean) {
@@ -105,6 +208,104 @@ function lerpAngle(current: number, target: number, alpha: number) {
   return current + delta * alpha;
 }
 
+function applyJointPitch(
+  joint: JointPose | null,
+  radians: number,
+  scratch: THREE.Quaternion,
+) {
+  if (!joint) {
+    return;
+  }
+  scratch.setFromAxisAngle(UNIT_X, radians);
+  joint.node.quaternion.copy(joint.rest).multiply(scratch);
+}
+
+function applyJointRoll(
+  joint: JointPose | null,
+  radians: number,
+  scratch: THREE.Quaternion,
+) {
+  if (!joint) {
+    return;
+  }
+  scratch.setFromAxisAngle(UNIT_Z, radians);
+  joint.node.quaternion.copy(joint.rest).multiply(scratch);
+}
+
+function applyJointLocalOffset(
+  joint: JointPose | null,
+  offsetX: number,
+  offsetY: number,
+  offsetZ: number,
+) {
+  if (!joint) {
+    return;
+  }
+  joint.node.position.set(
+    joint.restPosition.x + offsetX,
+    joint.restPosition.y + offsetY,
+    joint.restPosition.z + offsetZ,
+  );
+}
+
+function applyWalkPose(
+  rig: GoombaRig,
+  normalizedSpeed: number,
+  phase: number,
+  scratchA: THREE.Quaternion,
+  scratchB: THREE.Quaternion,
+) {
+  const speed = THREE.MathUtils.clamp(normalizedSpeed, 0, 1);
+  const swing = Math.sin(phase) * speed;
+  const oppositeSwing = Math.sin(phase + WALK_PHASE_OFFSET) * speed;
+  const leftLift = Math.max(0, Math.sin(phase)) * speed;
+  const rightLift = Math.max(0, Math.sin(phase + WALK_PHASE_OFFSET)) * speed;
+  const bobWave = Math.cos(phase * 2) * speed;
+
+  applyJointPitch(rig.leftFoot, FOOT_SWING_RADIANS * swing, scratchA);
+  applyJointPitch(rig.rightFoot, FOOT_SWING_RADIANS * oppositeSwing, scratchA);
+
+  applyJointPitch(rig.leftToeBase, -TOE_SWING_RADIANS * swing, scratchA);
+  applyJointPitch(rig.rightToeBase, -TOE_SWING_RADIANS * oppositeSwing, scratchA);
+
+  applyJointRoll(
+    rig.pelvis,
+    PELVIS_SWAY_RADIANS * Math.sin(phase + Math.PI * 0.5) * speed,
+    scratchB,
+  );
+  applyJointPitch(
+    rig.head,
+    HEAD_COUNTER_RADIANS * Math.sin(phase + Math.PI * 0.5) * speed,
+    scratchA,
+  );
+  applyJointLocalOffset(
+    rig.leftFoot,
+    0,
+    FOOT_LIFT_Y * leftLift,
+    FOOT_STRIDE_Z * swing,
+  );
+  applyJointLocalOffset(
+    rig.rightFoot,
+    0,
+    FOOT_LIFT_Y * rightLift,
+    FOOT_STRIDE_Z * oppositeSwing,
+  );
+  applyJointLocalOffset(
+    rig.pelvis,
+    0,
+    PELVIS_BOB_Y * bobWave,
+    PELVIS_SHIFT_Z * Math.sin(phase + Math.PI * 0.5) * speed,
+  );
+  applyJointPitch(rig.pelvis, -BODY_LEAN_RADIANS * speed, scratchA);
+  applyJointLocalOffset(rig.leftToeBase, 0, 0, FOOT_STRIDE_Z * 0.35 * swing);
+  applyJointLocalOffset(
+    rig.rightToeBase,
+    0,
+    0,
+    FOOT_STRIDE_Z * 0.35 * oppositeSwing,
+  );
+}
+
 function GoombaActor({ goomba }: { goomba: GoombaState }) {
   const rootRef = useRef<THREE.Group>(null);
   const poofRef = useRef<THREE.Group>(null);
@@ -127,6 +328,11 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
     new THREE.Vector3(goomba.x, goomba.y, goomba.z),
   );
   const deathYawRef = useRef(goomba.yaw + MODEL_FORWARD_YAW_OFFSET);
+  const previousFramePositionRef = useRef(new THREE.Vector3(goomba.x, goomba.y, goomba.z));
+  const walkPhaseRef = useRef(0);
+  const smoothedWalkSpeedRef = useRef(0);
+  const walkScratchQuatARef = useRef(new THREE.Quaternion());
+  const walkScratchQuatBRef = useRef(new THREE.Quaternion());
 
   const baseModel = useLoader(ColladaLoader, GOOMBA_MODEL_PATH);
   const model = useMemo(() => {
@@ -274,6 +480,14 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
       }
 
       setBlinkVisible(true);
+      applyWalkPose(
+        rig,
+        0,
+        walkPhaseRef.current,
+        walkScratchQuatARef.current,
+        walkScratchQuatBRef.current,
+      );
+      previousFramePositionRef.current.copy(root.position);
       return;
     }
 
@@ -333,6 +547,48 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
       root.rotation.y,
       desiredYaw + MODEL_FORWARD_YAW_OFFSET,
       yawBlend,
+    );
+
+    const previousPosition = previousFramePositionRef.current;
+    const planarDistance =
+      Math.hypot(
+        root.position.x - previousPosition.x,
+        root.position.z - previousPosition.z,
+      ) / Math.max(deltaSeconds, 1e-6);
+    previousPosition.copy(root.position);
+
+    const measuredNormalizedSpeed = THREE.MathUtils.clamp(
+      planarDistance / WALK_SPEED_FOR_MAX_CYCLE,
+      0,
+      1,
+    );
+    const shouldWalk =
+      goomba.state === "idle" || goomba.state === "enraged";
+    const stateBaseSpeed =
+      goomba.state === "enraged" ? 1 : shouldWalk ? 0.58 : 0;
+    const targetWalkSpeed = shouldWalk
+      ? Math.max(stateBaseSpeed, measuredNormalizedSpeed)
+      : stateBaseSpeed;
+    const walkBlend = 1 - Math.exp(-WALK_SPEED_SMOOTHNESS * deltaSeconds);
+    smoothedWalkSpeedRef.current = THREE.MathUtils.lerp(
+      smoothedWalkSpeedRef.current,
+      targetWalkSpeed,
+      walkBlend,
+    );
+
+    const gaitHz = THREE.MathUtils.lerp(
+      WALK_CYCLE_MIN_HZ,
+      WALK_CYCLE_MAX_HZ,
+      smoothedWalkSpeedRef.current,
+    );
+    walkPhaseRef.current += deltaSeconds * gaitHz * Math.PI * 2;
+
+    applyWalkPose(
+      rig,
+      smoothedWalkSpeedRef.current,
+      walkPhaseRef.current,
+      walkScratchQuatARef.current,
+      walkScratchQuatBRef.current,
     );
   });
 
