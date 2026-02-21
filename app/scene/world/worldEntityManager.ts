@@ -6,12 +6,7 @@ import {
   createFireballManager,
   type FireballManager,
 } from "../../gameplay/abilities/fireballManager";
-import {
-  PLAYER_START_POSITION,
-  RING_HOVER_HEIGHT,
-  RING_PLACEMENTS,
-} from "../../utils/constants";
-import { sampleTerrainHeight } from "../../utils/terrain";
+import { PLAYER_START_POSITION } from "../../utils/constants";
 import {
   computeAndCacheChunkData,
   isChunkCached,
@@ -64,10 +59,7 @@ export interface WorldChunkSlot {
 export interface WorldRingEntity {
   id: string;
   position: readonly [number, number, number];
-  collected: boolean;
-  collectedBy?: string;
-  source: "starter" | "drop";
-  spawnedAtMs?: number;
+  spawnedAtMs: number;
 }
 
 export interface WorldRingSnapshot {
@@ -75,10 +67,7 @@ export interface WorldRingSnapshot {
   x: number;
   y: number;
   z: number;
-  collected: boolean;
-  collectedBy?: string;
-  source: "starter" | "drop";
-  spawnedAtMs?: number;
+  spawnedAtMs: number;
 }
 
 export interface WorldHudState {
@@ -90,7 +79,6 @@ export interface WorldEntityManager {
   readonly playerPosition: THREE.Vector3;
   readonly fireballManager: FireballManager;
   readonly activeChunkSlots: WorldChunkSlot[];
-  readonly ringEntities: WorldRingEntity[];
   readonly visibleRingEntities: WorldRingEntity[];
   readonly hud: WorldHudState;
   centerChunk: TerrainChunkCoord;
@@ -102,31 +90,6 @@ export interface WorldEntityManager {
 function emitWorldManagerChanged(world: WorldEntityManager) {
   world.version += 1;
   world.listeners.forEach((listener) => listener());
-}
-
-function buildRingEntities() {
-  return RING_PLACEMENTS.map((xz, index) => ({
-    id: `ring-${index}`,
-    position: [
-      xz[0],
-      sampleTerrainHeight(xz[0], xz[1]) + RING_HOVER_HEIGHT,
-      xz[1],
-    ] as const,
-    collected: false,
-    collectedBy: undefined,
-    source: "starter" as const,
-    spawnedAtMs: undefined,
-  }));
-}
-
-function syncVisibleRings(world: WorldEntityManager) {
-  world.visibleRingEntities.length = 0;
-  for (let index = 0; index < world.ringEntities.length; index += 1) {
-    const ring = world.ringEntities[index];
-    if (!ring.collected) {
-      world.visibleRingEntities.push(ring);
-    }
-  }
 }
 
 function applyRingCountToHud(
@@ -236,11 +199,10 @@ export function createWorldEntityManager(): WorldEntityManager {
     playerPosition: PLAYER_START_POSITION.clone(),
     fireballManager: createFireballManager(),
     activeChunkSlots: [],
-    ringEntities: buildRingEntities(),
     visibleRingEntities: [],
     hud: {
       ringCount: 0,
-      totalRings: RING_PLACEMENTS.length,
+      totalRings: 0,
     },
     centerChunk,
     prefetchRequestId: null,
@@ -249,7 +211,6 @@ export function createWorldEntityManager(): WorldEntityManager {
   };
 
   upsertActiveChunkSlots(world, centerChunk);
-  syncVisibleRings(world);
   scheduleChunkPrefetch(world, centerChunk);
   return world;
 }
@@ -304,18 +265,12 @@ export function updateWorldPlayerPosition(
 }
 
 export function collectWorldRing(world: WorldEntityManager, ringId: string) {
-  const ring = world.ringEntities.find((candidate) => candidate.id === ringId);
-  if (!ring || ring.collected) {
+  const index = world.visibleRingEntities.findIndex((r) => r.id === ringId);
+  if (index === -1) {
     return;
   }
 
-  ring.collected = true;
-  ring.collectedBy = undefined;
-  syncVisibleRings(world);
-  applyRingCountToHud(
-    world,
-    world.ringEntities.length - world.visibleRingEntities.length,
-  );
+  world.visibleRingEntities.splice(index, 1);
   emitWorldManagerChanged(world);
 }
 
@@ -323,62 +278,47 @@ export function applyServerRingRows(
   world: WorldEntityManager,
   ringRows: readonly WorldRingSnapshot[],
 ) {
+  const existing = world.visibleRingEntities;
   const existingById = new Map<string, WorldRingEntity>();
-  for (let index = 0; index < world.ringEntities.length; index += 1) {
-    const ring = world.ringEntities[index];
-    existingById.set(ring.id, ring);
+  for (let index = 0; index < existing.length; index += 1) {
+    existingById.set(existing[index].id, existing[index]);
   }
 
-  const nextRingEntities: WorldRingEntity[] = [];
-  let didChange = false;
+  let didChange = existing.length !== ringRows.length;
+  const next: WorldRingEntity[] = [];
 
   for (let index = 0; index < ringRows.length; index += 1) {
     const snapshot = ringRows[index];
-    const existing = existingById.get(snapshot.id);
-    if (!existing) {
-      nextRingEntities.push({
+    const prev = existingById.get(snapshot.id);
+    if (!prev) {
+      next.push({
         id: snapshot.id,
         position: [snapshot.x, snapshot.y, snapshot.z],
-        collected: snapshot.collected,
-        collectedBy: snapshot.collectedBy,
-        source: snapshot.source,
         spawnedAtMs: snapshot.spawnedAtMs,
       });
       didChange = true;
       continue;
     }
 
-    existingById.delete(snapshot.id);
-    const [x, y, z] = existing.position;
+    const [x, y, z] = prev.position;
     if (
       x !== snapshot.x ||
       y !== snapshot.y ||
       z !== snapshot.z ||
-      existing.collected !== snapshot.collected ||
-      existing.collectedBy !== snapshot.collectedBy ||
-      existing.source !== snapshot.source ||
-      existing.spawnedAtMs !== snapshot.spawnedAtMs
+      prev.spawnedAtMs !== snapshot.spawnedAtMs
     ) {
-      existing.position = [snapshot.x, snapshot.y, snapshot.z];
-      existing.collected = snapshot.collected;
-      existing.collectedBy = snapshot.collectedBy;
-      existing.source = snapshot.source;
-      existing.spawnedAtMs = snapshot.spawnedAtMs;
+      prev.position = [snapshot.x, snapshot.y, snapshot.z];
+      prev.spawnedAtMs = snapshot.spawnedAtMs;
       didChange = true;
     }
-    nextRingEntities.push(existing);
-  }
-
-  if (existingById.size > 0) {
-    didChange = true;
+    next.push(prev);
   }
 
   if (!didChange) {
     return;
   }
 
-  world.ringEntities.splice(0, world.ringEntities.length, ...nextRingEntities);
-  syncVisibleRings(world);
+  existing.splice(0, existing.length, ...next);
   emitWorldManagerChanged(world);
 }
 

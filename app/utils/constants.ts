@@ -205,18 +205,6 @@ export const RING_DROP_DESPAWN_FLASH_WINDOW_MS = 2_200;
 export const RING_DROP_DESPAWN_FLASH_HZ = 9.5;
 export const RING_DROP_DESPAWN_MIN_ALPHA = 0.12;
 
-export const RING_PLACEMENTS: ReadonlyArray<readonly [number, number]> = [
-  [3, 0],
-  [-2, 3.5],
-  [5.5, -3],
-  [0, 5],
-  [-5.5, -2],
-  [6, 3.5],
-  [-1, -5.5],
-  [4, 7],
-  [-6.5, 1],
-  [1.5, -6],
-];
 
 // --- Fireball ability ---
 export const FIREBALL_COOLDOWN_SECONDS = 0.2;

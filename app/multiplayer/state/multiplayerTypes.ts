@@ -8,7 +8,6 @@ import {
   PlayerStateRow,
   PlayerStatsRow,
   RingDropStateRow,
-  RingStateRow,
   WorldStateRow,
 } from "../spacetime/bindings";
 import type {
@@ -22,7 +21,6 @@ import type {
 export type NetPlayerRow = Infer<typeof PlayerStateRow>;
 export type NetFireballEventRow = Infer<typeof FireballEventRow>;
 export type NetChatMessageEventRow = Infer<typeof ChatMessageEventRow>;
-export type NetRingRow = Infer<typeof RingStateRow>;
 export type NetRingDropRow = Infer<typeof RingDropStateRow>;
 export type NetPlayerInventoryRow = Infer<typeof PlayerInventoryRow>;
 export type NetPlayerStatsRow = Infer<typeof PlayerStatsRow>;
@@ -118,7 +116,6 @@ export interface MultiplayerState {
   playerStats: Map<string, PlayerStatsSnapshot>;
   goombas: Map<string, GoombaState>;
   mysteryBoxes: Map<string, MysteryBoxState>;
-  collectedRingIds: Set<string>;
   chatMessages: ChatMessageEvent[];
   diagnostics: MultiplayerDiagnostics;
 }

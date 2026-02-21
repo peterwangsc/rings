@@ -40,16 +40,6 @@ const playerStats = table(
   },
 );
 
-const ringState = table(
-  { name: 'ring_state', public: true },
-  {
-    ringId: t.string().primaryKey(),
-    collected: t.bool(),
-    collectedBy: t.option(t.string()),
-    collectedAtMs: t.option(t.f64()),
-  },
-);
-
 const ringDropState = table(
   { name: 'ring_drop_state', public: true },
   {
@@ -177,7 +167,6 @@ export const spacetimedb = schema(
   playerState,
   playerInventory,
   playerStats,
-  ringState,
   ringDropState,
   goombaState,
   goombaChunkSpawnState,

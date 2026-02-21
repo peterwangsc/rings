@@ -2,7 +2,6 @@ import * as THREE from "three";
 import {
   CAMPFIRE_POSITION,
   CHUNK_CLOUD_COUNT,
-  CHUNK_CLOUD_FADE,
   CHUNK_CLOUD_MAX_HEIGHT,
   CHUNK_CLOUD_MAX_OPACITY,
   CHUNK_CLOUD_MAX_SEGMENTS,
@@ -23,7 +22,11 @@ import {
   CHUNK_TREE_ROCK_CLEARANCE,
   ROCK_FORMATIONS,
 } from "../../utils/constants";
-import { hash1D, sampleTerrainHeight, sampleTerrainSlope } from "../../utils/terrain";
+import {
+  hash1D,
+  sampleTerrainHeight,
+  sampleTerrainSlope,
+} from "../../utils/terrain";
 import {
   getSingleTreeTrunkCollider,
   type SingleTreeTrunkCollider,
@@ -114,7 +117,12 @@ export function createCampfirePlacement() {
 
 // --- Deterministic chunk hash ---
 
-function chunkHashN(chunkX: number, chunkZ: number, index: number, salt: number) {
+function chunkHashN(
+  chunkX: number,
+  chunkZ: number,
+  index: number,
+  salt: number,
+) {
   return hash1D(chunkX * 127.3 + chunkZ * 311.7 + index * salt);
 }
 
@@ -132,7 +140,11 @@ export function createChunkRockPlacements(
   const placements: ChunkRockPlacement[] = [];
   const maxAttempts = CHUNK_ROCK_COUNT * 30;
 
-  for (let attempt = 0; attempt < maxAttempts && placements.length < CHUNK_ROCK_COUNT; attempt++) {
+  for (
+    let attempt = 0;
+    attempt < maxAttempts && placements.length < CHUNK_ROCK_COUNT;
+    attempt++
+  ) {
     const hx = chunkHashN(chunkX, chunkZ, attempt, 17.31);
     const hz = chunkHashN(chunkX, chunkZ, attempt, 23.47);
     const x = chunkCenterX + (hx - 0.5) * (TERRAIN_CHUNK_SIZE - margin * 2);
@@ -153,19 +165,45 @@ export function createChunkRockPlacements(
     const tooClose = placements.some((r) => {
       const dx = r.position[0] - x;
       const dz = r.position[2] - z;
-      return dx * dx + dz * dz < CHUNK_ROCK_MIN_SPACING * CHUNK_ROCK_MIN_SPACING;
+      return (
+        dx * dx + dz * dz < CHUNK_ROCK_MIN_SPACING * CHUNK_ROCK_MIN_SPACING
+      );
     });
     if (tooClose) {
       continue;
     }
 
     const scaleSample = chunkHashN(chunkX, chunkZ, attempt, 31.19);
-    const baseScale = THREE.MathUtils.lerp(CHUNK_ROCK_SCALE_MIN, CHUNK_ROCK_SCALE_MAX, scaleSample);
-    const sx = baseScale * THREE.MathUtils.lerp(0.8, 1.2, chunkHashN(chunkX, chunkZ, attempt, 37.41));
-    const sy = baseScale * THREE.MathUtils.lerp(0.6, 1.0, chunkHashN(chunkX, chunkZ, attempt, 41.73));
-    const sz = baseScale * THREE.MathUtils.lerp(0.8, 1.2, chunkHashN(chunkX, chunkZ, attempt, 47.11));
+    const baseScale = THREE.MathUtils.lerp(
+      CHUNK_ROCK_SCALE_MIN,
+      CHUNK_ROCK_SCALE_MAX,
+      scaleSample,
+    );
+    const sx =
+      baseScale *
+      THREE.MathUtils.lerp(
+        0.8,
+        1.2,
+        chunkHashN(chunkX, chunkZ, attempt, 37.41),
+      );
+    const sy =
+      baseScale *
+      THREE.MathUtils.lerp(
+        0.6,
+        1.0,
+        chunkHashN(chunkX, chunkZ, attempt, 41.73),
+      );
+    const sz =
+      baseScale *
+      THREE.MathUtils.lerp(
+        0.8,
+        1.2,
+        chunkHashN(chunkX, chunkZ, attempt, 47.11),
+      );
 
-    const geometrySeed = Math.floor(chunkHashN(chunkX, chunkZ, attempt, 53.29) * 100000);
+    const geometrySeed = Math.floor(
+      chunkHashN(chunkX, chunkZ, attempt, 53.29) * 100000,
+    );
     const terrainY = sampleTerrainHeight(x, z);
 
     // Approximate collider from scale (before geometry is generated)
@@ -205,7 +243,11 @@ export function createChunkTreePlacements(
   const points: { x: number; z: number }[] = [];
   const maxAttempts = CHUNK_TREE_COUNT * 30;
 
-  for (let attempt = 0; attempt < maxAttempts && placements.length < CHUNK_TREE_COUNT; attempt++) {
+  for (
+    let attempt = 0;
+    attempt < maxAttempts && placements.length < CHUNK_TREE_COUNT;
+    attempt++
+  ) {
     const hx = chunkHashN(chunkX, chunkZ, attempt, 61.37);
     const hz = chunkHashN(chunkX, chunkZ, attempt, 67.53);
     const x = chunkCenterX + (hx - 0.5) * (TERRAIN_CHUNK_SIZE - margin * 2);
@@ -217,7 +259,8 @@ export function createChunkTreePlacements(
         continue;
       }
       if (
-        Math.hypot(x - CAMPFIRE_POSITION[0], z - CAMPFIRE_POSITION[2]) < CHUNK_SPAWN_CLEARING_RADIUS
+        Math.hypot(x - CAMPFIRE_POSITION[0], z - CAMPFIRE_POSITION[2]) <
+        CHUNK_SPAWN_CLEARING_RADIUS
       ) {
         continue;
       }
@@ -232,7 +275,9 @@ export function createChunkTreePlacements(
     const tooClose = points.some((p) => {
       const dx = p.x - x;
       const dz = p.z - z;
-      return dx * dx + dz * dz < CHUNK_TREE_MIN_SPACING * CHUNK_TREE_MIN_SPACING;
+      return (
+        dx * dx + dz * dz < CHUNK_TREE_MIN_SPACING * CHUNK_TREE_MIN_SPACING
+      );
     });
     if (tooClose) {
       continue;
@@ -273,15 +318,31 @@ export function createChunkCloudPlacements(
     const hy = chunkHashN(chunkX, chunkZ, i, 97.43);
     const x = chunkCenterX + (hx - 0.5) * TERRAIN_CHUNK_SIZE;
     const z = chunkCenterZ + (hz - 0.5) * TERRAIN_CHUNK_SIZE;
-    const y = THREE.MathUtils.lerp(CHUNK_CLOUD_MIN_HEIGHT, CHUNK_CLOUD_MAX_HEIGHT, hy);
+    const y = THREE.MathUtils.lerp(
+      CHUNK_CLOUD_MIN_HEIGHT,
+      CHUNK_CLOUD_MAX_HEIGHT,
+      hy,
+    );
 
     const segHash = chunkHashN(chunkX, chunkZ, i, 101.59);
     const segments = Math.round(
-      THREE.MathUtils.lerp(CHUNK_CLOUD_MIN_SEGMENTS, CHUNK_CLOUD_MAX_SEGMENTS, segHash),
+      THREE.MathUtils.lerp(
+        CHUNK_CLOUD_MIN_SEGMENTS,
+        CHUNK_CLOUD_MAX_SEGMENTS,
+        segHash,
+      ),
     );
 
-    const boundsW = THREE.MathUtils.lerp(12, 22, chunkHashN(chunkX, chunkZ, i, 107.71));
-    const boundsH = THREE.MathUtils.lerp(3, 6, chunkHashN(chunkX, chunkZ, i, 113.83));
+    const boundsW = THREE.MathUtils.lerp(
+      12,
+      22,
+      chunkHashN(chunkX, chunkZ, i, 107.71),
+    );
+    const boundsH = THREE.MathUtils.lerp(
+      3,
+      6,
+      chunkHashN(chunkX, chunkZ, i, 113.83),
+    );
 
     const opacity = THREE.MathUtils.lerp(
       CHUNK_CLOUD_MIN_OPACITY,

@@ -74,8 +74,6 @@ import PlayerStatsRow from "./player_stats_table";
 export { PlayerStatsRow };
 import RingDropStateRow from "./ring_drop_state_table";
 export { RingDropStateRow };
-import RingStateRow from "./ring_state_table";
-export { RingStateRow };
 import SessionRow from "./session_table";
 export { SessionRow };
 import WorldStateRow from "./world_state_table";
@@ -116,8 +114,6 @@ import PlayerStats from "./player_stats_type";
 export { PlayerStats };
 import RingDropState from "./ring_drop_state_type";
 export { RingDropState };
-import RingState from "./ring_state_type";
-export { RingState };
 import SendChatMessage from "./send_chat_message_type";
 export { SendChatMessage };
 import Session from "./session_type";
@@ -239,17 +235,6 @@ const tablesSchema = __schema(
       { name: 'ring_drop_state_ringId_key', constraint: 'unique', columns: ['ringId'] },
     ],
   }, RingDropStateRow),
-  __table({
-    name: 'ring_state',
-    indexes: [
-      { name: 'ringId', algorithm: 'btree', columns: [
-        'ringId',
-      ] },
-    ],
-    constraints: [
-      { name: 'ring_state_ringId_key', constraint: 'unique', columns: ['ringId'] },
-    ],
-  }, RingStateRow),
   __table({
     name: 'session',
     indexes: [

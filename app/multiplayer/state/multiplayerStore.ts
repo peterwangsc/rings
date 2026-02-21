@@ -88,28 +88,6 @@ function syncMapInPlace<T>(target: Map<string, T>, next: Map<string, T>) {
   return didChange;
 }
 
-function syncSetInPlace(target: Set<string>, next: Set<string>) {
-  let didChange = false;
-
-  for (const value of target) {
-    if (next.has(value)) {
-      continue;
-    }
-    target.delete(value);
-    didChange = true;
-  }
-
-  for (const value of next) {
-    if (target.has(value)) {
-      continue;
-    }
-    target.add(value);
-    didChange = true;
-  }
-
-  return didChange;
-}
-
 export function createMultiplayerStore(
   localDisplayName: string,
 ): MultiplayerStore {
@@ -130,7 +108,6 @@ export function createMultiplayerStore(
       playerStats: new Map(),
       goombas: new Map(),
       mysteryBoxes: new Map(),
-      collectedRingIds: new Set(),
       chatMessages: [],
       diagnostics: { ...EMPTY_DIAGNOSTICS },
     },
@@ -297,17 +274,6 @@ export function setMysteryBoxes(
   mysteryBoxes: Map<string, MysteryBoxState>,
 ) {
   if (!syncMapInPlace(store.state.mysteryBoxes, mysteryBoxes)) {
-    return;
-  }
-
-  emitChanged(store);
-}
-
-export function setCollectedRingIds(
-  store: MultiplayerStore,
-  collectedRingIds: Set<string>,
-) {
-  if (!syncSetInPlace(store.state.collectedRingIds, collectedRingIds)) {
     return;
   }
 

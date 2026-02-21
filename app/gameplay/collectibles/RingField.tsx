@@ -22,23 +22,8 @@ export function RingField({
 }) {
   useWorldEntityVersion(worldEntityManager);
   const lastCollectAttemptByRingRef = useRef<Map<string, number>>(new Map());
-  const prevVisibleRingEntitiesRef = useRef(worldEntityManager.visibleRingEntities);
 
   const { visibleRingEntities } = worldEntityManager;
-
-  // Prune stale attempt entries whenever the visible ring list changes.
-  if (prevVisibleRingEntitiesRef.current !== visibleRingEntities) {
-    prevVisibleRingEntitiesRef.current = visibleRingEntities;
-    const attempts = lastCollectAttemptByRingRef.current;
-    if (attempts.size > 0) {
-      const visibleIds = new Set(visibleRingEntities.map((r) => r.id));
-      for (const ringId of attempts.keys()) {
-        if (!visibleIds.has(ringId)) {
-          attempts.delete(ringId);
-        }
-      }
-    }
-  }
 
   const handleCollect = useCallback(
     (ringId: string) => {
@@ -58,13 +43,8 @@ export function RingField({
     const attempts = lastCollectAttemptByRingRef.current;
 
     for (const ring of visibleRingEntities) {
-      if (ring.source === "drop") {
-        if (
-          ring.spawnedAtMs === undefined ||
-          !isDropRingCollectible(ring.spawnedAtMs, nowMs)
-        ) {
-          continue;
-        }
+      if (!isDropRingCollectible(ring.spawnedAtMs, nowMs)) {
+        continue;
       }
 
       const [ringX, ringY, ringZ] = ring.position;

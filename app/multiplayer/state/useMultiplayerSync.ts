@@ -8,8 +8,6 @@ import {
 import { useCallback, useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { MotionState } from "../../lib/CharacterActor";
-import { RING_HOVER_HEIGHT, RING_PLACEMENTS } from "../../utils/constants";
-import { sampleTerrainHeight } from "../../utils/terrain";
 import type {
   WorldEntityManager,
   WorldRingSnapshot,
@@ -32,7 +30,6 @@ import { persistMultiplayerToken } from "../spacetime/client";
 import {
   setAuthoritativeLocalPlayerState,
   setChatMessages,
-  setCollectedRingIds,
   setGoombas,
   setMysteryBoxes,
   setMultiplayerConnectionStatus as setConnectionStatusInStore,
@@ -69,16 +66,6 @@ const DEFAULT_DAY_CYCLE_DURATION_SECONDS = 300;
 const SERVER_TIME_OFFSET_SMOOTHING = 0.2;
 const GOOMBA_STATE_FALLBACK: GoombaState["state"] = "idle";
 const MYSTERY_BOX_STATE_FALLBACK: MysteryBoxState["state"] = "ready";
-const STARTER_RING_POSITIONS = new Map(
-  RING_PLACEMENTS.map((placement, index) => [
-    `ring-${index}`,
-    {
-      x: placement[0],
-      y: sampleTerrainHeight(placement[0], placement[1]) + RING_HOVER_HEIGHT,
-      z: placement[1],
-    },
-  ]),
-);
 
 function toValidMotionState(value: string): MotionState {
   switch (value) {
@@ -364,7 +351,6 @@ export function useMultiplayerSync({
   const [playerStatsRows] = useTable(tables.playerStats);
   const [goombaRows] = useTable(tables.goombaState);
   const [mysteryBoxRows] = useTable(tables.mysteryBoxState);
-  const [ringRows] = useTable(tables.ringState);
   const [ringDropRows] = useTable(tables.ringDropState);
   const [worldStateRows] = useTable(tables.worldState);
   const [fireballRows] = useTable(tables.fireballEvent);
@@ -390,7 +376,6 @@ export function useMultiplayerSync({
   const playerStatsBufferRef = useRef<Map<string, PlayerStatsSnapshot>>(
     new Map(),
   );
-  const collectedStarterRingIdsBufferRef = useRef<Set<string>>(new Set());
   const projectedRingsBufferRef = useRef<WorldRingSnapshot[]>([]);
   const goombasBufferRef = useRef<Map<string, GoombaState>>(new Map());
   const mysteryBoxesBufferRef = useRef<Map<string, MysteryBoxState>>(new Map());
@@ -477,7 +462,7 @@ export function useMultiplayerSync({
   useEffect(() => {
     setMultiplayerDiagnostics(store, {
       playerRowCount: playerRows.length,
-      ringRowCount: ringRows.length + ringDropRows.length,
+      ringRowCount: ringDropRows.length,
       fireballEventRowCount: fireballRows.length,
       chatMessageRowCount: chatMessageRows.length,
     });
@@ -486,7 +471,6 @@ export function useMultiplayerSync({
     fireballRows.length,
     ringDropRows.length,
     playerRows.length,
-    ringRows.length,
     store,
   ]);
 
@@ -581,44 +565,32 @@ export function useMultiplayerSync({
       return;
     }
 
-    const collectedStarterRingIds = collectedStarterRingIdsBufferRef.current;
-    collectedStarterRingIds.clear();
     const projectedRings = projectedRingsBufferRef.current;
     projectedRings.length = 0;
 
-    for (const ring of ringRows) {
-      const starterPosition = STARTER_RING_POSITIONS.get(ring.ringId);
-      if (!starterPosition) {
+    for (const ringDrop of ringDropRows) {
+      if (ringDrop.collected) {
         continue;
       }
-
-      if (ring.collected) {
-        collectedStarterRingIds.add(ring.ringId);
-      }
-
-      projectedRings.push({
-        id: ring.ringId,
-        x: starterPosition.x,
-        y: starterPosition.y,
-        z: starterPosition.z,
-        collected: ring.collected,
-        collectedBy: ring.collectedBy,
-        source: "starter",
-        spawnedAtMs: undefined,
-      });
-    }
-
-    for (const ringDrop of ringDropRows) {
       projectedRings.push({
         id: ringDrop.ringId,
         x: ringDrop.x,
         y: ringDrop.y,
         z: ringDrop.z,
-        collected: ringDrop.collected,
-        collectedBy: ringDrop.collectedBy,
-        source: "drop",
         spawnedAtMs: ringDrop.spawnedAtMs,
       });
+    }
+
+    applyServerRingRows(worldEntityManager, projectedRings);
+  }, [
+    connectionState.isActive,
+    ringDropRows,
+    worldEntityManager,
+  ]);
+
+  useEffect(() => {
+    if (!connectionState.isActive) {
+      return;
     }
 
     let localRingCount = 0;
@@ -630,16 +602,11 @@ export function useMultiplayerSync({
       break;
     }
 
-    setCollectedRingIds(store, collectedStarterRingIds);
-    applyServerRingRows(worldEntityManager, projectedRings);
     setWorldLocalRingCount(worldEntityManager, localRingCount);
   }, [
     connectionState.isActive,
     localIdentity,
     playerInventoryRows,
-    ringDropRows,
-    ringRows,
-    store,
     worldEntityManager,
   ]);
 
