@@ -43,3 +43,72 @@ This would dramatically reduce table size and eliminate cross-world replication 
 2. **Server: Write idle goomba position less frequently.** Since the client smooths anyway, writing every 200–500ms for idle goombas instead of every 50ms cuts DB writes and SpacetimeDB broadcasts significantly.
 
 3. **Client: Memo `GoombaActor`** with shallow field comparison so that a new goomba object with identical `x/y/z/yaw/state` doesn't trigger re-renders or `useEffect`s.
+
+**Task 1 — Server: Delete goombas from inactive chunks**
+In `tickGoombas`, after `tickGoombaChunkSpawns` returns `activeChunks`, for each goomba that is NOT defeated AND whose spawn chunk is NOT in `activeChunks`, delete it from the DB and release the chunk slot.
+
+**Task 2 — Server: Option A — Don't write idle wander to DB**
+For idle goombas with no player nearby: skip `stepGoombaForward` and skip the DB write entirely. The server still needs the RNG state (`nextChargeAllowedAtMs`) and `stateEndsAtMs` for wander timing — but since these also only change during idle (which we're now suppressing), we only need to write when starting a NEW idle wander segment or when transitioning states. The key insight: when the goomba is idle AND in an active chunk AND no player nearby, we still need to detect player arrival (so the server still ticks the chunk). We just don't write position to DB.
+
+Wait — there's a subtlety. The server still needs to maintain the goomba's position for collision detection. But if we suppress DB writes for idle position, the server loses authoritative position. When a player enters the enrage radius, the server needs to know where the goomba is to set the charge yaw.
+
+The doc's Option A says: "use a deterministic wander simulation driven by the goomba's spawn point + `stateEndsAtMs` as the seed, and only write to DB on state transitions (idle→charge, etc.) and when a player hits the goomba." The key insight is: the client and server independently run the same deterministic simulation. On the server, when transitioning out of idle, we compute where the goomba would be deterministically and write that position.
+
+The server can reconstruct goomba position from: `spawnX/spawnZ` (fixed), `stateEndsAtMs` (encodes current wander segment timing), `nextChargeAllowedAtMs` (RNG state), and `updatedAtMs` (when we last wrote).
+
+**Simpler approach**: When idle and no player nearby — don't call `stepGoombaForward`, don't update `x/z/y/yaw`. Do still update `stateEndsAtMs`/RNG when wander segment ends (to pick a new yaw). This way the DB `x/z/yaw` represents the start of the current wander segment, and the client simulates forward. On transition to CHARGE, compute the current position from spawn/time.
+
+Actually wait — this gets complex. Let me think about what the client needs to simulate:
+
+The client needs: `spawnX`, `spawnZ`, `stateEndsAtMs` (when current wander segment ends), `nextChargeAllowedAtMs` (RNG state), `updatedAtMs` (when wander segment started / last DB write). From these, it can compute what yaw the goomba is walking on this segment, and how far it has advanced.
+
+So the approach:
+
+- Server: When idle wander segment starts (`startIdleWanderSegment`), write the current position + new yaw + new `stateEndsAtMs` to DB. Between segment starts, don't write.
+- Server: When player detected (idle→charge), compute the simulated current position by stepping forward `(timestampMs - updatedAtMs) / 1000` seconds at idle walk speed. Then write that computed position + charge state.
+- Client: When `state === "idle"`, simulate forward from `x/z/yaw` (last written position) using elapsed time since `updatedAtMs`.
+
+This is clean. Let me now look at what `updatedAtMs` represents vs. when we'd need it. Currently `updatedAtMs` is updated on every DB write. We'd use it as "time of last position snapshot."
+
+Now let me check what the client `GoombaState` has — it needs `spawnX`, `spawnZ`, `stateEndsAtMs`, `nextChargeAllowedAtMs`, `updatedAtMs` for the simulation. Let me check what the client currently receives:
+
+The client already receives `spawnX`, `spawnZ`, `stateEndsAtMs`, `nextChargeAllowedAtMs`, and `updatedAtMs` from the server via the generated bindings. This is great — the client can simulate idle wandering from these fields without any schema changes.
+
+Now let me also look at client terrain sampling to understand what the client simulation needs:
+
+Good, `sampleTerrainHeight` is available in `app/utils/terrain.ts`. Now I have enough info to implement everything. Let me also check if there's a `stepPlanarControllerMovement` or equivalent on the client:
+
+The movement controller is server-only. The client simulation needs to do a simpler version. For idle wandering it's just: advance position forward at `GOOMBA_IDLE_WALK_SPEED` in direction `yaw` for `deltaSeconds`, clamped to world bounds. The goomba doesn't have terrain clinging on the client side for idle (the server samples terrain height, but the client can approximate).
+
+Actually, we have `sampleTerrainHeight` on the client, and the simulation just does:
+
+```
+x += sin(yaw) * speed * dt
+z -= cos(yaw) * speed * dt
+y = sampleTerrainHeight(x, z)
+```
+
+The server uses `stepPlanarControllerMovement` which handles collision with terrain (not walls/bounds). For idle wandering, it's essentially just forward movement — the leash logic prevents them going too far. The client sim needs to match this closely but doesn't need perfect fidelity since it just needs to look right.
+
+Now let me implement all three tasks. I'll start with the server changes:
+
+**Task 1: Delete goombas from inactive chunks**
+
+In `tickGoombas`, right after `tickGoombaChunkSpawns` and before iterating goombas, we need to delete non-defeated goombas whose chunk is inactive. Actually, we can just do it in the main loop — the current code already skips ticking them with `continue`, but we should also delete them.
+
+**Task 2: Option A — Don't write idle goomba position to DB**
+
+When idle and no player nearby:
+
+- Still update `stateEndsAtMs` and RNG when wander segment ends (write to DB)
+- But don't call `stepGoombaForward` and don't update x/z/y
+- The DB `x/z/yaw` = position at start of current wander segment, `updatedAtMs` = when that segment started
+- When transitioning idle→charge: reconstruct current position by simulating forward, THEN write
+
+Now let me implement all the server-side changes in `goombas.ts`. The key changes are:
+
+1. Delete non-defeated goombas from inactive chunks
+2. For idle goombas: only write to DB on wander segment transitions, not every tick
+3. When transitioning idle→charge: simulate current position before writing
+
+You've hit your limit · resets 7am (America/Los_Angeles)

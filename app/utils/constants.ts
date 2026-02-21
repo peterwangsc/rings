@@ -237,6 +237,8 @@ export const GOOMBA_MODEL_PATH =
   "/models/character/goomba_rar_extract/Goomba/Goomba_OpenCollada.DAE";
 export const GOOMBA_MODEL_SCALE = 0.15;
 export const GOOMBA_INTERACT_DISABLED_STATE = "defeated";
+// Keep in sync with spacetimedb/src/shared/constants.ts.
+export const GOOMBA_IDLE_WALK_SPEED = 1.7;
 export const GOOMBA_STOMP_RADIUS = 0.95;
 export const GOOMBA_STOMP_MIN_FALL_SPEED = 1.2;
 export const GOOMBA_FIREBALL_HIT_RADIUS = 0.85;

@@ -21,6 +21,11 @@ import {
   stepFireballSimulation,
 } from "../gameplay/abilities/fireballManager";
 import type { FireballSpawnRequest } from "../gameplay/abilities/fireballTypes";
+import {
+  resolveEstimatedServerNowMs,
+  writePredictedGoombaPose,
+  type GoombaPose,
+} from "../gameplay/goombas/goombaPrediction";
 import type { FireballLoopController } from "../audio/useGameAudio";
 import { CharacterActor, type MotionState } from "../lib/CharacterActor";
 import type {
@@ -325,6 +330,7 @@ export function CharacterRigController({
   onLocalJump,
   onLocalFootstepsActiveChange,
   goombas,
+  serverTimeOffsetMs,
   onLocalGoombaHit,
   mysteryBoxes,
   onLocalMysteryBoxHit,
@@ -410,6 +416,12 @@ export function CharacterRigController({
     x: PLAYER_START_POSITION.x,
     y: PLAYER_START_POSITION.y,
     z: PLAYER_START_POSITION.z,
+  });
+  const predictedGoombaPoseRef = useRef<GoombaPose>({
+    x: 0,
+    y: 0,
+    z: 0,
+    yaw: 0,
   });
   const fireballCastOriginRef = useRef({ x: 0, y: 0, z: 0 });
   const fireballCastDirectionRef = useRef({ x: 0, y: 0, z: 0 });
@@ -611,6 +623,17 @@ export function CharacterRigController({
     bodyTranslationRef.current.z = translation.z;
     const goombaHitTimestamps = goombaHitTimestampsRef.current;
     const mysteryBoxHitTimestamps = mysteryBoxHitTimestampsRef.current;
+    const estimatedServerNowMs = resolveEstimatedServerNowMs(
+      serverTimeOffsetMs ?? null,
+    );
+    const getPredictedGoombaPose = (
+      goomba: NonNullable<typeof goombas>[number],
+    ) =>
+      writePredictedGoombaPose(
+        goomba,
+        estimatedServerNowMs,
+        predictedGoombaPoseRef.current,
+      );
     let nowMs = -1;
     const getNowMs = () => {
       if (nowMs < 0) {
@@ -749,8 +772,9 @@ export function CharacterRigController({
           if (goomba.state === GOOMBA_INTERACT_DISABLED_STATE) {
             continue;
           }
-          const dx = translation.x - goomba.x;
-          const dz = translation.z - goomba.z;
+          const predictedPose = getPredictedGoombaPose(goomba);
+          const dx = translation.x - predictedPose.x;
+          const dz = translation.z - predictedPose.z;
           const distanceSquared = dx * dx + dz * dz;
           if (
             distanceSquared >= nearestGoombaDistanceSquared ||
@@ -820,6 +844,7 @@ export function CharacterRigController({
         if (goomba.state === GOOMBA_INTERACT_DISABLED_STATE) {
           continue;
         }
+        const predictedPose = getPredictedGoombaPose(goomba);
         if (
           isGoombaHitOnCooldown(
             goombaHitTimestamps,
@@ -829,12 +854,12 @@ export function CharacterRigController({
         ) {
           continue;
         }
-        if (playerFeetY < goomba.y + 0.08) {
+        if (playerFeetY < predictedPose.y + 0.08) {
           continue;
         }
 
-        const dx = translation.x - goomba.x;
-        const dz = translation.z - goomba.z;
+        const dx = translation.x - predictedPose.x;
+        const dz = translation.z - predictedPose.z;
         if (dx * dx + dz * dz > GOOMBA_STOMP_RADIUS_SQUARED) {
           continue;
         }
@@ -1059,6 +1084,7 @@ export function CharacterRigController({
           if (goomba.state === GOOMBA_INTERACT_DISABLED_STATE) {
             continue;
           }
+          const predictedPose = getPredictedGoombaPose(goomba);
           if (
             isGoombaHitOnCooldown(
               goombaHitTimestamps,
@@ -1069,7 +1095,8 @@ export function CharacterRigController({
             continue;
           }
 
-          const hitboxBottomY = goomba.y + GOOMBA_FIREBALL_HITBOX_BASE_OFFSET;
+          const hitboxBottomY =
+            predictedPose.y + GOOMBA_FIREBALL_HITBOX_BASE_OFFSET;
           const hitboxTopY = hitboxBottomY + GOOMBA_FIREBALL_HITBOX_HEIGHT;
           if (fireballMaxY < hitboxBottomY || fireballMinY > hitboxTopY) {
             continue;
@@ -1080,8 +1107,8 @@ export function CharacterRigController({
               fireballStartZ,
               fireballEndX,
               fireballEndZ,
-              goomba.x,
-              goomba.z,
+              predictedPose.x,
+              predictedPose.z,
             ) > FIREBALL_GOOMBA_HIT_RADIUS_SQUARED
           ) {
             continue;
@@ -1094,12 +1121,12 @@ export function CharacterRigController({
             fireballEndX,
             fireballEndY,
             fireballEndZ,
-            goomba.x,
+            predictedPose.x,
             hitboxBottomY,
-            goomba.z,
-            goomba.x,
+            predictedPose.z,
+            predictedPose.x,
             hitboxTopY,
-            goomba.z,
+            predictedPose.z,
           );
           if (distanceSquared > FIREBALL_GOOMBA_HIT_RADIUS_SQUARED) {
             continue;

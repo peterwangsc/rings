@@ -46,6 +46,7 @@ export interface CharacterRigControllerProps {
   readonly onLocalFootstepsActiveChange?: (isActive: boolean) => void;
   readonly damageEventCounterRef?: MutableRefObject<number>;
   readonly goombas?: readonly GoombaState[];
+  readonly serverTimeOffsetMs?: number | null;
   readonly onLocalGoombaHit?: (goombaId: HitGoombaCommand["goombaId"]) => void;
   readonly mysteryBoxes?: readonly MysteryBoxState[];
   readonly onLocalMysteryBoxHit?: (mysteryBoxId: string) => void;

@@ -2,7 +2,7 @@
 
 import { Cloud } from "@react-three/drei";
 import { useFrame, useLoader } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { ColladaLoader } from "three/examples/jsm/loaders/ColladaLoader.js";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
@@ -12,6 +12,10 @@ import {
   GOOMBA_MODEL_PATH,
   GOOMBA_MODEL_SCALE,
 } from "../../utils/constants";
+import {
+  writePredictedGoombaPose,
+  type GoombaPose,
+} from "./goombaPrediction";
 
 const POSITION_SMOOTHNESS = 14;
 const YAW_SMOOTHNESS = 16;
@@ -310,7 +314,11 @@ function applyWalkPose(
   );
 }
 
-function GoombaActor({ goomba }: { goomba: GoombaState }) {
+type GoombaActorProps = {
+  goomba: GoombaState;
+};
+
+function GoombaActorBase({ goomba }: GoombaActorProps) {
   const rootRef = useRef<THREE.Group>(null);
   const poofRef = useRef<THREE.Group>(null);
 
@@ -318,6 +326,12 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
     new THREE.Vector3(goomba.x, goomba.y, goomba.z),
   );
   const fallbackYawRef = useRef(goomba.yaw);
+  const predictedPoseRef = useRef<GoombaPose>({
+    x: goomba.x,
+    y: goomba.y,
+    z: goomba.z,
+    yaw: goomba.yaw,
+  });
 
   const isDamageEyeVisibleRef = useRef(false);
   const blinkRandomStateRef = useRef(hashStringToUint32(goomba.goombaId) || 1);
@@ -416,6 +430,14 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
         BLINK_DURATION_MAX_SECONDS,
         nextBlinkRandom(),
       );
+
+    const predictedPose = writePredictedGoombaPose(
+      goomba,
+      Date.now(),
+      predictedPoseRef.current,
+    );
+    targetPositionRef.current.set(predictedPose.x, predictedPose.y, predictedPose.z);
+    fallbackYawRef.current = predictedPose.yaw;
 
     const nowSeconds = state.clock.getElapsedTime();
     const isDefeated = goomba.state === GOOMBA_INTERACT_DISABLED_STATE;
@@ -627,7 +649,29 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
   );
 }
 
-export function GoombaLayer({ goombas }: { goombas: readonly GoombaState[] }) {
+function areGoombaActorPropsEqual(
+  previous: GoombaActorProps,
+  next: GoombaActorProps,
+) {
+  return (
+    previous.goomba.goombaId === next.goomba.goombaId &&
+    previous.goomba.x === next.goomba.x &&
+    previous.goomba.y === next.goomba.y &&
+    previous.goomba.z === next.goomba.z &&
+    previous.goomba.yaw === next.goomba.yaw &&
+    previous.goomba.state === next.goomba.state &&
+    previous.goomba.stateEndsAtMs === next.goomba.stateEndsAtMs &&
+    previous.goomba.updatedAtMs === next.goomba.updatedAtMs
+  );
+}
+
+const GoombaActor = memo(GoombaActorBase, areGoombaActorPropsEqual);
+
+export function GoombaLayer({
+  goombas,
+}: {
+  goombas: readonly GoombaState[];
+}) {
   return (
     <group>
       {goombas.map((goomba) => (

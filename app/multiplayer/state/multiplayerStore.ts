@@ -202,6 +202,14 @@ export function useChatMessages(store: MultiplayerStore) {
   );
 }
 
+export function useServerTimeOffsetMs(store: MultiplayerStore) {
+  return useSyncExternalStore(
+    (listener) => subscribeMultiplayerStore(store, listener),
+    () => store.state.serverTimeOffsetMs,
+    () => store.state.serverTimeOffsetMs,
+  );
+}
+
 export function useAuthoritativeLocalPlayer(store: MultiplayerStore) {
   return useSyncExternalStore(
     (listener) => subscribeMultiplayerStore(store, listener),

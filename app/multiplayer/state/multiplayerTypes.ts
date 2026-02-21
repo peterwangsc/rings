@@ -72,6 +72,8 @@ export interface GoombaState {
   z: number;
   yaw: number;
   state: "idle" | "charge" | "enraged" | "cooldown" | "defeated";
+  stateEndsAtMs: number;
+  updatedAtMs: number;
 }
 
 export interface MysteryBoxState {

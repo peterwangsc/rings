@@ -243,6 +243,48 @@ function stepGoombaForward(
   goomba.y = sampleTerrainHeight(goomba.x, goomba.z);
 }
 
+// Simulate idle wander position forward in time without advancing the
+// segment-transition RNG. Used to reconstruct authoritative position when
+// the goomba transitions out of idle (e.g. to CHARGE) after a period
+// during which we suppressed DB writes.
+function simulateIdlePosition(
+  goomba: GoombaStateRow,
+  toTimestampMs: number,
+) {
+  const effectiveEndMs =
+    goomba.stateEndsAtMs > goomba.updatedAtMs
+      ? Math.min(toTimestampMs, goomba.stateEndsAtMs)
+      : goomba.updatedAtMs;
+  let remainingSeconds = Math.max(
+    0,
+    Math.min((effectiveEndMs - goomba.updatedAtMs) / 1000, 30),
+  );
+  if (remainingSeconds <= 0) {
+    return;
+  }
+
+  while (remainingSeconds > 1e-6) {
+    const stepSeconds = Math.min(remainingSeconds, 0.2);
+    const nextPose = stepPlanarControllerMovement(
+      { x: goomba.x, z: goomba.z, yaw: goomba.yaw },
+      toPlanarControllerInput({
+        forward: true,
+        backward: false,
+        left: false,
+        right: false,
+        lookYaw: goomba.yaw,
+        moveSpeed: GOOMBA_IDLE_WALK_SPEED,
+      }),
+      stepSeconds,
+    );
+    goomba.x = clampWorldAxis(nextPose.x);
+    goomba.z = clampWorldAxis(nextPose.z);
+    goomba.yaw = nextPose.yaw;
+    remainingSeconds -= stepSeconds;
+  }
+  goomba.y = sampleTerrainHeight(goomba.x, goomba.z);
+}
+
 function setIdleState(goomba: GoombaStateRow) {
   goomba.state = GOOMBA_STATE_IDLE;
   goomba.targetIdentity = undefined;
@@ -368,6 +410,8 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
     }
 
     if (!activeChunks.has(spawnChunkKey)) {
+      maybeReleaseChunkSlot(ctx, goomba, timestampMs);
+      ctx.db.goombaState.delete(goomba);
       continue;
     }
 
@@ -380,6 +424,12 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
       Math.min((timestampMs - goomba.updatedAtMs) / 1000, 0.2),
     );
 
+    if (next.state === GOOMBA_STATE_IDLE) {
+      // Idle motion is reconstructed deterministically from the last
+      // authoritative segment snapshot instead of writing every tick.
+      simulateIdlePosition(next, timestampMs);
+    }
+
     const nearbyTarget = findNearestPlayerWithinRadius(
       getPlayers(),
       next.x,
@@ -388,15 +438,19 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
     );
 
     if (!nearbyTarget) {
-      if (next.state !== GOOMBA_STATE_IDLE) {
+      const wasIdle = next.state === GOOMBA_STATE_IDLE;
+      if (!wasIdle) {
         setIdleState(next);
       }
+      let startedIdleSegment = false;
       if (timestampMs >= next.stateEndsAtMs) {
         startIdleWanderSegment(next, timestampMs, randomCursor);
+        startedIdleSegment = true;
       }
-      stepGoombaForward(next, GOOMBA_IDLE_WALK_SPEED, dtSeconds);
       next.nextChargeAllowedAtMs = randomCursor.state;
-      maybeUpdateGoomba(ctx, goomba, next, timestampMs);
+      if (!wasIdle || startedIdleSegment) {
+        maybeUpdateGoomba(ctx, goomba, next, timestampMs);
+      }
       continue;
     }
 
