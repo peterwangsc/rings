@@ -5,11 +5,16 @@ import { useLoader } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AudioLoader, Cache, TextureLoader } from "three";
 import { ColladaLoader } from "three/examples/jsm/loaders/ColladaLoader.js";
+import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import {
   PRELOAD_AUDIO_PATHS,
   PRELOAD_TEXTURE_PATHS,
 } from "../assets/gameAssets";
-import { CHARACTER_PATH, GOOMBA_MODEL_PATH } from "../utils/constants";
+import {
+  CHARACTER_PATH,
+  GOOMBA_MODEL_PATH,
+  MOTORBIKE_MODEL_PATH,
+} from "../utils/constants";
 
 const PRELOAD_IDLE_GRACE_MS = 1600;
 
@@ -17,6 +22,7 @@ function startGameAssetPreload() {
   Cache.enabled = true;
   useGLTF.preload(CHARACTER_PATH);
   useLoader.preload(ColladaLoader, GOOMBA_MODEL_PATH);
+  useLoader.preload(FBXLoader, MOTORBIKE_MODEL_PATH);
   useLoader.preload(TextureLoader, PRELOAD_TEXTURE_PATHS as unknown as string[]);
   useLoader.preload(AudioLoader, PRELOAD_AUDIO_PATHS as unknown as string[]);
 }

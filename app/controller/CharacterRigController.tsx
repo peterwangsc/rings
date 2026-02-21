@@ -4,6 +4,7 @@ import {
   CapsuleCollider,
   RigidBody,
   useRapier,
+  type RapierCollider,
   type RapierRigidBody,
 } from "@react-three/rapier";
 import { useFrame, useThree } from "@react-three/fiber";
@@ -25,6 +26,11 @@ import {
   writePredictedGoombaPose,
   type GoombaPose,
 } from "../gameplay/goombas/goombaPrediction";
+import { MotorbikeMountable } from "../gameplay/vehicles/MotorbikeMountable";
+import type {
+  MotorbikeDriverInput,
+  MotorbikeMountableApi,
+} from "../gameplay/vehicles/motorbikeTypes";
 import type { FireballLoopController } from "../audio/useGameAudio";
 import { CharacterActor, type MotionState } from "../lib/CharacterActor";
 import type {
@@ -50,6 +56,11 @@ import {
   GOOMBA_INTERACT_DISABLED_STATE,
   GOOMBA_STOMP_MIN_FALL_SPEED,
   GOOMBA_STOMP_RADIUS,
+  MOTORBIKE_DISMOUNT_TRANSITION_SECONDS,
+  MOTORBIKE_MOUNT_TRANSITION_SECONDS,
+  MOTORBIKE_MODEL_PATH,
+  MOTORBIKE_START_POSITION,
+  MOTORBIKE_START_YAW,
   MYSTERY_BOX_HALF_EXTENT,
   MYSTERY_BOX_HEAD_RAY_LENGTH,
   MYSTERY_BOX_HIT_CLIENT_COOLDOWN_MS,
@@ -120,6 +131,18 @@ const PLAYER_START_POSITION_ARRAY = [
   PLAYER_START_POSITION.y,
   PLAYER_START_POSITION.z,
 ] as const;
+const MOTORBIKE_START_POSITION_ARRAY = [...MOTORBIKE_START_POSITION] as const;
+const MOTORBIKE_START_ROTATION_ARRAY = [0, MOTORBIKE_START_YAW, 0] as const;
+const MOUNTED_VISUAL_Y_OFFSET = PLAYER_VISUAL_Y_OFFSET - 0.38;
+const MOUNTED_VISUAL_Z_OFFSET = 0;
+const MOUNTED_POSE_BLEND_SHARPNESS = 12;
+const MOUNT_INPUT_NEUTRAL_EPSILON = 0.08;
+
+type PossessionState =
+  | { kind: "on_foot" }
+  | { kind: "mounting"; startedAtMs: number }
+  | { kind: "mounted" }
+  | { kind: "dismounting"; startedAtMs: number };
 
 function getSegmentToSegmentDistanceSquared(
   segmentAStartX: number,
@@ -278,6 +301,13 @@ function clearArray(values: { length: number }) {
   values.length = 0;
 }
 
+function clearMoveInput(input: CharacterInputState) {
+  input.forward = false;
+  input.backward = false;
+  input.left = false;
+  input.right = false;
+}
+
 function isGoombaHitOnCooldown(
   goombaHitTimestamps: Map<string, number>,
   goombaId: string,
@@ -354,7 +384,9 @@ export function CharacterRigController({
   });
 
   const bodyRef = useRef<RapierRigidBody | null>(null);
+  const colliderRef = useRef<RapierCollider | null>(null);
   const visualRootRef = useRef<THREE.Group>(null);
+  const bikeRef = useRef<MotorbikeMountableApi | null>(null);
   const inputStateRef = useRef<CharacterInputState>({ ...DEFAULT_INPUT_STATE });
   const jumpIntentTimerRef = useRef(0);
   const ungroundedTimerRef = useRef(0);
@@ -370,6 +402,8 @@ export function CharacterRigController({
   const smoothedPlanarSpeedRef = useRef(0);
   const mobileJumpWasPressedRef = useRef(false);
   const fireballRequestCountRef = useRef(0);
+  const interactRequestCountRef = useRef(0);
+  const lastProcessedInteractRequestCountRef = useRef(0);
   const lastProcessedFireballRequestCountRef = useRef(0);
   const fireballCastAnimationCountRef = useRef(0);
   const lastProcessedMobileFireballTriggerRef = useRef(0);
@@ -383,6 +417,15 @@ export function CharacterRigController({
   const wasMovingUpRef = useRef(false);
   const footstepsAudioActiveRef = useRef(false);
   const motionStateRef = useRef<MotionState>("idle");
+  const mountedPoseBlendRef = useRef(0);
+  const possessionStateRef = useRef<PossessionState>({ kind: "on_foot" });
+  const mountedDriveInputArmedRef = useRef(true);
+  const bikeDriverInputRef = useRef<MotorbikeDriverInput>({
+    throttle: 0,
+    steer: 0,
+    brake: 0,
+    handbrake: false,
+  });
   const fallbackFireballManager = useMemo(
     () => createFireballManager(FIREBALL_MAX_ACTIVE_COUNT),
     [],
@@ -400,6 +443,18 @@ export function CharacterRigController({
   const desiredCameraPositionRef = useRef(new THREE.Vector3());
   const lookTargetRef = useRef(new THREE.Vector3());
   const visualQuaternionRef = useRef(new THREE.Quaternion());
+  const bikeTransformPositionRef = useRef(new THREE.Vector3());
+  const bikeTransformQuaternionRef = useRef(new THREE.Quaternion());
+  const bikeForwardDirectionRef = useRef(new THREE.Vector3());
+  const dismountPositionRef = useRef(new THREE.Vector3());
+  const dismountQuaternionRef = useRef(new THREE.Quaternion());
+  const chassisLinvelRef = useRef({ x: 0, y: 0, z: 0 });
+  const mountedVisualOffsetRef = useRef(
+    new THREE.Vector3(0, MOUNTED_VISUAL_Y_OFFSET, MOUNTED_VISUAL_Z_OFFSET),
+  );
+  const onFootVisualOffsetRef = useRef(
+    new THREE.Vector3(0, PLAYER_VISUAL_Y_OFFSET, 0),
+  );
   const cameraCollisionDirectionRef = useRef(new THREE.Vector3());
   const cameraCollisionOriginRef = useRef({ x: 0, y: 0, z: 0 });
   const cameraCollisionCastDirectionRef = useRef({ x: 0, y: 0, z: 0 });
@@ -561,6 +616,7 @@ export function CharacterRigController({
     inputStateRef,
     jumpIntentTimerRef,
     fireballRequestCountRef,
+    interactRequestCountRef,
     mobileJumpWasPressedRef,
     isPointerLockedRef,
     activeTouchPointerIdRef,
@@ -610,17 +666,118 @@ export function CharacterRigController({
       lastProcessedMobileFireballTriggerRef.current =
         mobileFireballTriggerCount;
     }
-    const damageCounter = damageEventCounterRef?.current ?? 0;
-    const hasPendingDamageEvent =
-      damageCounter > lastProcessedDamageEventCounterRef.current;
-    if (hasPendingDamageEvent) {
-      lastProcessedDamageEventCounterRef.current = damageCounter;
-    }
-
     const translation = body.translation();
     bodyTranslationRef.current.x = translation.x;
     bodyTranslationRef.current.y = translation.y;
     bodyTranslationRef.current.z = translation.z;
+    const bike = bikeRef.current;
+    const pendingInteractRequests =
+      interactRequestCountRef.current - lastProcessedInteractRequestCountRef.current;
+    if (pendingInteractRequests > 0) {
+      lastProcessedInteractRequestCountRef.current += pendingInteractRequests;
+      if (bike) {
+        const possessionState = possessionStateRef.current;
+        if (possessionState.kind === "on_foot") {
+          playerPositionRef.current.set(translation.x, translation.y, translation.z);
+          if (bike.canMountFrom(playerPositionRef.current)) {
+            clearMoveInput(input);
+            mountedDriveInputArmedRef.current = false;
+            bikeDriverInputRef.current.throttle = 0;
+            bikeDriverInputRef.current.steer = 0;
+            bikeDriverInputRef.current.brake = 1;
+            bikeDriverInputRef.current.handbrake = false;
+            bike.setDriverInput(bikeDriverInputRef.current);
+            possessionStateRef.current = {
+              kind: "mounting",
+              startedAtMs: performance.now(),
+            };
+            bike.setPossessed(true);
+          }
+        } else if (possessionState.kind === "mounted") {
+          mountedDriveInputArmedRef.current = false;
+          possessionStateRef.current = {
+            kind: "dismounting",
+            startedAtMs: performance.now(),
+          };
+          bike.setDriverInput({
+            throttle: 0,
+            steer: 0,
+            brake: 1,
+            handbrake: false,
+          });
+        }
+      }
+    }
+
+    if (!bike && possessionStateRef.current.kind !== "on_foot") {
+      possessionStateRef.current = { kind: "on_foot" };
+      mountedDriveInputArmedRef.current = true;
+    }
+
+    const possessionState = possessionStateRef.current;
+    if (bike && possessionState.kind === "mounting") {
+      const mountElapsedSeconds =
+        (performance.now() - possessionState.startedAtMs) / 1000;
+      if (mountElapsedSeconds >= MOTORBIKE_MOUNT_TRANSITION_SECONDS) {
+        possessionStateRef.current = { kind: "mounted" };
+      }
+    } else if (bike && possessionState.kind === "dismounting") {
+      const dismountElapsedSeconds =
+        (performance.now() - possessionState.startedAtMs) / 1000;
+      if (dismountElapsedSeconds >= MOTORBIKE_DISMOUNT_TRANSITION_SECONDS) {
+        const dismountPosition = dismountPositionRef.current;
+        const dismountQuaternion = dismountQuaternionRef.current;
+        const hasDismountSpot =
+          bike.getDismountWorld("left", dismountPosition, dismountQuaternion) ||
+          bike.getDismountWorld("right", dismountPosition, dismountQuaternion);
+        if (hasDismountSpot) {
+          const dismountGroundY =
+            sampleTerrainHeight(dismountPosition.x, dismountPosition.z) +
+            PLAYER_CAPSULE_HALF_HEIGHT +
+            PLAYER_CAPSULE_RADIUS +
+            0.02;
+          const dismountTranslation = reconciliationTranslationRef.current;
+          dismountTranslation.x = dismountPosition.x;
+          dismountTranslation.y = Math.max(dismountPosition.y, dismountGroundY);
+          dismountTranslation.z = dismountPosition.z;
+          body.setTranslation(dismountTranslation, true);
+          bodyTranslationRef.current.x = dismountTranslation.x;
+          bodyTranslationRef.current.y = dismountTranslation.y;
+          bodyTranslationRef.current.z = dismountTranslation.z;
+        }
+        bike.setParkedTransform(
+          bikeTransformPositionRef.current,
+          bikeTransformQuaternionRef.current,
+        );
+        bike.setPossessed(false);
+        bike.setDriverInput({
+          throttle: 0,
+          steer: 0,
+          brake: 0,
+          handbrake: false,
+        });
+        possessionStateRef.current = { kind: "on_foot" };
+        mountedDriveInputArmedRef.current = true;
+      }
+    }
+
+    const resolvedPossessionState = possessionStateRef.current;
+    const isMountedLike = resolvedPossessionState.kind !== "on_foot";
+    const isMountTransition =
+      resolvedPossessionState.kind === "mounting" ||
+      resolvedPossessionState.kind === "dismounting";
+    if (isMountTransition) {
+      jumpIntentTimerRef.current = 0;
+    }
+    colliderRef.current?.setSensor(isMountedLike);
+
+    const damageCounter = damageEventCounterRef?.current ?? 0;
+    const hasPendingDamageEvent =
+      damageCounter > lastProcessedDamageEventCounterRef.current;
+    if (!isMountedLike && hasPendingDamageEvent) {
+      lastProcessedDamageEventCounterRef.current = damageCounter;
+    }
+
     const goombaHitTimestamps = goombaHitTimestampsRef.current;
     const mysteryBoxHitTimestamps = mysteryBoxHitTimestampsRef.current;
     const estimatedServerNowMs = Date.now() - GOOMBA_PREDICTION_LAG_MS;
@@ -642,9 +799,14 @@ export function CharacterRigController({
     const currentVelocity = body.linvel();
     const verticalSpeedAbs = Math.abs(currentVelocity.y);
     // Track upward-momentum latch for mystery box bonk detection
-    if (currentVelocity.y > 0) {
+    if (!isMountedLike && currentVelocity.y > 0) {
       wasMovingUpRef.current = true;
-    } else if (currentVelocity.y < -MYSTERY_BOX_HIT_DOWNWARD_CLEAR_SPEED) {
+    } else if (
+      !isMountedLike &&
+      currentVelocity.y < -MYSTERY_BOX_HIT_DOWNWARD_CLEAR_SPEED
+    ) {
+      wasMovingUpRef.current = false;
+    } else if (isMountedLike) {
       wasMovingUpRef.current = false;
     }
     setRayOrigin(groundingRay, translation.x, translation.y, translation.z);
@@ -693,6 +855,7 @@ export function CharacterRigController({
     }
 
     const isGroundedStable =
+      isMountedLike ||
       isGroundedWithinGracePeriod(ungroundedTimerRef.current) ||
       groundedRecoveryLatchRef.current;
     const canConsumeJumpIntent = isGroundedStable;
@@ -700,16 +863,35 @@ export function CharacterRigController({
     const keyboardForwardInput =
       (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
     const keyboardRightInput = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    const moveForwardInput = THREE.MathUtils.clamp(
+    const rawMoveForwardInput = THREE.MathUtils.clamp(
       keyboardForwardInput - (mobileMoveInput?.y ?? 0),
       -1,
       1,
     );
-    const moveRightInput = THREE.MathUtils.clamp(
+    const rawMoveRightInput = THREE.MathUtils.clamp(
       keyboardRightInput + (mobileMoveInput?.x ?? 0),
       -1,
       1,
     );
+    const rawMoveInputsAreNeutral =
+      Math.abs(rawMoveForwardInput) <= MOUNT_INPUT_NEUTRAL_EPSILON &&
+      Math.abs(rawMoveRightInput) <= MOUNT_INPUT_NEUTRAL_EPSILON;
+    if (
+      resolvedPossessionState.kind === "mounted" &&
+      !mountedDriveInputArmedRef.current &&
+      rawMoveInputsAreNeutral
+    ) {
+      mountedDriveInputArmedRef.current = true;
+    }
+    const canDriveBike =
+      resolvedPossessionState.kind === "mounted" &&
+      mountedDriveInputArmedRef.current;
+    const moveForwardInput =
+      resolvedPossessionState.kind === "on_foot" ? rawMoveForwardInput : 0;
+    const moveRightInput =
+      resolvedPossessionState.kind === "on_foot" ? rawMoveRightInput : 0;
+    const driveForwardInput = canDriveBike ? rawMoveForwardInput : 0;
+    const driveRightInput = canDriveBike ? rawMoveRightInput : 0;
     const isWalkGait = isWalkDefault ? !input.sprint : input.sprint;
 
     getForwardFromYaw(cameraYawRef.current, forwardRef.current);
@@ -760,7 +942,7 @@ export function CharacterRigController({
         nextVelocityZ *= planarSpeedScale;
       }
     }
-    if (hasPendingDamageEvent) {
+    if (!isMountedLike && hasPendingDamageEvent) {
       let knockbackDirectionX = 0;
       let knockbackDirectionZ = 0;
       let nearestGoombaDistanceSquared = Infinity;
@@ -800,7 +982,7 @@ export function CharacterRigController({
 
     let didJump = false;
     let nextVelocityY = currentVelocity.y;
-    if (jumpIntentTimerRef.current > 0 && canConsumeJumpIntent) {
+    if (!isMountedLike && jumpIntentTimerRef.current > 0 && canConsumeJumpIntent) {
       didJump = true;
       nextVelocityY = PLAYER_JUMP_VELOCITY;
       jumpIntentTimerRef.current = 0;
@@ -830,7 +1012,30 @@ export function CharacterRigController({
     nextLinvel.z = nextVelocityZ;
     body.setLinvel(nextLinvel, true);
 
+    if (bike && isMountedLike) {
+      bike.getChassisLinvel(chassisLinvelRef.current);
+      nextVelocityX = chassisLinvelRef.current.x;
+      nextVelocityZ = chassisLinvelRef.current.z;
+      bike.getSeatMountWorld(
+        bikeTransformPositionRef.current,
+        bikeTransformQuaternionRef.current,
+      );
+      body.setTranslation(
+        {
+          x: bikeTransformPositionRef.current.x,
+          y: bikeTransformPositionRef.current.y,
+          z: bikeTransformPositionRef.current.z,
+        },
+        true,
+      );
+      nextLinvel.x = 0;
+      nextLinvel.y = 0;
+      nextLinvel.z = 0;
+      body.setLinvel(nextLinvel, true);
+    }
+
     if (
+      !isMountedLike &&
       goombas &&
       onLocalGoombaHit &&
       nextVelocityY < -GOOMBA_STOMP_MIN_FALL_SPEED
@@ -873,7 +1078,12 @@ export function CharacterRigController({
     }
 
     // Mystery box bonk detection: upward ray from player head, per-frame poll
-    if (mysteryBoxes && onLocalMysteryBoxHit && wasMovingUpRef.current) {
+    if (
+      !isMountedLike &&
+      mysteryBoxes &&
+      onLocalMysteryBoxHit &&
+      wasMovingUpRef.current
+    ) {
       const playerHeadY =
         translation.y + PLAYER_CAPSULE_HALF_HEIGHT + PLAYER_CAPSULE_RADIUS;
       for (let index = 0; index < mysteryBoxes.length; index += 1) {
@@ -915,6 +1125,7 @@ export function CharacterRigController({
       nextVelocityX * nextVelocityX + nextVelocityZ * nextVelocityZ;
     const planarSpeed = Math.sqrt(planarSpeedSquared);
     const shouldPlayFootsteps =
+      !isMountedLike &&
       !isInputSuspended &&
       isGroundedStable &&
       hasMoveIntent &&
@@ -923,7 +1134,18 @@ export function CharacterRigController({
       footstepsAudioActiveRef.current = shouldPlayFootsteps;
       onLocalFootstepsActiveChange?.(shouldPlayFootsteps);
     }
-    if (planarSpeedSquared > 1e-8) {
+    if (bike && isMountedLike) {
+      bikeForwardDirectionRef.current
+        .set(0, 0, 1)
+        .applyQuaternion(bikeTransformQuaternionRef.current);
+      const bikeYaw = Math.atan2(
+        bikeForwardDirectionRef.current.x,
+        -bikeForwardDirectionRef.current.z,
+      );
+      characterYawRef.current = normalizeAngle(
+        bikeYaw * CHARACTER_CAMERA_YAW_SIGN,
+      );
+    } else if (planarSpeedSquared > 1e-8) {
       const velocityYaw = Math.atan2(nextVelocityX, -nextVelocityZ);
       characterYawRef.current = normalizeAngle(
         velocityYaw * CHARACTER_CAMERA_YAW_SIGN,
@@ -935,6 +1157,40 @@ export function CharacterRigController({
       characterYawRef.current + CHARACTER_MODEL_YAW_OFFSET,
     );
     visualRoot.quaternion.copy(visualQuaternionRef.current);
+    const mountedPoseBlendTarget = isMountedLike ? 1 : 0;
+    const mountedPoseBlendLerp = 1 - Math.exp(-MOUNTED_POSE_BLEND_SHARPNESS * dt);
+    mountedPoseBlendRef.current +=
+      (mountedPoseBlendTarget - mountedPoseBlendRef.current) *
+      mountedPoseBlendLerp;
+    visualRoot.position.lerpVectors(
+      onFootVisualOffsetRef.current,
+      mountedVisualOffsetRef.current,
+      THREE.MathUtils.clamp(mountedPoseBlendRef.current, 0, 1),
+    );
+
+    if (bike && isMountedLike) {
+      bikeDriverInputRef.current.throttle = THREE.MathUtils.clamp(
+        driveForwardInput,
+        -1,
+        1,
+      );
+      bikeDriverInputRef.current.steer = THREE.MathUtils.clamp(
+        driveRightInput,
+        -1,
+        1,
+      );
+      bikeDriverInputRef.current.brake =
+        resolvedPossessionState.kind !== "mounted" || !canDriveBike ? 1 : 0;
+      bikeDriverInputRef.current.handbrake =
+        resolvedPossessionState.kind === "mounted" && canDriveBike && input.sprint;
+      bike.setDriverInput(bikeDriverInputRef.current);
+    } else if (bike) {
+      bikeDriverInputRef.current.throttle = 0;
+      bikeDriverInputRef.current.steer = 0;
+      bikeDriverInputRef.current.brake = 0;
+      bikeDriverInputRef.current.handbrake = false;
+      bike.setDriverInput(bikeDriverInputRef.current);
+    }
 
     cameraFocusPositionRef.current.set(
       translation.x,
@@ -951,15 +1207,19 @@ export function CharacterRigController({
     smoothedPlanarSpeedRef.current +=
       (planarSpeed - smoothedPlanarSpeedRef.current) * speedBlend;
 
-    const targetMotionState = resolveTargetMotionState({
-      didJump,
-      isGroundedStable,
-      verticalSpeed: nextVelocityY,
-      hasMoveIntent,
-      planarSpeed: smoothedPlanarSpeedRef.current,
-      isWalkGait,
-      previousState: motionStateRef.current,
-    });
+    const targetMotionState = isMountedLike
+      ? planarSpeed > FOOTSTEPS_MIN_PLANAR_SPEED
+        ? "running"
+        : "idle"
+      : resolveTargetMotionState({
+          didJump,
+          isGroundedStable,
+          verticalSpeed: nextVelocityY,
+          hasMoveIntent,
+          planarSpeed: smoothedPlanarSpeedRef.current,
+          isWalkGait,
+          previousState: motionStateRef.current,
+        });
 
     if (motionStateRef.current !== targetMotionState) {
       motionStateRef.current = targetMotionState;
@@ -1016,7 +1276,7 @@ export function CharacterRigController({
     const pendingFireballRequests =
       fireballRequestCountRef.current -
       lastProcessedFireballRequestCountRef.current;
-    if (pendingFireballRequests > 0) {
+    if (!isMountedLike && pendingFireballRequests > 0) {
       const requestsToProcess = Math.min(
         pendingFireballRequests,
         MAX_LOCAL_FIREBALL_REQUESTS_PER_FRAME,
@@ -1028,6 +1288,8 @@ export function CharacterRigController({
       }
       fireballCastAnimationCountRef.current += requestsToProcess;
       lastProcessedFireballRequestCountRef.current += requestsToProcess;
+    } else if (isMountedLike && pendingFireballRequests > 0) {
+      lastProcessedFireballRequestCountRef.current = fireballRequestCountRef.current;
     }
 
     const pendingNetworkSpawns = networkFireballSpawnQueueRef?.current;
@@ -1220,6 +1482,7 @@ export function CharacterRigController({
         userData={{ kind: "player" }}
       >
         <CapsuleCollider
+          ref={colliderRef}
           args={[PLAYER_CAPSULE_HALF_HEIGHT, PLAYER_CAPSULE_RADIUS]}
           friction={1}
         />
@@ -1228,10 +1491,17 @@ export function CharacterRigController({
             motionStateRef={motionStateRef}
             planarSpeedRef={smoothedPlanarSpeedRef}
             fireballCastCountRef={fireballCastAnimationCountRef}
+            mountedPoseBlendRef={mountedPoseBlendRef}
             hidden={cameraMode === "first_person"}
           />
         </group>
       </RigidBody>
+      <MotorbikeMountable
+        ref={bikeRef}
+        url={MOTORBIKE_MODEL_PATH}
+        position={MOTORBIKE_START_POSITION_ARRAY}
+        rotation={MOTORBIKE_START_ROTATION_ARRAY}
+      />
       <FireballRenderLayer
         renderFrame={activeFireballManager.renderFrame}
         fireballLoops={fireballLoopController ?? NOOP_FIREBALL_LOOPS}

@@ -18,6 +18,7 @@ export interface CharacterActorProps {
   readonly motionStateRef?: MutableRefObject<MotionState>;
   readonly planarSpeedRef?: MutableRefObject<number>;
   readonly fireballCastCountRef?: MutableRefObject<number>;
+  readonly mountedPoseBlendRef?: MutableRefObject<number>;
   readonly targetHeight?: number;
   readonly hidden?: boolean;
   readonly onEmoteFinished?: (emoteState: EmoteState) => void;

@@ -1,4 +1,9 @@
-import { CHARACTER_PATH, GOOMBA_MODEL_PATH } from "../utils/constants";
+import {
+  CHARACTER_PATH,
+  GOOMBA_MODEL_PATH,
+  MOTORBIKE_MODEL_PATH,
+  MOTORBIKE_TEXTURE_PATH,
+} from "../utils/constants";
 
 export type GameSoundId =
   | "coin"
@@ -33,10 +38,15 @@ export const MUSIC_PATH_BY_ID: Record<MusicTrackId, string> = {
   night: "/music/night.mp3",
 };
 
-export const PRELOAD_MODEL_PATHS = [CHARACTER_PATH, GOOMBA_MODEL_PATH] as const;
+export const PRELOAD_MODEL_PATHS = [
+  CHARACTER_PATH,
+  GOOMBA_MODEL_PATH,
+  MOTORBIKE_MODEL_PATH,
+] as const;
 export const PRELOAD_TEXTURE_PATHS = [
   FIRE_TEXTURE_PATH,
   SIMPLEX_NOISE_TEXTURE_PATH,
+  MOTORBIKE_TEXTURE_PATH,
 ] as const;
 
 export const PRELOAD_AUDIO_PATHS = [

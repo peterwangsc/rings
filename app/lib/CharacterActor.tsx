@@ -56,11 +56,44 @@ const RIGHT_HAND_BONE_NAME_CANDIDATES = [
   "mixamorigRightHand",
   "mixamorig:RightHand",
 ] as const;
+const LEFT_ARM_BONE_NAME_CANDIDATES = [
+  "mixamorigLeftArm",
+  "mixamorig:LeftArm",
+] as const;
+const LEFT_FOREARM_BONE_NAME_CANDIDATES = [
+  "mixamorigLeftForeArm",
+  "mixamorig:LeftForeArm",
+] as const;
+const LEFT_UPPER_LEG_BONE_NAME_CANDIDATES = [
+  "mixamorigLeftUpLeg",
+  "mixamorig:LeftUpLeg",
+] as const;
+const RIGHT_UPPER_LEG_BONE_NAME_CANDIDATES = [
+  "mixamorigRightUpLeg",
+  "mixamorig:RightUpLeg",
+] as const;
+const LEFT_LEG_BONE_NAME_CANDIDATES = [
+  "mixamorigLeftLeg",
+  "mixamorig:LeftLeg",
+] as const;
+const RIGHT_LEG_BONE_NAME_CANDIDATES = [
+  "mixamorigRightLeg",
+  "mixamorig:RightLeg",
+] as const;
+const SPINE_BONE_NAME_CANDIDATES = [
+  "mixamorigSpine",
+  "mixamorig:Spine",
+] as const;
 
 const FIREBALL_THROW_UPPER_ARM_FORWARD_WEIGHT = 0.88;
 const FIREBALL_THROW_UPPER_ARM_UP_WEIGHT = 0.62;
 const FIREBALL_THROW_FOREARM_FORWARD_WEIGHT = 1.0;
 const FIREBALL_THROW_FOREARM_UP_WEIGHT = 0.3;
+const MOUNTED_POSE_SPINE_X = 0.24;
+const MOUNTED_POSE_ARM_X = 0.78;
+const MOUNTED_POSE_FOREARM_X = 0.62;
+const MOUNTED_POSE_UPPER_LEG_X = 0.92;
+const MOUNTED_POSE_LEG_X = -1.12;
 
 interface DirectionalBoneOverlayScratch {
   readonly startPosition: THREE.Vector3;
@@ -94,6 +127,38 @@ function findBoneByNameCandidates(
     }
   }
   return null;
+}
+
+function cacheBoneRestQuaternion(
+  restQuaternions: Map<string, THREE.Quaternion>,
+  bone: THREE.Bone | null,
+) {
+  if (!bone) {
+    return;
+  }
+  restQuaternions.set(bone.uuid, bone.quaternion.clone());
+}
+
+function applyMountedPoseToBone(
+  bone: THREE.Bone | null,
+  restQuaternions: Map<string, THREE.Quaternion>,
+  deltaX: number,
+  blend: number,
+  scratchEuler: THREE.Euler,
+  scratchDeltaQuaternion: THREE.Quaternion,
+  scratchTargetQuaternion: THREE.Quaternion,
+) {
+  if (!bone || blend <= MIN_DELTA_SECONDS) {
+    return;
+  }
+  const restQuaternion = restQuaternions.get(bone.uuid);
+  if (!restQuaternion) {
+    return;
+  }
+  scratchEuler.set(deltaX, 0, 0, "XYZ");
+  scratchDeltaQuaternion.setFromEuler(scratchEuler);
+  scratchTargetQuaternion.copy(restQuaternion).multiply(scratchDeltaQuaternion);
+  bone.quaternion.slerp(scratchTargetQuaternion, THREE.MathUtils.clamp(blend, 0, 1));
 }
 
 function computeDirectionalBoneDelta({
@@ -239,6 +304,7 @@ export function CharacterActor({
   motionStateRef,
   planarSpeedRef,
   fireballCastCountRef,
+  mountedPoseBlendRef,
   targetHeight = DEFAULT_CHARACTER_TARGET_HEIGHT,
   hidden = false,
   onEmoteFinished,
@@ -262,8 +328,21 @@ export function CharacterActor({
   });
   const activeStateRef = useRef<MotionState>(motionState);
   const rightArmBoneRef = useRef<THREE.Bone | null>(null);
+  const leftArmBoneRef = useRef<THREE.Bone | null>(null);
   const rightForeArmBoneRef = useRef<THREE.Bone | null>(null);
+  const leftForeArmBoneRef = useRef<THREE.Bone | null>(null);
   const rightHandBoneRef = useRef<THREE.Bone | null>(null);
+  const spineBoneRef = useRef<THREE.Bone | null>(null);
+  const leftUpperLegBoneRef = useRef<THREE.Bone | null>(null);
+  const rightUpperLegBoneRef = useRef<THREE.Bone | null>(null);
+  const leftLegBoneRef = useRef<THREE.Bone | null>(null);
+  const rightLegBoneRef = useRef<THREE.Bone | null>(null);
+  const mountedPoseRestQuaternionsRef = useRef<Map<string, THREE.Quaternion>>(
+    new Map(),
+  );
+  const mountedPoseEulerRef = useRef(new THREE.Euler());
+  const mountedPoseDeltaQuaternionRef = useRef(new THREE.Quaternion());
+  const mountedPoseTargetQuaternionRef = useRef(new THREE.Quaternion());
   const fireballThrowActionRef = useRef<THREE.AnimationAction | null>(null);
   const fireballThrowClipRef = useRef<THREE.AnimationClip | null>(null);
   const fireballThrowUpperArmDeltaRef = useRef(new THREE.Quaternion());
@@ -371,14 +450,65 @@ export function CharacterActor({
       character,
       RIGHT_ARM_BONE_NAME_CANDIDATES,
     );
+    leftArmBoneRef.current = findBoneByNameCandidates(
+      character,
+      LEFT_ARM_BONE_NAME_CANDIDATES,
+    );
     rightForeArmBoneRef.current = findBoneByNameCandidates(
       character,
       RIGHT_FOREARM_BONE_NAME_CANDIDATES,
+    );
+    leftForeArmBoneRef.current = findBoneByNameCandidates(
+      character,
+      LEFT_FOREARM_BONE_NAME_CANDIDATES,
     );
     rightHandBoneRef.current = findBoneByNameCandidates(
       character,
       RIGHT_HAND_BONE_NAME_CANDIDATES,
     );
+    spineBoneRef.current = findBoneByNameCandidates(
+      character,
+      SPINE_BONE_NAME_CANDIDATES,
+    );
+    leftUpperLegBoneRef.current = findBoneByNameCandidates(
+      character,
+      LEFT_UPPER_LEG_BONE_NAME_CANDIDATES,
+    );
+    rightUpperLegBoneRef.current = findBoneByNameCandidates(
+      character,
+      RIGHT_UPPER_LEG_BONE_NAME_CANDIDATES,
+    );
+    leftLegBoneRef.current = findBoneByNameCandidates(
+      character,
+      LEFT_LEG_BONE_NAME_CANDIDATES,
+    );
+    rightLegBoneRef.current = findBoneByNameCandidates(
+      character,
+      RIGHT_LEG_BONE_NAME_CANDIDATES,
+    );
+    const mountedPoseRestQuaternions = mountedPoseRestQuaternionsRef.current;
+    mountedPoseRestQuaternions.clear();
+    cacheBoneRestQuaternion(mountedPoseRestQuaternions, spineBoneRef.current);
+    cacheBoneRestQuaternion(mountedPoseRestQuaternions, leftArmBoneRef.current);
+    cacheBoneRestQuaternion(mountedPoseRestQuaternions, rightArmBoneRef.current);
+    cacheBoneRestQuaternion(
+      mountedPoseRestQuaternions,
+      leftForeArmBoneRef.current,
+    );
+    cacheBoneRestQuaternion(
+      mountedPoseRestQuaternions,
+      rightForeArmBoneRef.current,
+    );
+    cacheBoneRestQuaternion(
+      mountedPoseRestQuaternions,
+      leftUpperLegBoneRef.current,
+    );
+    cacheBoneRestQuaternion(
+      mountedPoseRestQuaternions,
+      rightUpperLegBoneRef.current,
+    );
+    cacheBoneRestQuaternion(mountedPoseRestQuaternions, leftLegBoneRef.current);
+    cacheBoneRestQuaternion(mountedPoseRestQuaternions, rightLegBoneRef.current);
     fireballThrowActionRef.current = null;
     fireballThrowClipRef.current = null;
     lastProcessedFireballCastCountRef.current = fireballCastCountRef?.current ?? 0;
@@ -454,8 +584,16 @@ export function CharacterActor({
         sad: null,
       };
       rightArmBoneRef.current = null;
+      leftArmBoneRef.current = null;
       rightForeArmBoneRef.current = null;
+      leftForeArmBoneRef.current = null;
       rightHandBoneRef.current = null;
+      spineBoneRef.current = null;
+      leftUpperLegBoneRef.current = null;
+      rightUpperLegBoneRef.current = null;
+      leftLegBoneRef.current = null;
+      rightLegBoneRef.current = null;
+      mountedPoseRestQuaternions.clear();
       fireballThrowActionRef.current = null;
       fireballThrowClipRef.current = null;
       lastProcessedFireballCastCountRef.current = 0;
@@ -634,6 +772,99 @@ export function CharacterActor({
     const sadAction = actionsRef.current.sad;
     if (sadAction) {
       sadAction.setEffectiveTimeScale(SAD_TIME_SCALE);
+    }
+
+    const mountedPoseBlend = THREE.MathUtils.clamp(
+      mountedPoseBlendRef?.current ?? 0,
+      0,
+      1,
+    );
+    if (mountedPoseBlend > MIN_DELTA_SECONDS) {
+      const mountedPoseRestQuaternions = mountedPoseRestQuaternionsRef.current;
+      const mountedPoseEuler = mountedPoseEulerRef.current;
+      const mountedPoseDeltaQuaternion = mountedPoseDeltaQuaternionRef.current;
+      const mountedPoseTargetQuaternion = mountedPoseTargetQuaternionRef.current;
+      applyMountedPoseToBone(
+        spineBoneRef.current,
+        mountedPoseRestQuaternions,
+        MOUNTED_POSE_SPINE_X,
+        mountedPoseBlend,
+        mountedPoseEuler,
+        mountedPoseDeltaQuaternion,
+        mountedPoseTargetQuaternion,
+      );
+      applyMountedPoseToBone(
+        leftArmBoneRef.current,
+        mountedPoseRestQuaternions,
+        MOUNTED_POSE_ARM_X,
+        mountedPoseBlend,
+        mountedPoseEuler,
+        mountedPoseDeltaQuaternion,
+        mountedPoseTargetQuaternion,
+      );
+      applyMountedPoseToBone(
+        rightArmBoneRef.current,
+        mountedPoseRestQuaternions,
+        MOUNTED_POSE_ARM_X,
+        mountedPoseBlend,
+        mountedPoseEuler,
+        mountedPoseDeltaQuaternion,
+        mountedPoseTargetQuaternion,
+      );
+      applyMountedPoseToBone(
+        leftForeArmBoneRef.current,
+        mountedPoseRestQuaternions,
+        MOUNTED_POSE_FOREARM_X,
+        mountedPoseBlend,
+        mountedPoseEuler,
+        mountedPoseDeltaQuaternion,
+        mountedPoseTargetQuaternion,
+      );
+      applyMountedPoseToBone(
+        rightForeArmBoneRef.current,
+        mountedPoseRestQuaternions,
+        MOUNTED_POSE_FOREARM_X,
+        mountedPoseBlend,
+        mountedPoseEuler,
+        mountedPoseDeltaQuaternion,
+        mountedPoseTargetQuaternion,
+      );
+      applyMountedPoseToBone(
+        leftUpperLegBoneRef.current,
+        mountedPoseRestQuaternions,
+        MOUNTED_POSE_UPPER_LEG_X,
+        mountedPoseBlend,
+        mountedPoseEuler,
+        mountedPoseDeltaQuaternion,
+        mountedPoseTargetQuaternion,
+      );
+      applyMountedPoseToBone(
+        rightUpperLegBoneRef.current,
+        mountedPoseRestQuaternions,
+        MOUNTED_POSE_UPPER_LEG_X,
+        mountedPoseBlend,
+        mountedPoseEuler,
+        mountedPoseDeltaQuaternion,
+        mountedPoseTargetQuaternion,
+      );
+      applyMountedPoseToBone(
+        leftLegBoneRef.current,
+        mountedPoseRestQuaternions,
+        MOUNTED_POSE_LEG_X,
+        mountedPoseBlend,
+        mountedPoseEuler,
+        mountedPoseDeltaQuaternion,
+        mountedPoseTargetQuaternion,
+      );
+      applyMountedPoseToBone(
+        rightLegBoneRef.current,
+        mountedPoseRestQuaternions,
+        MOUNTED_POSE_LEG_X,
+        mountedPoseBlend,
+        mountedPoseEuler,
+        mountedPoseDeltaQuaternion,
+        mountedPoseTargetQuaternion,
+      );
     }
   });
 

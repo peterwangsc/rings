@@ -37,6 +37,7 @@ export const CAMERA_MODE_TOGGLE_KEY = "KeyV";
 export const FPS_TOGGLE_KEY = "KeyF";
 export const HAPPY_EMOTE_KEY = "KeyH";
 export const SAD_EMOTE_KEY = "KeyJ";
+export const INTERACT_KEY = "KeyE";
 
 export const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
@@ -60,6 +61,8 @@ export const PLAYER_EYE_HEIGHT_OFFSET = 0.8;
 export const PLAYER_SPEED_SCALAR = 1.28;
 export const PLAYER_WALK_SPEED = 1.5 * PLAYER_SPEED_SCALAR;
 export const PLAYER_RUN_SPEED = 5.0 * PLAYER_SPEED_SCALAR;
+export const MOTORBIKE_MOUNT_SPEED = 8.75;
+export const MOTORBIKE_MOUNT_ACCELERATION = 58;
 export const WALK_ANIM_REFERENCE_SPEED = 1.28;
 export const RUN_ANIM_REFERENCE_SPEED = 2.56;
 export const PLAYER_JUMP_VELOCITY = 12;
@@ -160,6 +163,14 @@ export const HORIZON_COLOR = "#CFE9FF";
 export const MOON_COLOR = "#808080";
 export const SKY_FOG_NEAR = 35;
 export const SKY_FOG_FAR = 135;
+
+export const MOTORBIKE_MODEL_PATH = "/models/vehicles/Bike/Bike.fbx";
+export const MOTORBIKE_TEXTURE_PATH = "/models/vehicles/Bike/Main_Texture.png";
+export const MOTORBIKE_START_POSITION = [6.6, 0.62, 2.8] as const;
+export const MOTORBIKE_START_YAW = -Math.PI * 0.5;
+export const MOTORBIKE_MOUNT_DISTANCE = 2.15;
+export const MOTORBIKE_MOUNT_TRANSITION_SECONDS = 0.32;
+export const MOTORBIKE_DISMOUNT_TRANSITION_SECONDS = 0.2;
 
 export const ROCK_FORMATIONS = [
   {

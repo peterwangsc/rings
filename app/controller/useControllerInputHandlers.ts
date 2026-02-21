@@ -6,6 +6,7 @@ import { updateLookAngles } from "../camera/cameraRig";
 import {
   CAMERA_MODE_TOGGLE_KEY,
   DEFAULT_INPUT_STATE,
+  INTERACT_KEY,
   JUMP_INPUT_BUFFER_SECONDS,
 } from "../utils/constants";
 import type { CharacterInputState } from "./controllerTypes";
@@ -20,6 +21,7 @@ export function useControllerInputHandlers({
   inputStateRef,
   jumpIntentTimerRef,
   fireballRequestCountRef,
+  interactRequestCountRef,
   mobileJumpWasPressedRef,
   isPointerLockedRef,
   activeTouchPointerIdRef,
@@ -37,6 +39,7 @@ export function useControllerInputHandlers({
   inputStateRef: MutableRefObject<CharacterInputState>;
   jumpIntentTimerRef: MutableRefObject<number>;
   fireballRequestCountRef: MutableRefObject<number>;
+  interactRequestCountRef: MutableRefObject<number>;
   mobileJumpWasPressedRef: MutableRefObject<boolean>;
   isPointerLockedRef: MutableRefObject<boolean>;
   activeTouchPointerIdRef: MutableRefObject<number | null>;
@@ -122,6 +125,9 @@ export function useControllerInputHandlers({
 
       if (event.code === "Space" && !event.repeat) {
         jumpIntentTimerRef.current = JUMP_INPUT_BUFFER_SECONDS;
+      }
+      if (event.code === INTERACT_KEY && !event.repeat) {
+        interactRequestCountRef.current += 1;
       }
 
       setInputState(event.code, true);
@@ -386,6 +392,7 @@ export function useControllerInputHandlers({
     fireballRequestCountRef,
     gl,
     inputStateRef,
+    interactRequestCountRef,
     isPointerLockedRef,
     isInputSuspendedRef,
     jumpIntentTimerRef,
