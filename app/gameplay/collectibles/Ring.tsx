@@ -27,10 +27,9 @@ import { getDropRingFallOffset } from "./ringTiming";
 interface RingProps {
   readonly position: readonly [number, number, number];
   readonly spawnedAtMs?: number;
-  readonly withPointLight?: boolean;
 }
 
-export function Ring({ position, spawnedAtMs, withPointLight = true }: RingProps) {
+export function Ring({ position, spawnedAtMs }: RingProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const materialRef = useRef<THREE.MeshStandardMaterial>(null);
   const lightRef = useRef<THREE.PointLight>(null);
@@ -123,18 +122,16 @@ export function Ring({ position, spawnedAtMs, withPointLight = true }: RingProps
         color={RING_COLOR}
         emissive={RING_EMISSIVE_COLOR}
         emissiveIntensity={RING_EMISSIVE_INTENSITY}
-        roughness={0.3}
-        metalness={0.8}
+        roughness={0.4}
+        metalness={0.1}
       />
-      {withPointLight ? (
-        <pointLight
-          ref={lightRef}
-          color={RING_EMISSIVE_COLOR}
-          intensity={RING_LIGHT_INTENSITY}
-          distance={RING_LIGHT_DISTANCE}
-          decay={RING_LIGHT_DECAY}
-        />
-      ) : null}
+      <pointLight
+        ref={lightRef}
+        color={RING_EMISSIVE_COLOR}
+        intensity={RING_LIGHT_INTENSITY}
+        distance={RING_LIGHT_DISTANCE}
+        decay={RING_LIGHT_DECAY}
+      />
     </mesh>
   );
 }
