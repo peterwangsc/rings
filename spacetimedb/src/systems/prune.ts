@@ -1,7 +1,6 @@
 import {
   PRUNE_MIN_INTERVAL_MS,
   RING_DROP_LIFETIME_MS,
-  RING_DROP_PRUNE_AFTER_COLLECT_MS,
 } from '../shared/constants';
 import type {
   ChatMessageEventRow,
@@ -48,14 +47,6 @@ export function pruneExpiredRows(ctx: PruneContext, timestampMs: number) {
 
   for (const drop of ctx.db.ringDropState.iter()) {
     if (timestampMs - drop.spawnedAtMs >= RING_DROP_LIFETIME_MS) {
-      ctx.db.ringDropState.delete(drop);
-      continue;
-    }
-
-    if (!drop.collected || drop.collectedAtMs === undefined) {
-      continue;
-    }
-    if (timestampMs - drop.collectedAtMs >= RING_DROP_PRUNE_AFTER_COLLECT_MS) {
       ctx.db.ringDropState.delete(drop);
     }
   }
