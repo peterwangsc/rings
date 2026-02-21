@@ -371,6 +371,7 @@ export function CharacterRigController({
   const mobileJumpWasPressedRef = useRef(false);
   const fireballRequestCountRef = useRef(0);
   const lastProcessedFireballRequestCountRef = useRef(0);
+  const fireballCastAnimationCountRef = useRef(0);
   const lastProcessedMobileFireballTriggerRef = useRef(0);
   const networkFireballQueueReadIndexRef = useRef(0);
   const snapshotAccumulatorSecondsRef = useRef(0);
@@ -1025,6 +1026,7 @@ export function CharacterRigController({
         onLocalFireballCast?.(buildSpawnRequest());
         onLocalShootSound?.();
       }
+      fireballCastAnimationCountRef.current += requestsToProcess;
       lastProcessedFireballRequestCountRef.current += requestsToProcess;
     }
 
@@ -1225,6 +1227,7 @@ export function CharacterRigController({
           <CharacterActor
             motionStateRef={motionStateRef}
             planarSpeedRef={smoothedPlanarSpeedRef}
+            fireballCastCountRef={fireballCastAnimationCountRef}
             hidden={cameraMode === "first_person"}
           />
         </group>

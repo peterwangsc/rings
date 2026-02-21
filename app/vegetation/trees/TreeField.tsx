@@ -10,7 +10,10 @@ import {
   updateTreeLods,
   type TreeLodRuntimeState,
 } from "./rendering/lodController";
-import { createTreeMaterials } from "./rendering/treeMaterials";
+import {
+  createTreeMaterials,
+  updateTreeMaterialWindTime,
+} from "./rendering/treeMaterials";
 
 export function TreeField({ terrainSampler, rockFormations, camera }: TreeFieldProps) {
   const { camera: defaultCamera } = useThree();
@@ -58,6 +61,7 @@ export function TreeField({ terrainSampler, rockFormations, camera }: TreeFieldP
 
   useFrame((state, deltaSeconds) => {
     const activeCamera = camera ?? state.camera;
+    updateTreeMaterialWindTime(materials, state.clock.getElapsedTime());
     updateTreeLods({
       state: lodStateRef.current,
       deltaSeconds,

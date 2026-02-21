@@ -9,6 +9,12 @@ export type BranchMesherOptions = {
 };
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const DEPTH_TAPER_MIN_SCALE = 0.16;
+const DEPTH_TAPER_EXPONENT = 2.25;
+const DEPTH_TAPER_TIP_START = 0.8;
+const DEPTH_TAPER_TIP_SCALE = 0.58;
+const TERMINAL_TIP_SCALE = 0.34;
+const MIN_TOP_RADIUS_FACTOR = 0.2;
 
 export function createBranchGeometry(
   skeleton: TreeSkeleton,
@@ -21,6 +27,10 @@ export function createBranchGeometry(
   const quaternion = new THREE.Quaternion();
   const scale = new THREE.Vector3(1, 1, 1);
   const matrix = new THREE.Matrix4();
+  const maxDepth = Math.max(
+    skeleton.nodes.reduce((currentMax, node) => Math.max(currentMax, node.depth), 0),
+    1,
+  );
 
   const stack = [skeleton.rootId];
   while (stack.length > 0) {
@@ -52,8 +62,34 @@ export function createBranchGeometry(
       midpoint.copy(node.position).add(child.position).multiplyScalar(0.5);
       scale.set(1, length, 1);
 
-      const bottomRadius = Math.max(node.radius, options.minRadius);
-      const topRadius = Math.max(child.radius, options.minRadius * 0.75);
+      const parentDepthT = node.depth / maxDepth;
+      const childDepthT = child.depth / maxDepth;
+      const parentDepthScale = THREE.MathUtils.lerp(
+        1,
+        DEPTH_TAPER_MIN_SCALE,
+        Math.pow(parentDepthT, DEPTH_TAPER_EXPONENT),
+      );
+      const childDepthScale = THREE.MathUtils.lerp(
+        1,
+        DEPTH_TAPER_MIN_SCALE,
+        Math.pow(childDepthT, DEPTH_TAPER_EXPONENT),
+      );
+      const parentTipT = THREE.MathUtils.smoothstep(parentDepthT, DEPTH_TAPER_TIP_START, 1);
+      const childTipT = THREE.MathUtils.smoothstep(childDepthT, DEPTH_TAPER_TIP_START, 1);
+      const parentTipScale = THREE.MathUtils.lerp(1, DEPTH_TAPER_TIP_SCALE, parentTipT);
+      const childTipScale = THREE.MathUtils.lerp(1, DEPTH_TAPER_TIP_SCALE, childTipT);
+      const isTerminalTip = child.children.length === 0;
+      const bottomRadius = Math.max(
+        node.radius * parentDepthScale * parentTipScale,
+        options.minRadius,
+      );
+      const topRadius = Math.max(
+        child.radius *
+          childDepthScale *
+          childTipScale *
+          (isTerminalTip ? TERMINAL_TIP_SCALE : 1),
+        options.minRadius * MIN_TOP_RADIUS_FACTOR,
+      );
 
       const cylinder = new THREE.CylinderGeometry(
         topRadius,

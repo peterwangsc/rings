@@ -18,6 +18,10 @@ export type TreeSpeciesPreset = {
   branchSpread: number;
   lean: number;
   windSkew: number;
+  tipFoliageBias: number;
+  upperCrownDensityBias: number;
+  foliageDensity: number;
+  foliageElongation: number;
 };
 
 export type TreeSystemConfig = {

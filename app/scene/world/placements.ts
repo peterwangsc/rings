@@ -29,6 +29,7 @@ import {
 } from "../../utils/terrain";
 import {
   getSingleTreeTrunkCollider,
+  type SingleTreeSpecies,
   type SingleTreeTrunkCollider,
 } from "../../vegetation/trees/SingleTree";
 import { TERRAIN_CHUNK_SIZE } from "./terrainChunks";
@@ -41,6 +42,8 @@ export type SingleTreePlacement = {
   id: string;
   position: readonly [number, number, number];
   heightScale: number;
+  species: SingleTreeSpecies;
+  variationSeed: number;
   trunkCollider: SingleTreeTrunkCollider;
 };
 
@@ -290,12 +293,24 @@ export function createChunkTreePlacements(
       CHUNK_TREE_HEIGHT_SCALE_MAX,
       chunkHashN(chunkX, chunkZ, attempt, 73.91),
     );
+    const speciesRoll = chunkHashN(chunkX, chunkZ, attempt, 79.23);
+    const species: SingleTreeSpecies =
+      speciesRoll < 0.56 ? "pine" : speciesRoll < 0.84 ? "redwood" : "fir";
+    const variationSeed = Math.floor(
+      chunkHashN(chunkX, chunkZ, attempt, 83.71) * 1_000_000_000,
+    );
 
     placements.push({
       id: `chunk-tree-${chunkX}-${chunkZ}-${placements.length}`,
       position: [x, y, z] as const,
       heightScale,
-      trunkCollider: getSingleTreeTrunkCollider(heightScale),
+      species,
+      variationSeed,
+      trunkCollider: getSingleTreeTrunkCollider(
+        heightScale,
+        species,
+        variationSeed,
+      ),
     });
   }
 

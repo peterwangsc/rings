@@ -82,6 +82,8 @@ export function ChunkContent({
           <SingleTree
             position={TREE_LOCAL_ORIGIN}
             heightScale={tree.heightScale}
+            species={tree.species}
+            variationSeed={tree.variationSeed}
           />
         </RigidBody>
       ))}

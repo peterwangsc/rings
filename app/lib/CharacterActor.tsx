@@ -8,6 +8,10 @@ import {
   CHARACTER_PATH,
   DEFAULT_CHARACTER_TARGET_HEIGHT,
   DEFAULT_FADE_IN_SECONDS,
+  FIREBALL_THROW_ATTACK_PORTION,
+  FIREBALL_THROW_DURATION_SECONDS,
+  FIREBALL_THROW_FOREARM_BLEND,
+  FIREBALL_THROW_UPPER_ARM_BLEND,
   HAPPY_TIME_SCALE,
   JUMP_AIR_TIME_SECONDS,
   JUMP_RUNNING_TIME_SCALE,
@@ -40,11 +44,201 @@ const CLIP_RUNNING = "Running";
 const CLIP_JUMP_RUN = "Jump-Run";
 const CLIP_HAPPY = "Happy";
 const CLIP_SAD = "Sad";
+const RIGHT_ARM_BONE_NAME_CANDIDATES = [
+  "mixamorigRightArm",
+  "mixamorig:RightArm",
+] as const;
+const RIGHT_FOREARM_BONE_NAME_CANDIDATES = [
+  "mixamorigRightForeArm",
+  "mixamorig:RightForeArm",
+] as const;
+const RIGHT_HAND_BONE_NAME_CANDIDATES = [
+  "mixamorigRightHand",
+  "mixamorig:RightHand",
+] as const;
+
+const FIREBALL_THROW_UPPER_ARM_FORWARD_WEIGHT = 0.88;
+const FIREBALL_THROW_UPPER_ARM_UP_WEIGHT = 0.62;
+const FIREBALL_THROW_FOREARM_FORWARD_WEIGHT = 1.0;
+const FIREBALL_THROW_FOREARM_UP_WEIGHT = 0.3;
+
+interface DirectionalBoneOverlayScratch {
+  readonly startPosition: THREE.Vector3;
+  readonly endPosition: THREE.Vector3;
+  readonly currentDirection: THREE.Vector3;
+  readonly desiredDirection: THREE.Vector3;
+  readonly bodyForwardDirection: THREE.Vector3;
+  readonly bodyUpDirection: THREE.Vector3;
+  readonly upperArmThrowDirection: THREE.Vector3;
+  readonly foreArmThrowDirection: THREE.Vector3;
+  readonly characterWorldQuaternion: THREE.Quaternion;
+  readonly aimQuaternion: THREE.Quaternion;
+  readonly weightedAimQuaternion: THREE.Quaternion;
+  readonly boneWorldQuaternion: THREE.Quaternion;
+  readonly targetWorldQuaternion: THREE.Quaternion;
+  readonly parentWorldQuaternion: THREE.Quaternion;
+  readonly targetLocalQuaternion: THREE.Quaternion;
+  readonly localDeltaQuaternion: THREE.Quaternion;
+  readonly identityQuaternion: THREE.Quaternion;
+}
+
+function findBoneByNameCandidates(
+  root: THREE.Object3D,
+  candidates: readonly string[],
+): THREE.Bone | null {
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index];
+    const object = root.getObjectByName(candidate);
+    if (object instanceof THREE.Bone) {
+      return object;
+    }
+  }
+  return null;
+}
+
+function computeDirectionalBoneDelta({
+  bone,
+  childBone,
+  targetWorldDirection,
+  blend,
+  outputDelta,
+  scratch,
+}: {
+  readonly bone: THREE.Bone;
+  readonly childBone: THREE.Bone;
+  readonly targetWorldDirection: THREE.Vector3;
+  readonly blend: number;
+  readonly outputDelta: THREE.Quaternion;
+  readonly scratch: DirectionalBoneOverlayScratch;
+}): boolean {
+  if (blend <= MIN_DELTA_SECONDS) {
+    return false;
+  }
+
+  bone.getWorldPosition(scratch.startPosition);
+  childBone.getWorldPosition(scratch.endPosition);
+  scratch.currentDirection.subVectors(scratch.endPosition, scratch.startPosition);
+  const currentDirectionLengthSquared = scratch.currentDirection.lengthSq();
+  if (currentDirectionLengthSquared <= MIN_DELTA_SECONDS) {
+    return false;
+  }
+  scratch.currentDirection.multiplyScalar(
+    1 / Math.sqrt(currentDirectionLengthSquared),
+  );
+
+  scratch.desiredDirection.copy(targetWorldDirection);
+  const desiredDirectionLengthSquared = scratch.desiredDirection.lengthSq();
+  if (desiredDirectionLengthSquared <= MIN_DELTA_SECONDS) {
+    return false;
+  }
+  scratch.desiredDirection.multiplyScalar(
+    1 / Math.sqrt(desiredDirectionLengthSquared),
+  );
+
+  scratch.aimQuaternion.setFromUnitVectors(
+    scratch.currentDirection,
+    scratch.desiredDirection,
+  );
+  scratch.weightedAimQuaternion
+    .copy(scratch.identityQuaternion)
+    .slerp(scratch.aimQuaternion, THREE.MathUtils.clamp(blend, 0, 1));
+
+  bone.getWorldQuaternion(scratch.boneWorldQuaternion);
+  scratch.targetWorldQuaternion
+    .copy(scratch.weightedAimQuaternion)
+    .multiply(scratch.boneWorldQuaternion);
+
+  if (bone.parent) {
+    bone.parent.getWorldQuaternion(scratch.parentWorldQuaternion);
+  } else {
+    scratch.parentWorldQuaternion.copy(scratch.identityQuaternion);
+  }
+
+  scratch.targetLocalQuaternion
+    .copy(scratch.parentWorldQuaternion)
+    .invert()
+    .multiply(scratch.targetWorldQuaternion);
+  scratch.localDeltaQuaternion
+    .copy(bone.quaternion)
+    .invert()
+    .multiply(scratch.targetLocalQuaternion)
+    .normalize();
+
+  outputDelta
+    .copy(scratch.identityQuaternion)
+    .slerp(
+      scratch.localDeltaQuaternion,
+      THREE.MathUtils.clamp(blend, 0, 1),
+    )
+    .normalize();
+  return true;
+}
+
+function createQuaternionThrowTrackValues(delta: THREE.Quaternion): number[] {
+  return [
+    0,
+    0,
+    0,
+    1,
+    delta.x,
+    delta.y,
+    delta.z,
+    delta.w,
+    0,
+    0,
+    0,
+    1,
+  ];
+}
+
+function createFireballThrowClip({
+  upperArmBone,
+  upperArmDelta,
+  foreArmBone,
+  foreArmDelta,
+}: {
+  readonly upperArmBone: THREE.Bone;
+  readonly upperArmDelta: THREE.Quaternion;
+  readonly foreArmBone: THREE.Bone | null;
+  readonly foreArmDelta: THREE.Quaternion | null;
+}): THREE.AnimationClip {
+  const attackTime = THREE.MathUtils.clamp(
+    FIREBALL_THROW_DURATION_SECONDS * FIREBALL_THROW_ATTACK_PORTION,
+    MIN_DELTA_SECONDS,
+    FIREBALL_THROW_DURATION_SECONDS - MIN_DELTA_SECONDS,
+  );
+  const times = [0, attackTime, FIREBALL_THROW_DURATION_SECONDS];
+  const tracks: THREE.KeyframeTrack[] = [
+    new THREE.QuaternionKeyframeTrack(
+      `${upperArmBone.uuid}.quaternion`,
+      times,
+      createQuaternionThrowTrackValues(upperArmDelta),
+    ),
+  ];
+
+  if (foreArmBone && foreArmDelta) {
+    tracks.push(
+      new THREE.QuaternionKeyframeTrack(
+        `${foreArmBone.uuid}.quaternion`,
+        times,
+        createQuaternionThrowTrackValues(foreArmDelta),
+      ),
+    );
+  }
+
+  return new THREE.AnimationClip(
+    "FireballThrowOverlay",
+    FIREBALL_THROW_DURATION_SECONDS,
+    tracks,
+    THREE.AdditiveAnimationBlendMode,
+  );
+}
 
 export function CharacterActor({
   motionState = "idle",
   motionStateRef,
   planarSpeedRef,
+  fireballCastCountRef,
   targetHeight = DEFAULT_CHARACTER_TARGET_HEIGHT,
   hidden = false,
   onEmoteFinished,
@@ -67,6 +261,33 @@ export function CharacterActor({
     sad: null,
   });
   const activeStateRef = useRef<MotionState>(motionState);
+  const rightArmBoneRef = useRef<THREE.Bone | null>(null);
+  const rightForeArmBoneRef = useRef<THREE.Bone | null>(null);
+  const rightHandBoneRef = useRef<THREE.Bone | null>(null);
+  const fireballThrowActionRef = useRef<THREE.AnimationAction | null>(null);
+  const fireballThrowClipRef = useRef<THREE.AnimationClip | null>(null);
+  const fireballThrowUpperArmDeltaRef = useRef(new THREE.Quaternion());
+  const fireballThrowForeArmDeltaRef = useRef(new THREE.Quaternion());
+  const lastProcessedFireballCastCountRef = useRef(0);
+  const fireballThrowOverlayScratchRef = useRef<DirectionalBoneOverlayScratch>({
+    startPosition: new THREE.Vector3(),
+    endPosition: new THREE.Vector3(),
+    currentDirection: new THREE.Vector3(),
+    desiredDirection: new THREE.Vector3(),
+    bodyForwardDirection: new THREE.Vector3(),
+    bodyUpDirection: new THREE.Vector3(),
+    upperArmThrowDirection: new THREE.Vector3(),
+    foreArmThrowDirection: new THREE.Vector3(),
+    characterWorldQuaternion: new THREE.Quaternion(),
+    aimQuaternion: new THREE.Quaternion(),
+    weightedAimQuaternion: new THREE.Quaternion(),
+    boneWorldQuaternion: new THREE.Quaternion(),
+    targetWorldQuaternion: new THREE.Quaternion(),
+    parentWorldQuaternion: new THREE.Quaternion(),
+    targetLocalQuaternion: new THREE.Quaternion(),
+    localDeltaQuaternion: new THREE.Quaternion(),
+    identityQuaternion: new THREE.Quaternion(),
+  });
 
   useEffect(() => {
     const mixer = new THREE.AnimationMixer(character);
@@ -146,6 +367,22 @@ export function CharacterActor({
       sad: sadAction,
     };
 
+    rightArmBoneRef.current = findBoneByNameCandidates(
+      character,
+      RIGHT_ARM_BONE_NAME_CANDIDATES,
+    );
+    rightForeArmBoneRef.current = findBoneByNameCandidates(
+      character,
+      RIGHT_FOREARM_BONE_NAME_CANDIDATES,
+    );
+    rightHandBoneRef.current = findBoneByNameCandidates(
+      character,
+      RIGHT_HAND_BONE_NAME_CANDIDATES,
+    );
+    fireballThrowActionRef.current = null;
+    fireballThrowClipRef.current = null;
+    lastProcessedFireballCastCountRef.current = fireballCastCountRef?.current ?? 0;
+
     const handleActionFinished = (event: THREE.Event): void => {
       if (!onEmoteFinished) {
         return;
@@ -194,6 +431,14 @@ export function CharacterActor({
     mixerRef.current = mixer;
 
     return () => {
+      const throwAction = fireballThrowActionRef.current;
+      const throwClip = fireballThrowClipRef.current;
+      if (throwAction && throwClip) {
+        throwAction.stop();
+        mixer.uncacheAction(throwClip, character);
+        mixer.uncacheClip(throwClip);
+      }
+
       mixer.removeEventListener("finished", handleActionFinished);
       allActions.forEach((action) => action.stop());
       mixer.stopAllAction();
@@ -208,14 +453,119 @@ export function CharacterActor({
         happy: null,
         sad: null,
       };
+      rightArmBoneRef.current = null;
+      rightForeArmBoneRef.current = null;
+      rightHandBoneRef.current = null;
+      fireballThrowActionRef.current = null;
+      fireballThrowClipRef.current = null;
+      lastProcessedFireballCastCountRef.current = 0;
     };
-  }, [character, motionStateRef, onEmoteFinished]);
+  }, [character, fireballCastCountRef, motionStateRef, onEmoteFinished]);
 
   useFrame((_, deltaSeconds) => {
     const dt = Math.max(deltaSeconds, MIN_DELTA_SECONDS);
 
-    if (mixerRef.current) {
-      mixerRef.current.update(dt);
+    const mixer = mixerRef.current;
+    if (mixer) {
+      mixer.update(dt);
+    }
+
+    const activeThrowAction = fireballThrowActionRef.current;
+    const activeThrowClip = fireballThrowClipRef.current;
+    if (mixer && activeThrowAction && activeThrowClip && !activeThrowAction.isRunning()) {
+      activeThrowAction.stop();
+      mixer.uncacheAction(activeThrowClip, character);
+      mixer.uncacheClip(activeThrowClip);
+      fireballThrowActionRef.current = null;
+      fireballThrowClipRef.current = null;
+    }
+
+    const latestFireballCastCount = fireballCastCountRef?.current ?? 0;
+    const lastProcessedFireballCastCount = lastProcessedFireballCastCountRef.current;
+    if (latestFireballCastCount > lastProcessedFireballCastCount) {
+      lastProcessedFireballCastCountRef.current = latestFireballCastCount;
+      const rightArmBone = rightArmBoneRef.current;
+      const rightForeArmBone = rightForeArmBoneRef.current;
+      const rightHandBone = rightHandBoneRef.current;
+      if (mixer && rightArmBone && rightForeArmBone) {
+        const scratch = fireballThrowOverlayScratchRef.current;
+        character.getWorldQuaternion(scratch.characterWorldQuaternion);
+        character.getWorldDirection(scratch.bodyForwardDirection);
+        const bodyForwardLengthSquared = scratch.bodyForwardDirection.lengthSq();
+        if (bodyForwardLengthSquared > MIN_DELTA_SECONDS) {
+          scratch.bodyForwardDirection.multiplyScalar(
+            1 / Math.sqrt(bodyForwardLengthSquared),
+          );
+        } else {
+          scratch.bodyForwardDirection.set(0, 0, 1);
+        }
+        scratch.bodyUpDirection
+          .set(0, 1, 0)
+          .applyQuaternion(scratch.characterWorldQuaternion)
+          .normalize();
+        scratch.upperArmThrowDirection
+          .copy(scratch.bodyForwardDirection)
+          .multiplyScalar(FIREBALL_THROW_UPPER_ARM_FORWARD_WEIGHT)
+          .addScaledVector(
+            scratch.bodyUpDirection,
+            FIREBALL_THROW_UPPER_ARM_UP_WEIGHT,
+          )
+          .normalize();
+        scratch.foreArmThrowDirection
+          .copy(scratch.bodyForwardDirection)
+          .multiplyScalar(FIREBALL_THROW_FOREARM_FORWARD_WEIGHT)
+          .addScaledVector(scratch.bodyUpDirection, FIREBALL_THROW_FOREARM_UP_WEIGHT)
+          .normalize();
+
+        const upperArmDelta = fireballThrowUpperArmDeltaRef.current;
+        const hasUpperArmDelta = computeDirectionalBoneDelta({
+          bone: rightArmBone,
+          childBone: rightForeArmBone,
+          targetWorldDirection: scratch.upperArmThrowDirection,
+          blend: FIREBALL_THROW_UPPER_ARM_BLEND,
+          outputDelta: upperArmDelta,
+          scratch,
+        });
+        if (hasUpperArmDelta) {
+          const foreArmDelta = fireballThrowForeArmDeltaRef.current;
+          const hasForeArmDelta = rightHandBone
+            ? computeDirectionalBoneDelta({
+                bone: rightForeArmBone,
+                childBone: rightHandBone,
+                targetWorldDirection: scratch.foreArmThrowDirection,
+                blend: FIREBALL_THROW_FOREARM_BLEND,
+                outputDelta: foreArmDelta,
+                scratch,
+              })
+            : false;
+
+          const previousThrowAction = fireballThrowActionRef.current;
+          const previousThrowClip = fireballThrowClipRef.current;
+          if (previousThrowAction && previousThrowClip) {
+            previousThrowAction.stop();
+            mixer.uncacheAction(previousThrowClip, character);
+            mixer.uncacheClip(previousThrowClip);
+          }
+
+          const throwClip = createFireballThrowClip({
+            upperArmBone: rightArmBone,
+            upperArmDelta,
+            foreArmBone: hasForeArmDelta ? rightForeArmBone : null,
+            foreArmDelta: hasForeArmDelta ? foreArmDelta : null,
+          });
+          const throwAction = mixer.clipAction(throwClip);
+          throwAction.enabled = true;
+          throwAction.setLoop(THREE.LoopOnce, 1);
+          throwAction.clampWhenFinished = false;
+          throwAction.setEffectiveWeight(1);
+          throwAction.setEffectiveTimeScale(1);
+          throwAction.reset().play();
+          fireballThrowActionRef.current = throwAction;
+          fireballThrowClipRef.current = throwClip;
+        }
+      }
+    } else if (latestFireballCastCount < lastProcessedFireballCastCount) {
+      lastProcessedFireballCastCountRef.current = latestFireballCastCount;
     }
 
     const nextState = motionStateRef?.current ?? motionState;

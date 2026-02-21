@@ -13,6 +13,10 @@ export const JUMP_TIME_SCALE = 1;
 export const JUMP_RUNNING_TIME_SCALE = 1;
 export const HAPPY_TIME_SCALE = 1;
 export const SAD_TIME_SCALE = 1;
+export const FIREBALL_THROW_DURATION_SECONDS = 0.22;
+export const FIREBALL_THROW_ATTACK_PORTION = 0.34;
+export const FIREBALL_THROW_UPPER_ARM_BLEND = 0.92;
+export const FIREBALL_THROW_FOREARM_BLEND = 0.74;
 export const ROOT_MOTION_TRACK_NODE_ALIASES = [
   "mixamorighips",
   "hipsfreehelper",

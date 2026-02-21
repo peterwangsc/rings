@@ -60,6 +60,10 @@ export const TREE_SYSTEM_CONFIG: TreeSystemConfig = {
       branchSpread: 0.58,
       lean: 0.03,
       windSkew: 0.05,
+      tipFoliageBias: 0.9,
+      upperCrownDensityBias: 0.62,
+      foliageDensity: 1.08,
+      foliageElongation: 1.24,
     },
     {
       id: "coast_redwood",
@@ -75,6 +79,10 @@ export const TREE_SYSTEM_CONFIG: TreeSystemConfig = {
       branchSpread: 0.34,
       lean: 0.015,
       windSkew: 0.02,
+      tipFoliageBias: 0.5,
+      upperCrownDensityBias: 0.9,
+      foliageDensity: 0.92,
+      foliageElongation: 0.9,
     },
     {
       id: "slender_fir",
@@ -90,6 +98,10 @@ export const TREE_SYSTEM_CONFIG: TreeSystemConfig = {
       branchSpread: 0.48,
       lean: 0.025,
       windSkew: 0.04,
+      tipFoliageBias: 0.78,
+      upperCrownDensityBias: 0.72,
+      foliageDensity: 1,
+      foliageElongation: 1.1,
     },
   ],
 };
