@@ -5,11 +5,13 @@ import { useEffect, useMemo, useRef } from "react";
 import {
   ClampToEdgeWrapping,
   Color,
+  Frustum,
   Group,
   LinearFilter,
   Matrix4,
   PointLight,
   ShaderMaterial,
+  Sphere,
   Texture,
   TextureLoader,
   Vector3,
@@ -259,6 +261,9 @@ export function FireballRenderLayer({
   const lightRefs = useRef<(PointLight | null)[]>([]);
   const activeLoopIdsRef = useRef<Set<string>>(new Set());
   const fireColorRef = useRef(BASE_FIRE_COLOR.clone());
+  const frustumRef = useRef(new Frustum());
+  const projMatRef = useRef(new Matrix4());
+  const cullSphereRef = useRef(new Sphere(new Vector3(), 2.0));
 
   useEffect(() => {
     return () => {
@@ -273,6 +278,14 @@ export function FireballRenderLayer({
     const prevActiveIds = new Set(activeLoopIds);
     activeLoopIds.clear();
     const camPos = camera.position;
+
+    projMatRef.current.multiplyMatrices(
+      state.camera.projectionMatrix,
+      state.camera.matrixWorldInverse,
+    );
+    frustumRef.current.setFromProjectionMatrix(projMatRef.current);
+    const frustum = frustumRef.current;
+    const cullSphere = cullSphereRef.current;
 
     for (let index = 0; index < FIREBALL_MAX_ACTIVE_COUNT; index += 1) {
       const group = groupRefs.current[index];
@@ -290,7 +303,8 @@ export function FireballRenderLayer({
         continue;
       }
 
-      group.visible = true;
+      cullSphere.center.set(slot.x, slot.y, slot.z);
+      group.visible = frustum.intersectsSphere(cullSphere);
       group.position.set(slot.x, slot.y, slot.z);
       group.rotation.y = slot.rotationY;
       group.scale.setScalar(slot.scale);
@@ -326,7 +340,7 @@ export function FireballRenderLayer({
       }
 
       if (light) {
-        if (activeLightCount < FIREBALL_MAX_ACTIVE_POINT_LIGHTS) {
+        if (group.visible && activeLightCount < FIREBALL_MAX_ACTIVE_POINT_LIGHTS) {
           light.visible = true;
           light.intensity = FIREBALL_LIGHT_INTENSITY * slot.intensityFactor;
           activeLightCount += 1;

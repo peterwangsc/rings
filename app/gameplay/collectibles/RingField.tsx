@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
+import * as THREE from "three";
 import {
   useReducer as useSpacetimeReducer,
   useSpacetimeDB,
@@ -142,14 +143,42 @@ export function RingField({
       break;
     }
   });
+  const ringGroupsRef = useRef(new Map<string, THREE.Group>());
+  const frustumRef = useRef(new THREE.Frustum());
+  const projMatRef = useRef(new THREE.Matrix4());
+  const sphereRef = useRef(new THREE.Sphere(new THREE.Vector3(), 1.5));
+
+  useFrame((state) => {
+    projMatRef.current.multiplyMatrices(
+      state.camera.projectionMatrix,
+      state.camera.matrixWorldInverse,
+    );
+    frustumRef.current.setFromProjectionMatrix(projMatRef.current);
+    const frustum = frustumRef.current;
+    const sphere = sphereRef.current;
+    for (const ring of visibleRingEntities) {
+      const group = ringGroupsRef.current.get(ring.id);
+      if (!group) continue;
+      sphere.center.set(ring.position[0], ring.position[1], ring.position[2]);
+      group.visible = frustum.intersectsSphere(sphere);
+    }
+  });
+
   return (
     <>
       {visibleRingEntities.map((ring) => (
-        <Ring
+        <group
           key={ring.id}
-          position={ring.position}
-          spawnedAtMs={ring.spawnedAtMs}
-        />
+          ref={(g) => {
+            if (g) ringGroupsRef.current.set(ring.id, g);
+            else ringGroupsRef.current.delete(ring.id);
+          }}
+        >
+          <Ring
+            position={ring.position}
+            spawnedAtMs={ring.spawnedAtMs}
+          />
+        </group>
       ))}
     </>
   );

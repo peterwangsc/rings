@@ -390,15 +390,43 @@ export function MysteryBoxLayer({
     };
   }, [geometry, material, questionMarkTextures]);
 
+  const groupsRef = useRef(new Map<string, THREE.Group>());
+  const frustumRef = useRef(new THREE.Frustum());
+  const projMatRef = useRef(new THREE.Matrix4());
+  const sphereRef = useRef(new THREE.Sphere(new THREE.Vector3(), 2.0));
+
+  useFrame((state) => {
+    projMatRef.current.multiplyMatrices(
+      state.camera.projectionMatrix,
+      state.camera.matrixWorldInverse,
+    );
+    frustumRef.current.setFromProjectionMatrix(projMatRef.current);
+    const frustum = frustumRef.current;
+    const sphere = sphereRef.current;
+    for (const box of mysteryBoxes) {
+      const group = groupsRef.current.get(box.mysteryBoxId);
+      if (!group) continue;
+      sphere.center.set(box.x, box.y, box.z);
+      group.visible = frustum.intersectsSphere(sphere);
+    }
+  });
+
   return (
     <group>
       {mysteryBoxes.map((mysteryBox) => (
-        <MysteryBoxActor
+        <group
           key={mysteryBox.mysteryBoxId}
-          mysteryBox={mysteryBox}
-          geometry={geometry}
-          material={material}
-        />
+          ref={(g) => {
+            if (g) groupsRef.current.set(mysteryBox.mysteryBoxId, g);
+            else groupsRef.current.delete(mysteryBox.mysteryBoxId);
+          }}
+        >
+          <MysteryBoxActor
+            mysteryBox={mysteryBox}
+            geometry={geometry}
+            material={material}
+          />
+        </group>
       ))}
     </group>
   );

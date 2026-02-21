@@ -672,11 +672,42 @@ function areGoombaActorPropsEqual(
 
 const GoombaActor = memo(GoombaActorBase, areGoombaActorPropsEqual);
 
+const GOOMBA_CULL_RADIUS = 2.0;
+
 export function GoombaLayer({ goombas }: { goombas: readonly GoombaState[] }) {
+  const groupsRef = useRef(new Map<string, THREE.Group>());
+  const frustumRef = useRef(new THREE.Frustum());
+  const projMatRef = useRef(new THREE.Matrix4());
+  const sphereRef = useRef(new THREE.Sphere(new THREE.Vector3(), GOOMBA_CULL_RADIUS));
+
+  useFrame((state) => {
+    projMatRef.current.multiplyMatrices(
+      state.camera.projectionMatrix,
+      state.camera.matrixWorldInverse,
+    );
+    frustumRef.current.setFromProjectionMatrix(projMatRef.current);
+    const frustum = frustumRef.current;
+    const sphere = sphereRef.current;
+    for (const goomba of goombas) {
+      const group = groupsRef.current.get(goomba.goombaId);
+      if (!group) continue;
+      sphere.center.set(goomba.x, goomba.y, goomba.z);
+      group.visible = frustum.intersectsSphere(sphere);
+    }
+  });
+
   return (
     <group>
       {goombas.map((goomba) => (
-        <GoombaActor key={goomba.goombaId} goomba={goomba} />
+        <group
+          key={goomba.goombaId}
+          ref={(g) => {
+            if (g) groupsRef.current.set(goomba.goombaId, g);
+            else groupsRef.current.delete(goomba.goombaId);
+          }}
+        >
+          <GoombaActor goomba={goomba} />
+        </group>
       ))}
     </group>
   );

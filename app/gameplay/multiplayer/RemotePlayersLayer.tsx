@@ -115,14 +115,42 @@ export function RemotePlayersLayer({
     return next;
   }, [chatMessages]);
 
+  const groupsRef = useRef(new Map<string, THREE.Group>());
+  const frustumRef = useRef(new THREE.Frustum());
+  const projMatRef = useRef(new THREE.Matrix4());
+  const sphereRef = useRef(new THREE.Sphere(new THREE.Vector3(), 2.5));
+
+  useFrame((state) => {
+    projMatRef.current.multiplyMatrices(
+      state.camera.projectionMatrix,
+      state.camera.matrixWorldInverse,
+    );
+    frustumRef.current.setFromProjectionMatrix(projMatRef.current);
+    const frustum = frustumRef.current;
+    const sphere = sphereRef.current;
+    for (const player of players) {
+      const group = groupsRef.current.get(player.identity);
+      if (!group) continue;
+      sphere.center.set(player.x, player.y, player.z);
+      group.visible = frustum.intersectsSphere(sphere);
+    }
+  });
+
   return (
     <>
       {players.map((player) => (
-        <RemotePlayerActor
+        <group
           key={player.identity}
-          player={player}
-          chatMessage={chatByIdentity.get(player.identity) ?? null}
-        />
+          ref={(g) => {
+            if (g) groupsRef.current.set(player.identity, g);
+            else groupsRef.current.delete(player.identity);
+          }}
+        >
+          <RemotePlayerActor
+            player={player}
+            chatMessage={chatByIdentity.get(player.identity) ?? null}
+          />
+        </group>
       ))}
     </>
   );
