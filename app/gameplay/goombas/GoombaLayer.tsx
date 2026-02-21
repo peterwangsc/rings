@@ -266,7 +266,11 @@ function applyWalkPose(
   applyJointPitch(rig.rightFoot, FOOT_SWING_RADIANS * oppositeSwing, scratchA);
 
   applyJointPitch(rig.leftToeBase, -TOE_SWING_RADIANS * swing, scratchA);
-  applyJointPitch(rig.rightToeBase, -TOE_SWING_RADIANS * oppositeSwing, scratchA);
+  applyJointPitch(
+    rig.rightToeBase,
+    -TOE_SWING_RADIANS * oppositeSwing,
+    scratchA,
+  );
 
   applyJointRoll(
     rig.pelvis,
@@ -328,7 +332,9 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
     new THREE.Vector3(goomba.x, goomba.y, goomba.z),
   );
   const deathYawRef = useRef(goomba.yaw + MODEL_FORWARD_YAW_OFFSET);
-  const previousFramePositionRef = useRef(new THREE.Vector3(goomba.x, goomba.y, goomba.z));
+  const previousFramePositionRef = useRef(
+    new THREE.Vector3(goomba.x, goomba.y, goomba.z),
+  );
   const walkPhaseRef = useRef(0);
   const smoothedWalkSpeedRef = useRef(0);
   const walkScratchQuatARef = useRef(new THREE.Quaternion());
@@ -523,12 +529,14 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
       setBlinkVisible(blinkWave > 0);
     } else {
       if (nextBlinkAtSecondsRef.current === null) {
-        nextBlinkAtSecondsRef.current = nowSeconds + sampleBlinkIntervalSeconds();
+        nextBlinkAtSecondsRef.current =
+          nowSeconds + sampleBlinkIntervalSeconds();
       }
 
       const nextBlinkAt = nextBlinkAtSecondsRef.current;
       if (nowSeconds >= nextBlinkAt) {
-        blinkEndsAtSecondsRef.current = nowSeconds + sampleBlinkDurationSeconds();
+        blinkEndsAtSecondsRef.current =
+          nowSeconds + sampleBlinkDurationSeconds();
         nextBlinkAtSecondsRef.current =
           blinkEndsAtSecondsRef.current + sampleBlinkIntervalSeconds();
       }
@@ -562,8 +570,7 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
       0,
       1,
     );
-    const shouldWalk =
-      goomba.state === "idle" || goomba.state === "enraged";
+    const shouldWalk = goomba.state === "idle" || goomba.state === "enraged";
     const stateBaseSpeed =
       goomba.state === "enraged" ? 1 : shouldWalk ? 0.58 : 0;
     const targetWalkSpeed = shouldWalk
@@ -621,6 +628,7 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
 }
 
 export function GoombaLayer({ goombas }: { goombas: readonly GoombaState[] }) {
+  console.log("GoombaLayer", goombas);
   return (
     <group>
       {goombas.map((goomba) => (

@@ -1,5 +1,4 @@
 import {
-  MAX_WORLD_ABS,
   MYSTERY_BOX_CHUNK_ACTIVE_RADIUS,
   MYSTERY_BOX_CHUNK_HASH_SEED,
   MYSTERY_BOX_CHUNK_SPAWN_COOLDOWN_MS,
@@ -8,22 +7,17 @@ import {
   MYSTERY_BOX_DISABLE_ORIGIN_CHUNK_SPAWN,
   MYSTERY_BOX_HOVER_HEIGHT,
   MYSTERY_BOX_STATE_READY,
-  TERRAIN_CHUNK_SIZE,
 } from '../shared/constants';
-import {
-  chunkHashN,
-  getChunkCenterWorld,
-  getChunkCoordFromWorld,
-  getChunkKey,
-  type ChunkCoord,
-  iterateChunksAround,
-} from '../shared/chunks';
 import type {
   MysteryBoxChunkSpawnStateRow,
   MysteryBoxStateRow,
   PlayerStateRow,
 } from '../shared/rows';
-import { sampleTerrainHeight } from '../shared/terrain';
+import {
+  tickEntityChunkSpawns,
+  type ChunkSpawnConfig,
+  type ChunkSpawnTickCtx,
+} from '../shared/chunkSpawns';
 
 type MysteryBoxChunkSpawnTickContext = {
   db: {
@@ -49,151 +43,85 @@ type MysteryBoxChunkSpawnTickContext = {
 const SPAWN_X_SALT = 17.61;
 const SPAWN_Z_SALT = 41.93;
 
-function clampWorldAxis(value: number) {
-  return Math.max(-MAX_WORLD_ABS, Math.min(MAX_WORLD_ABS, value));
-}
-
-function isChunkEligible(chunkX: number, chunkZ: number) {
-  if (MYSTERY_BOX_DISABLE_ORIGIN_CHUNK_SPAWN && chunkX === 0 && chunkZ === 0) {
-    return false;
-  }
-  const spawnChance = chunkHashN(chunkX, chunkZ, 0, MYSTERY_BOX_CHUNK_HASH_SEED);
-  return spawnChance >= MYSTERY_BOX_CHUNK_SPAWN_THRESHOLD;
-}
-
-function collectActiveChunks(ctx: MysteryBoxChunkSpawnTickContext) {
-  const chunks = new Map<string, ChunkCoord>();
-  for (const player of ctx.db.playerState.iter()) {
-    const center = getChunkCoordFromWorld(player.x, player.z);
-    for (const chunk of iterateChunksAround(
-      center.x,
-      center.z,
-      MYSTERY_BOX_CHUNK_ACTIVE_RADIUS,
-    )) {
-      chunks.set(getChunkKey(chunk.x, chunk.z), chunk);
-    }
-  }
-  return chunks;
-}
-
-function sampleSpawnPosition(chunkX: number, chunkZ: number, spawnSequence: number) {
-  const availableSpan = Math.max(
-    0,
-    TERRAIN_CHUNK_SIZE - MYSTERY_BOX_CHUNK_SPAWN_MARGIN * 2,
-  );
-  const centerX = getChunkCenterWorld(chunkX);
-  const centerZ = getChunkCenterWorld(chunkZ);
-  const offsetX =
-    (chunkHashN(chunkX, chunkZ, spawnSequence, SPAWN_X_SALT) - 0.5) *
-    availableSpan;
-  const offsetZ =
-    (chunkHashN(chunkX, chunkZ, spawnSequence, SPAWN_Z_SALT) - 0.5) *
-    availableSpan;
-
-  const x = clampWorldAxis(centerX + offsetX);
-  const z = clampWorldAxis(centerZ + offsetZ);
-  const y = sampleTerrainHeight(x, z) + MYSTERY_BOX_HOVER_HEIGHT;
-  return { x, y, z };
-}
-
-function spawnMysteryBoxForChunk(
-  ctx: MysteryBoxChunkSpawnTickContext,
-  chunkX: number,
-  chunkZ: number,
-  spawnSequence: number,
-  timestampMs: number,
-) {
-  const mysteryBoxId = `mystery-box-${chunkX}-${chunkZ}`;
-  if (ctx.db.mysteryBoxState.mysteryBoxId.find(mysteryBoxId)) {
-    return mysteryBoxId;
-  }
-
-  const spawnPoint = sampleSpawnPosition(chunkX, chunkZ, spawnSequence);
-
-  ctx.db.mysteryBoxState.insert({
-    mysteryBoxId,
-    spawnX: spawnPoint.x,
-    spawnY: spawnPoint.y,
-    spawnZ: spawnPoint.z,
-    x: spawnPoint.x,
-    y: spawnPoint.y,
-    z: spawnPoint.z,
-    state: MYSTERY_BOX_STATE_READY,
-    respawnAtMs: undefined,
-    updatedAtMs: timestampMs,
-  });
-
-  return mysteryBoxId;
-}
+const MYSTERY_BOX_CHUNK_CONFIG: ChunkSpawnConfig = {
+  activeRadius: MYSTERY_BOX_CHUNK_ACTIVE_RADIUS,
+  hashSeed: MYSTERY_BOX_CHUNK_HASH_SEED,
+  spawnThreshold: MYSTERY_BOX_CHUNK_SPAWN_THRESHOLD,
+  spawnCooldownMs: MYSTERY_BOX_CHUNK_SPAWN_COOLDOWN_MS,
+  spawnMargin: MYSTERY_BOX_CHUNK_SPAWN_MARGIN,
+  disableOriginChunk: MYSTERY_BOX_DISABLE_ORIGIN_CHUNK_SPAWN,
+  spawnXSalt: SPAWN_X_SALT,
+  spawnZSalt: SPAWN_Z_SALT,
+  yOffset: MYSTERY_BOX_HOVER_HEIGHT,
+};
 
 export function tickMysteryBoxChunkSpawns(
   ctx: MysteryBoxChunkSpawnTickContext,
   timestampMs: number,
 ) {
-  const activeChunks = collectActiveChunks(ctx);
-
-  for (const chunk of activeChunks.values()) {
-    if (!isChunkEligible(chunk.x, chunk.z)) {
-      continue;
-    }
-
-    const chunkKey = getChunkKey(chunk.x, chunk.z);
-    const existing = ctx.db.mysteryBoxChunkSpawnState.chunkKey.find(chunkKey);
-    if (!existing) {
-      ctx.db.mysteryBoxChunkSpawnState.insert({
-        chunkKey,
-        chunkX: chunk.x,
-        chunkZ: chunk.z,
-        nextSpawnAtMs: timestampMs + MYSTERY_BOX_CHUNK_SPAWN_COOLDOWN_MS,
-        spawnSequence: 0,
-        activeMysteryBoxId: undefined,
-        updatedAtMs: timestampMs,
+  const tickCtx: ChunkSpawnTickCtx = {
+    playerState: ctx.db.playerState,
+    chunkSpawnState: {
+      insert(row) {
+        ctx.db.mysteryBoxChunkSpawnState.insert({
+          chunkKey: row.chunkKey,
+          chunkX: row.chunkX,
+          chunkZ: row.chunkZ,
+          nextSpawnAtMs: row.nextSpawnAtMs,
+          spawnSequence: row.spawnSequence,
+          activeMysteryBoxId: row.activeEntityId,
+          updatedAtMs: row.updatedAtMs,
+        });
+      },
+      findByChunkKey(chunkKey) {
+        const row = ctx.db.mysteryBoxChunkSpawnState.chunkKey.find(chunkKey);
+        if (!row) return null;
+        return {
+          chunkKey: row.chunkKey,
+          chunkX: row.chunkX,
+          chunkZ: row.chunkZ,
+          nextSpawnAtMs: row.nextSpawnAtMs,
+          spawnSequence: row.spawnSequence,
+          activeEntityId: row.activeMysteryBoxId,
+          updatedAtMs: row.updatedAtMs,
+        };
+      },
+      updateByChunkKey(row) {
+        ctx.db.mysteryBoxChunkSpawnState.chunkKey.update({
+          chunkKey: row.chunkKey,
+          chunkX: row.chunkX,
+          chunkZ: row.chunkZ,
+          nextSpawnAtMs: row.nextSpawnAtMs,
+          spawnSequence: row.spawnSequence,
+          activeMysteryBoxId: row.activeEntityId,
+          updatedAtMs: row.updatedAtMs,
+        });
+        return row;
+      },
+    },
+    entityExists(entityId) {
+      return ctx.db.mysteryBoxState.mysteryBoxId.find(entityId) !== null;
+    },
+    spawnEntity(chunkX, chunkZ, _spawnSequence, pos, ts) {
+      const mysteryBoxId = `mystery-box-${chunkX}-${chunkZ}`;
+      if (ctx.db.mysteryBoxState.mysteryBoxId.find(mysteryBoxId)) {
+        return mysteryBoxId;
+      }
+      ctx.db.mysteryBoxState.insert({
+        mysteryBoxId,
+        spawnX: pos.x,
+        spawnY: pos.y,
+        spawnZ: pos.z,
+        x: pos.x,
+        y: pos.y,
+        z: pos.z,
+        state: MYSTERY_BOX_STATE_READY,
+        respawnAtMs: undefined,
+        updatedAtMs: ts,
       });
-      continue;
-    }
+      return mysteryBoxId;
+    },
+  };
 
-    const next: MysteryBoxChunkSpawnStateRow = { ...existing };
-    let changed = false;
-
-    if (
-      next.activeMysteryBoxId !== undefined &&
-      !ctx.db.mysteryBoxState.mysteryBoxId.find(next.activeMysteryBoxId)
-    ) {
-      next.activeMysteryBoxId = undefined;
-      changed = true;
-    }
-
-    if (next.activeMysteryBoxId !== undefined) {
-      if (changed) {
-        next.updatedAtMs = timestampMs;
-        ctx.db.mysteryBoxChunkSpawnState.chunkKey.update(next);
-      }
-      continue;
-    }
-
-    if (timestampMs < next.nextSpawnAtMs) {
-      if (changed) {
-        next.updatedAtMs = timestampMs;
-        ctx.db.mysteryBoxChunkSpawnState.chunkKey.update(next);
-      }
-      continue;
-    }
-
-    const spawnSequence = Math.max(0, Math.floor(next.spawnSequence));
-    const spawnedMysteryBoxId = spawnMysteryBoxForChunk(
-      ctx,
-      chunk.x,
-      chunk.z,
-      spawnSequence,
-      timestampMs,
-    );
-
-    next.spawnSequence = spawnSequence + 1;
-    next.activeMysteryBoxId = spawnedMysteryBoxId;
-    next.nextSpawnAtMs = timestampMs + MYSTERY_BOX_CHUNK_SPAWN_COOLDOWN_MS;
-    next.updatedAtMs = timestampMs;
-    ctx.db.mysteryBoxChunkSpawnState.chunkKey.update(next);
-  }
-
-  return activeChunks;
+  return tickEntityChunkSpawns(tickCtx, MYSTERY_BOX_CHUNK_CONFIG, timestampMs);
 }

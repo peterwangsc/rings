@@ -1,829 +1,314 @@
 "use client";
 
-import { Physics } from "@react-three/rapier";
-import { Canvas } from "@react-three/fiber";
+/**
+ * CharacterRigScene (v2)
+ *
+ * Thin orchestrator. Responsibilities:
+ *   1. Create stable store/builder instances (useMemo).
+ *   2. Render <ConnectionStateSync> — null-renderer that owns the three
+ *      connection-level tables (connectionState, worldState, diagnostics).
+ *   3. Render <GameCanvas> — Three.js canvas; each slice owns its table.
+ *   4. Render <GameHUD2> — HTML overlays; each slice owns its table.
+ *
+ * Re-render contract:
+ *   - GameSceneContent itself holds no useSyncExternalStore and no useTable.
+ *     It re-renders only on its own useState changes (camera mode, walk toggle).
+ *   - Every useTable() subscription lives in the leaf component that consumes
+ *     the data. Network ticks cascade only to those leaves, never upward.
+ */
+
 import { SpacetimeDBProvider } from "spacetimedb/react";
 import {
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { PCFShadowMap } from "three";
-import { useGameAudio } from "../audio/useGameAudio";
+  useSpacetimeDB,
+  useTable,
+} from "spacetimedb/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CameraMode } from "../camera/cameraTypes";
-import { CharacterRigController } from "../controller/CharacterRigController";
 import type { MobileMoveInput } from "../controller/controllerTypes";
-import { RingField } from "../gameplay/collectibles/RingField";
-import { GoombaLayer } from "../gameplay/goombas/GoombaLayer";
-import { MysteryBoxLayer } from "../gameplay/mysteryBoxes/MysteryBoxLayer";
-import { RemotePlayersLayer } from "../gameplay/multiplayer/RemotePlayersLayer";
-import { ChatOverlay } from "../hud/ChatOverlay";
-import { GameHUD } from "../hud/GameHUD";
-import { GlobalChatFeed } from "../hud/GlobalChatFeed";
-import {
-  LeaderboardOverlay,
-  type AllTimeLeaderboardEntry,
-  type OnlineLeaderboardEntry,
-} from "../hud/LeaderboardOverlay";
 import {
   createMultiplayerStore,
   setLocalDisplayName,
-  useMultiplayerStoreSnapshot,
+  setMultiplayerConnectionStatus,
+  setMultiplayerIdentity,
+  setServerTimeOffsetMs,
+  setWorldDayCycleConfig,
+  setMultiplayerDiagnostics,
   type MultiplayerStore,
 } from "../multiplayer/state/multiplayerStore";
-import type {
-  ChatMessageEvent,
-  FireballSpawnEvent,
-} from "../multiplayer/state/multiplayerTypes";
-import { useMultiplayerSync } from "../multiplayer/state/useMultiplayerSync";
 import {
   createSpacetimeConnectionBuilder,
   getOrCreateGuestDisplayName,
   setStoredGuestDisplayName,
+  persistMultiplayerToken,
 } from "../multiplayer/spacetime/client";
 import { DEFAULT_GUEST_DISPLAY_NAME } from "../multiplayer/spacetime/guestDisplayNames";
-import {
-  FPS_TOGGLE_KEY,
-  GOOMBA_INTERACT_DISABLED_STATE,
-  MYSTERY_BOX_INTERACT_DISABLED_STATE,
-  HORIZON_COLOR,
-  SKY_FOG_FAR,
-  SKY_FOG_NEAR,
-  THIRD_PERSON_CAMERA_FOV,
-  WORLD_GRAVITY_Y,
-} from "../utils/constants";
-import { AnimatedSun } from "./AnimatedSun";
-import { FrameRateProbe } from "./FrameRateProbe";
-import { MobileControlsOverlay } from "./MobileControlsOverlay";
-import { DesktopSplashOverlay, MobileOrientationOverlay } from "./SceneOverlays";
+import { tables } from "../multiplayer/spacetime/bindings";
+import type { NetWorldStateRow } from "../multiplayer/state/multiplayerTypes";
+import { GameCanvas } from "./GameCanvas";
+import { GameHUD2 } from "./GameHUD2";
+import { useGameScene } from "./useGameScene";
 import {
   GameStartupLoadingScreen,
   useGameStartupPreload,
 } from "./useGameStartupPreload";
-import { WorldGeometry } from "./WorldGeometry";
-import {
-  ACTIVE_TERRAIN_CHUNK_RADIUS,
-  TERRAIN_CHUNK_SIZE,
-} from "./world/terrainChunks";
-import {
-  createWorldEntityManager,
-  disposeWorldEntityManager,
-  useWorldEntityVersion,
-  updateWorldPlayerPosition,
-} from "./world/worldEntityManager";
+import type { AuthoritativePlayerState } from "../multiplayer/state/multiplayerTypes";
 
-const CAMERA_MODE_CYCLE: readonly CameraMode[] = [
-  "third_person",
-  "first_person",
-];
-const ACTIVE_CHUNK_GRID_SIZE = ACTIVE_TERRAIN_CHUNK_RADIUS * 2 + 1;
-const ACTIVE_CHUNK_GRID_WORLD_SPAN = ACTIVE_CHUNK_GRID_SIZE * TERRAIN_CHUNK_SIZE;
-const CAMERA_FAR_DISTANCE = ACTIVE_CHUNK_GRID_WORLD_SPAN * 1.5;
-const CHAT_MESSAGE_MAX_LENGTH = 120;
-const CHAT_CLOCK_TICK_MS = 250;
-const CHAT_LOG_MAX_MESSAGES = 32;
-const CHAT_RESUME_CLOSE_DELAY_MS = 120;
-const CHAT_SESSION_HISTORY_MAX_MESSAGES = 512;
-const LEADERBOARD_ROW_LIMIT = 15;
-const MUSIC_BLEND_TICK_MS = 200;
-const MUSIC_DAY_NIGHT_START_SUN_HEIGHT = -0.08;
-const MUSIC_DAY_NIGHT_END_SUN_HEIGHT = 0.12;
-const MUSIC_CYCLE_PHASE_OFFSET_RADIANS = Math.PI * 0.25;
+const DEFAULT_DAY_CYCLE_DURATION_SECONDS = 300;
 
-function smoothstep(edge0: number, edge1: number, value: number) {
-  const clamped = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
-  return clamped * clamped * (3 - 2 * clamped);
+function pickWorldStateRow(rows: readonly NetWorldStateRow[]): NetWorldStateRow | null {
+  if (rows.length <= 0) return null;
+  return rows.find((row) => row.id === "global") ?? rows[0];
 }
 
-function getMusicNightFactor({
-  dayCycleAnchorMs,
-  dayCycleDurationSeconds,
-  estimatedServerTimeOffsetMs,
-}: {
-  dayCycleAnchorMs: number;
-  dayCycleDurationSeconds: number;
-  estimatedServerTimeOffsetMs: number;
-}) {
-  const durationMs = Math.max(1, dayCycleDurationSeconds * 1000);
-  const estimatedServerNowMs = Date.now() + estimatedServerTimeOffsetMs;
-  const elapsedMs = estimatedServerNowMs - dayCycleAnchorMs;
-  const wrappedElapsedMs = ((elapsedMs % durationMs) + durationMs) % durationMs;
-  const cycleProgress = wrappedElapsedMs / durationMs;
-  const cycleAngleRadians =
-    cycleProgress * Math.PI * 2 + MUSIC_CYCLE_PHASE_OFFSET_RADIANS;
-  const sunHeight = Math.sin(cycleAngleRadians);
-  return (
-    1 -
-    smoothstep(
-      MUSIC_DAY_NIGHT_START_SUN_HEIGHT,
-      MUSIC_DAY_NIGHT_END_SUN_HEIGHT,
-      sunHeight,
-    )
-  );
+function getConnectionErrorMessage(error: unknown) {
+  if (!error) return "unknown_connection_error";
+  if (error instanceof Error && error.message.trim().length > 0) return error.message;
+  if (typeof error === "string" && error.trim().length > 0) return error;
+  const e = error as { message?: unknown };
+  if (typeof e.message === "string" && e.message.trim().length > 0) return e.message;
+  try {
+    const s = JSON.stringify(error);
+    if (s && s !== "{}") return s;
+  } catch { /* ignore */ }
+  return String(error);
 }
 
-function isEditableEventTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  if (target.isContentEditable) {
-    return true;
-  }
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement
-  );
+// ---------------------------------------------------------------------------
+// ConnectionStateSync — null-rendering component that owns the three
+// connection-level useTable subscriptions plus useSpacetimeDB.
+// Re-renders on every connection event, but renders null.
+// ---------------------------------------------------------------------------
+
+function ConnectionStateSync({ store }: { store: MultiplayerStore }) {
+  const connectionState = useSpacetimeDB();
+  const [worldStateRows] = useTable(tables.worldState);
+  const [ringDropRows] = useTable(tables.ringDropState);
+  const [fireballRows] = useTable(tables.fireballEvent);
+  const [chatMessageRows] = useTable(tables.chatMessageEvent);
+  const [playerRows] = useTable(tables.playerState);
+
+  const hasConnectedOnceRef = useRef(false);
+  const localIdentity = connectionState.identity?.toHexString() ?? null;
+
+  // Token persistence
+  useEffect(() => {
+    if (connectionState.token && connectionState.token.length > 0) {
+      persistMultiplayerToken(connectionState.token);
+    }
+  }, [connectionState.token]);
+
+  // Identity
+  useEffect(() => {
+    setMultiplayerIdentity(store, localIdentity);
+  }, [localIdentity, store]);
+
+  // Server time reset on disconnect
+  useEffect(() => {
+    if (!connectionState.isActive) setServerTimeOffsetMs(store, null);
+  }, [connectionState.isActive, store]);
+
+  // Connection status
+  useEffect(() => {
+    if (connectionState.connectionError) {
+      setMultiplayerConnectionStatus(store, "error", getConnectionErrorMessage(connectionState.connectionError));
+      return;
+    }
+    if (connectionState.isActive) {
+      hasConnectedOnceRef.current = true;
+      setMultiplayerConnectionStatus(store, "connected", null);
+      return;
+    }
+    setMultiplayerConnectionStatus(
+      store,
+      hasConnectedOnceRef.current ? "disconnected" : "connecting",
+      null,
+    );
+  }, [connectionState.connectionError, connectionState.isActive, store]);
+
+  // Connection error logging (dev only)
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production" || !connectionState.connectionError) return;
+    console.error("[multiplayer] SpacetimeDB connection error", {
+      message: getConnectionErrorMessage(connectionState.connectionError),
+      uri: process.env.NEXT_PUBLIC_SPACETIMEDB_URI ?? "ws://127.0.0.1:3001",
+      module: process.env.NEXT_PUBLIC_SPACETIMEDB_MODULE ?? "rings-multiplayer",
+      rawError: connectionState.connectionError,
+    });
+  }, [connectionState.connectionError]);
+
+  // World state → store (day/night cycle config for music + AnimatedSun)
+  useEffect(() => {
+    const worldState = pickWorldStateRow(worldStateRows);
+    if (!worldState) {
+      setWorldDayCycleConfig(store, null, DEFAULT_DAY_CYCLE_DURATION_SECONDS);
+      return;
+    }
+    setWorldDayCycleConfig(store, worldState.dayCycleAnchorMs, worldState.dayCycleDurationSeconds);
+  }, [store, worldStateRows]);
+
+  // Diagnostics (debug HUD row counts)
+  useEffect(() => {
+    setMultiplayerDiagnostics(store, {
+      playerRowCount: playerRows.length,
+      ringRowCount: ringDropRows.length,
+      fireballEventRowCount: fireballRows.length,
+      chatMessageRowCount: chatMessageRows.length,
+    });
+  }, [playerRows.length, ringDropRows.length, fireballRows.length, chatMessageRows.length, store]);
+
+  return null;
 }
 
-function toFallbackLeaderboardName(identity: string) {
-  if (identity.length <= 8) {
-    return identity;
-  }
-  return `${identity.slice(0, 8)}...`;
-}
+// ---------------------------------------------------------------------------
+// GameSceneContent — holds UI state and stable refs. No useTable here.
+// ---------------------------------------------------------------------------
 
-function normalizeLeaderboardName(
-  preferredName: string | undefined,
-  identity: string,
-) {
-  const normalized = preferredName?.trim() ?? "";
-  if (normalized.length > 0) {
-    return normalized;
-  }
-  return toFallbackLeaderboardName(identity);
-}
-
-function CharacterRigSceneContent({
-  multiplayerStore,
-}: {
-  multiplayerStore: MultiplayerStore;
-}) {
-  const [cameraMode, setCameraMode] = useState<CameraMode>("third_person");
-  const [isWalkDefault, setIsWalkDefault] = useState(false);
-  const [isPointerLocked, setIsPointerLocked] = useState(false);
-  const [isFpsVisible, setIsFpsVisible] = useState(false);
-  const [isSplashDismissedByTouch, setIsSplashDismissedByTouch] =
-    useState(false);
-  const [fps, setFps] = useState<number | null>(null);
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [isResumingFromChat, setIsResumingFromChat] = useState(false);
-  const [isLeaderboardVisible, setIsLeaderboardVisible] = useState(false);
-  const [chatDraft, setChatDraft] = useState("");
-  const [chatNowMs, setChatNowMs] = useState(() => Date.now());
-  const [chatSessionHistory, setChatSessionHistory] = useState<ChatMessageEvent[]>(
-    [],
-  );
-  const worldEntityManager = useMemo(() => createWorldEntityManager(), []);
-  useWorldEntityVersion(worldEntityManager);
-  const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
-  const resumeFromChatTimeoutRef = useRef<number | null>(null);
-  const mobileMoveInputRef = useRef<MobileMoveInput>({ x: 0, y: 0 });
-  const mobileJumpPressedRef = useRef(false);
-  const mobileFireballTriggerRef = useRef(0);
-  const damageEventCounterRef = useRef(0);
-  const networkFireballSpawnQueueRef = useRef<FireballSpawnEvent[]>([]);
-  const previousGoombaStateByIdRef = useRef<Map<string, string>>(new Map());
-  const hasGoombaSnapshotRef = useRef(false);
-  const previousMysteryBoxStateByIdRef = useRef<Map<string, string>>(new Map());
-  const hasMysteryBoxSnapshotRef = useRef(false);
-  const fallbackMusicCycleAnchorMsRef = useRef<number | null>(null);
-
+function GameSceneContent({ multiplayerStore }: { multiplayerStore: MultiplayerStore }) {
   const {
+    worldEntityManager,
+    networkFireballSpawnQueueRef,
     playCoin,
     playShoot,
     playJump,
     playGoombaDefeated,
     setFootstepsActive,
-    setDayNightMusicBlend,
     fireballLoops,
-  } = useGameAudio();
+    handlePlayerPositionUpdate,
+  } = useGameScene(multiplayerStore);
 
-  const multiplayerVersion = useMultiplayerStoreSnapshot(multiplayerStore);
+  // Camera + gait state
+  const [cameraMode, setCameraMode] = useState<CameraMode>("third_person");
+  const [isWalkDefault, setIsWalkDefault] = useState(false);
 
-  const {
-    sendLocalPlayerSnapshot,
-    sendLocalFireballCast,
-    sendRingCollect,
-    sendChatMessage,
-    sendGoombaHit,
-    sendMysteryBoxHit,
-  } = useMultiplayerSync({
-    store: multiplayerStore,
-    worldEntityManager,
-    networkFireballSpawnQueueRef,
-  });
-
-  const multiplayerState = multiplayerStore.state;
-  const hasAuthoritativeMultiplayer =
-    multiplayerState.connectionStatus === "connected";
-  const remotePlayers = useMemo(() => {
-    void multiplayerVersion;
-    return Array.from(multiplayerState.remotePlayers.values());
-  }, [multiplayerState.remotePlayers, multiplayerVersion]);
-  const goombas = useMemo(() => {
-    void multiplayerVersion;
-    return Array.from(multiplayerState.goombas.values());
-  }, [multiplayerState.goombas, multiplayerVersion]);
-  const mysteryBoxes = useMemo(() => {
-    void multiplayerVersion;
-    return Array.from(multiplayerState.mysteryBoxes.values());
-  }, [multiplayerState.mysteryBoxes, multiplayerVersion]);
-  const activeChatMessages = useMemo(() => {
-    void multiplayerVersion;
-    const visible = multiplayerState.chatMessages.filter(
-      (message) => message.expiresAtMs > chatNowMs,
-    );
-    if (visible.length <= CHAT_LOG_MAX_MESSAGES) {
-      return visible;
-    }
-    return visible.slice(visible.length - CHAT_LOG_MAX_MESSAGES);
-  }, [chatNowMs, multiplayerState.chatMessages, multiplayerVersion]);
-  const activeChatByIdentity = useMemo(() => {
-    const next = new Map<string, string>();
-    for (const message of activeChatMessages) {
-      next.set(message.ownerIdentity, message.messageText);
-    }
-    return next;
-  }, [activeChatMessages]);
-  const onlineLeaderboardEntries = useMemo(() => {
-    void multiplayerVersion;
-    const entries: OnlineLeaderboardEntry[] = [];
-    const inventoryByIdentity = multiplayerState.playerInventories;
-    const statsByIdentity = multiplayerState.playerStats;
-
-    const localPlayer = multiplayerState.authoritativeLocalPlayerState;
-    if (localPlayer) {
-      const inventory = inventoryByIdentity.get(localPlayer.identity);
-      const stats = statsByIdentity.get(localPlayer.identity);
-      const ringCount = inventory?.ringCount ?? 0;
-      entries.push({
-        identity: localPlayer.identity,
-        displayName: normalizeLeaderboardName(
-          stats?.displayName ?? localPlayer.displayName ?? multiplayerState.localDisplayName,
-          localPlayer.identity,
-        ),
-        ringCount,
-        highestRingCount: Math.max(stats?.highestRingCount ?? 0, ringCount),
-      });
-    }
-
-    for (const player of remotePlayers) {
-      const inventory = inventoryByIdentity.get(player.identity);
-      const stats = statsByIdentity.get(player.identity);
-      const ringCount = inventory?.ringCount ?? 0;
-      entries.push({
-        identity: player.identity,
-        displayName: normalizeLeaderboardName(
-          stats?.displayName ?? player.displayName,
-          player.identity,
-        ),
-        ringCount,
-        highestRingCount: Math.max(stats?.highestRingCount ?? 0, ringCount),
-      });
-    }
-
-    const rankedEntries = entries.filter((entry) => entry.highestRingCount > 0);
-
-    rankedEntries.sort((a, b) => {
-      if (a.ringCount !== b.ringCount) {
-        return b.ringCount - a.ringCount;
-      }
-      if (a.highestRingCount !== b.highestRingCount) {
-        return b.highestRingCount - a.highestRingCount;
-      }
-      const nameSort = a.displayName.localeCompare(b.displayName);
-      if (nameSort !== 0) {
-        return nameSort;
-      }
-      return a.identity.localeCompare(b.identity);
-    });
-
-    return rankedEntries.slice(0, LEADERBOARD_ROW_LIMIT);
-  }, [
-    multiplayerState.authoritativeLocalPlayerState,
-    multiplayerState.localDisplayName,
-    multiplayerState.playerInventories,
-    multiplayerState.playerStats,
-    multiplayerVersion,
-    remotePlayers,
-  ]);
-  const allTimeLeaderboardEntries = useMemo(() => {
-    void multiplayerVersion;
-    const entries: AllTimeLeaderboardEntry[] = Array.from(
-      multiplayerState.playerStats.values(),
-    )
-      .filter((stats) => stats.highestRingCount > 0)
-      .map((stats) => ({
-        identity: stats.identity,
-        displayName: normalizeLeaderboardName(stats.displayName, stats.identity),
-        highestRingCount: stats.highestRingCount,
-      }));
-
-    entries.sort((a, b) => {
-      if (a.highestRingCount !== b.highestRingCount) {
-        return b.highestRingCount - a.highestRingCount;
-      }
-      const nameSort = a.displayName.localeCompare(b.displayName);
-      if (nameSort !== 0) {
-        return nameSort;
-      }
-      return a.identity.localeCompare(b.identity);
-    });
-
-    return entries.slice(0, LEADERBOARD_ROW_LIMIT);
-  }, [multiplayerState.playerStats, multiplayerVersion]);
-
+  const CAMERA_MODE_CYCLE = useMemo<readonly CameraMode[]>(() => ["third_person", "first_person"], []);
   const handleToggleCameraMode = useCallback(() => {
-    setCameraMode((currentMode) => {
-      const currentModeIndex = CAMERA_MODE_CYCLE.indexOf(currentMode);
-      const nextModeIndex = (currentModeIndex + 1) % CAMERA_MODE_CYCLE.length;
-      return CAMERA_MODE_CYCLE[nextModeIndex];
+    setCameraMode((c) => {
+      const idx = CAMERA_MODE_CYCLE.indexOf(c);
+      return CAMERA_MODE_CYCLE[(idx + 1) % CAMERA_MODE_CYCLE.length];
     });
+  }, [CAMERA_MODE_CYCLE]);
+  const handleToggleDefaultGait = useCallback(() => setIsWalkDefault((v) => !v), []);
+
+  // Shared refs
+  const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
+  const mobileMoveInputRef = useRef<MobileMoveInput>({ x: 0, y: 0 });
+  const mobileJumpPressedRef = useRef(false);
+  const mobileFireballTriggerRef = useRef(0);
+  const damageEventCounterRef = useRef(0);
+  const isChatOpenRef = useRef(false);
+  const isResumingFromChatRef = useRef(false);
+
+  // authoritativeLocalPlayerState as a ref — written by RemotePlayersSlice,
+  // read imperatively by CharacterRigController in useFrame.
+  const authoritativeLocalPlayerStateRef = useRef<AuthoritativePlayerState | null>(null);
+
+  // localDisplayName as a ref — written here, read by ControllerSlice's send callback.
+  const localDisplayNameRef = useRef(multiplayerStore.state.localDisplayName);
+  useEffect(() => {
+    const listener = () => {
+      localDisplayNameRef.current = multiplayerStore.state.localDisplayName;
+    };
+    multiplayerStore.listeners.add(listener);
+    return () => multiplayerStore.listeners.delete(listener);
+  }, [multiplayerStore]);
+
+  // Audio callbacks as refs so GoombaLayerSlice / MysteryBoxLayerSlice never
+  // re-render when the audio function identity changes.
+  const onGoombaDefeatedRef = useRef(playGoombaDefeated);
+  useEffect(() => { onGoombaDefeatedRef.current = playGoombaDefeated; }, [playGoombaDefeated]);
+  const onMysteryBoxActivatedRef = useRef(playGoombaDefeated);
+  useEffect(() => { onMysteryBoxActivatedRef.current = playGoombaDefeated; }, [playGoombaDefeated]);
+
+  // Pointer lock forwarding
+  // GameHUD2 handles pointer lock state internally via pointerlockchange events.
+  // The prop is kept for the GameCanvas interface but no action is needed here.
+  const handlePointerLockChange = useCallback(() => {}, []);
+
+  // isInputSuspended ref for CharacterRigController
+  const isInputSuspendedRef = useRef(false);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      isInputSuspendedRef.current = isChatOpenRef.current || isResumingFromChatRef.current;
+    }, 16);
+    return () => window.clearInterval(id);
   }, []);
 
-  const handleToggleDefaultGait = useCallback(() => {
-    setIsWalkDefault((currentMode) => !currentMode);
-  }, []);
-
-  const handlePointerLockChange = useCallback((isLocked: boolean) => {
-    setIsPointerLocked(isLocked);
-    if (!isLocked) {
-      return;
-    }
-    if (resumeFromChatTimeoutRef.current !== null) {
-      window.clearTimeout(resumeFromChatTimeoutRef.current);
-      resumeFromChatTimeoutRef.current = null;
-    }
-    setIsResumingFromChat(false);
-    setIsChatOpen(false);
-  }, []);
-
-  const handleFpsUpdate = useCallback((nextFps: number) => {
-    const roundedFps = Math.round(nextFps);
-    setFps((currentFps) =>
-      currentFps === roundedFps ? currentFps : roundedFps,
-    );
-  }, []);
-
-  const handleToggleFpsOverlay = useCallback(() => {
-    setIsFpsVisible((isVisible) => !isVisible);
-  }, []);
+  // Display name
+  useEffect(() => {
+    const persisted = getOrCreateGuestDisplayName();
+    setLocalDisplayName(multiplayerStore, persisted);
+  }, [multiplayerStore]);
 
   const handleSetLocalDisplayName = useCallback(
     (nextDisplayName: string) => {
-      const storedDisplayName = setStoredGuestDisplayName(nextDisplayName);
-      if (!storedDisplayName) {
-        return;
-      }
-      setLocalDisplayName(multiplayerStore, storedDisplayName);
+      const stored = setStoredGuestDisplayName(nextDisplayName);
+      if (stored) setLocalDisplayName(multiplayerStore, stored);
     },
     [multiplayerStore],
   );
 
-  const handleSendChatMessage = useCallback(() => {
-    const normalized = chatDraft.replace(/\s+/g, " ").trim().slice(0, CHAT_MESSAGE_MAX_LENGTH);
-    if (normalized.length > 0) {
-      sendChatMessage(normalized);
-    }
-    setChatDraft("");
-  }, [chatDraft, sendChatMessage]);
-
-  const requestGameplayPointerLock = useCallback(() => {
-    const canvas = canvasElementRef.current;
-    if (!canvas) {
-      return;
-    }
-    if (document.pointerLockElement === canvas) {
-      return;
-    }
-    if (typeof canvas.requestPointerLock === "function") {
-      canvas.requestPointerLock();
-    }
+  const handleCanvasCreated = useCallback((canvas: HTMLCanvasElement) => {
+    canvasElementRef.current = canvas;
   }, []);
-
-  const handleResumeGameplayFromChat = useCallback(() => {
-    setIsResumingFromChat(true);
-    setIsLeaderboardVisible(false);
-    requestGameplayPointerLock();
-    if (resumeFromChatTimeoutRef.current !== null) {
-      window.clearTimeout(resumeFromChatTimeoutRef.current);
-    }
-    resumeFromChatTimeoutRef.current = window.setTimeout(() => {
-      setIsChatOpen(false);
-      setIsResumingFromChat(false);
-      resumeFromChatTimeoutRef.current = null;
-    }, CHAT_RESUME_CLOSE_DELAY_MS);
-  }, [requestGameplayPointerLock]);
-
-  const handleOpenChatOverlay = useCallback(() => {
-    if (resumeFromChatTimeoutRef.current !== null) {
-      window.clearTimeout(resumeFromChatTimeoutRef.current);
-      resumeFromChatTimeoutRef.current = null;
-    }
-    setIsResumingFromChat(false);
-    setIsLeaderboardVisible(false);
-    setIsChatOpen(true);
-  }, []);
-
-  const handlePlayerPositionUpdate = useCallback(
-    (x: number, y: number, z: number) => {
-      updateWorldPlayerPosition(worldEntityManager, x, y, z);
-    },
-    [worldEntityManager],
-  );
-
-  useEffect(() => {
-    return () => {
-      disposeWorldEntityManager(worldEntityManager);
-    };
-  }, [worldEntityManager]);
-
-
-  useEffect(() => {
-    if (fallbackMusicCycleAnchorMsRef.current === null) {
-      fallbackMusicCycleAnchorMsRef.current = Date.now();
-    }
-
-    const updateMusicBlend = () => {
-      const cycleAnchorMs =
-        multiplayerState.dayCycleAnchorMs ?? fallbackMusicCycleAnchorMsRef.current ?? Date.now();
-      const nightFactor = getMusicNightFactor({
-        dayCycleAnchorMs: cycleAnchorMs,
-        dayCycleDurationSeconds: multiplayerState.dayCycleDurationSeconds,
-        estimatedServerTimeOffsetMs: multiplayerState.serverTimeOffsetMs ?? 0,
-      });
-      setDayNightMusicBlend(nightFactor);
-    };
-
-    updateMusicBlend();
-    const intervalId = window.setInterval(updateMusicBlend, MUSIC_BLEND_TICK_MS);
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [
-    multiplayerState.dayCycleAnchorMs,
-    multiplayerState.dayCycleDurationSeconds,
-    multiplayerState.serverTimeOffsetMs,
-    setDayNightMusicBlend,
-  ]);
-
-  useEffect(() => {
-    const nextStateById = new Map<string, string>();
-
-    if (!hasGoombaSnapshotRef.current) {
-      for (const goomba of goombas) {
-        nextStateById.set(goomba.goombaId, goomba.state);
-      }
-      previousGoombaStateByIdRef.current = nextStateById;
-      hasGoombaSnapshotRef.current = true;
-      return;
-    }
-
-    const previousStateById = previousGoombaStateByIdRef.current;
-    let defeatedTransitions = 0;
-    for (const goomba of goombas) {
-      const previousState = previousStateById.get(goomba.goombaId);
-      nextStateById.set(goomba.goombaId, goomba.state);
-      if (
-        goomba.state === GOOMBA_INTERACT_DISABLED_STATE &&
-        previousState !== GOOMBA_INTERACT_DISABLED_STATE
-      ) {
-        defeatedTransitions += 1;
-      }
-    }
-
-    previousGoombaStateByIdRef.current = nextStateById;
-    for (let index = 0; index < defeatedTransitions; index += 1) {
-      playGoombaDefeated();
-    }
-  }, [goombas, playGoombaDefeated]);
-
-  useEffect(() => {
-    const nextStateById = new Map<string, string>();
-
-    if (!hasMysteryBoxSnapshotRef.current) {
-      for (const mysteryBox of mysteryBoxes) {
-        nextStateById.set(mysteryBox.mysteryBoxId, mysteryBox.state);
-      }
-      previousMysteryBoxStateByIdRef.current = nextStateById;
-      hasMysteryBoxSnapshotRef.current = true;
-      return;
-    }
-
-    const previousStateById = previousMysteryBoxStateByIdRef.current;
-    let activatedTransitions = 0;
-    for (const mysteryBox of mysteryBoxes) {
-      const previousState = previousStateById.get(mysteryBox.mysteryBoxId);
-      nextStateById.set(mysteryBox.mysteryBoxId, mysteryBox.state);
-      if (
-        mysteryBox.state === MYSTERY_BOX_INTERACT_DISABLED_STATE &&
-        previousState !== MYSTERY_BOX_INTERACT_DISABLED_STATE
-      ) {
-        activatedTransitions += 1;
-      }
-    }
-
-    previousMysteryBoxStateByIdRef.current = nextStateById;
-    for (let index = 0; index < activatedTransitions; index += 1) {
-      playGoombaDefeated();
-    }
-  }, [mysteryBoxes, playGoombaDefeated]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.code === FPS_TOGGLE_KEY && !event.repeat) {
-        handleToggleFpsOverlay();
-      }
-
-      if (event.code === "Tab") {
-        if (isEditableEventTarget(event.target)) {
-          return;
-        }
-        if (isChatOpen || isResumingFromChat) {
-          return;
-        }
-        event.preventDefault();
-        setIsLeaderboardVisible(true);
-        return;
-      }
-
-      if (event.code === "Escape" && isChatOpen) {
-        event.preventDefault();
-        handleResumeGameplayFromChat();
-        return;
-      }
-
-      if (event.code === "Enter" && !event.repeat) {
-        if (isEditableEventTarget(event.target)) {
-          return;
-        }
-        event.preventDefault();
-        handleOpenChatOverlay();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [
-    handleOpenChatOverlay,
-    handleResumeGameplayFromChat,
-    handleToggleFpsOverlay,
-    isChatOpen,
-    isResumingFromChat,
-  ]);
-
-  useEffect(() => {
-    const handleKeyUp = (event: KeyboardEvent) => {
-      if (event.code !== "Tab") {
-        return;
-      }
-      if (isEditableEventTarget(event.target)) {
-        return;
-      }
-      event.preventDefault();
-      setIsLeaderboardVisible(false);
-    };
-
-    window.addEventListener("keyup", handleKeyUp);
-    return () => {
-      window.removeEventListener("keyup", handleKeyUp);
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (resumeFromChatTimeoutRef.current !== null) {
-        window.clearTimeout(resumeFromChatTimeoutRef.current);
-        resumeFromChatTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const handlePointerDown = (event: PointerEvent) => {
-      if (event.pointerType === "touch") {
-        setIsSplashDismissedByTouch(true);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown, {
-      passive: true,
-    });
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-    };
-  }, []);
-
-  useEffect(() => {
-    const persistedDisplayName = getOrCreateGuestDisplayName();
-    setLocalDisplayName(multiplayerStore, persistedDisplayName);
-  }, [multiplayerStore]);
-
-  useEffect(() => {
-    if (!isChatOpen || isResumingFromChat) {
-      return;
-    }
-    if (document.pointerLockElement) {
-      document.exitPointerLock();
-    }
-  }, [isChatOpen, isResumingFromChat]);
-
-  useEffect(() => {
-    const handleWindowBlur = () => {
-      setIsLeaderboardVisible(false);
-    };
-    window.addEventListener("blur", handleWindowBlur);
-    return () => {
-      window.removeEventListener("blur", handleWindowBlur);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (multiplayerState.chatMessages.length === 0) {
-      return;
-    }
-    const intervalId = window.setInterval(() => {
-      setChatNowMs(Date.now());
-    }, CHAT_CLOCK_TICK_MS);
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [multiplayerState.chatMessages.length]);
-
-  useEffect(() => {
-    if (multiplayerState.chatMessages.length === 0) {
-      return;
-    }
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- accumulates a grow-only history log; functional updater avoids stale closure
-    setChatSessionHistory((currentHistory) => {
-      const nextHistory = [...currentHistory];
-      const knownIds = new Set(nextHistory.map((message) => message.messageId));
-      let didChange = false;
-
-      for (const message of multiplayerState.chatMessages) {
-        if (knownIds.has(message.messageId)) {
-          continue;
-        }
-        knownIds.add(message.messageId);
-        nextHistory.push(message);
-        didChange = true;
-      }
-
-      if (!didChange) {
-        return currentHistory;
-      }
-
-      if (nextHistory.length > CHAT_SESSION_HISTORY_MAX_MESSAGES) {
-        return nextHistory.slice(
-          nextHistory.length - CHAT_SESSION_HISTORY_MAX_MESSAGES,
-        );
-      }
-
-      return nextHistory;
-    });
-  }, [multiplayerState.chatMessages, multiplayerVersion]);
 
   return (
     <div className="relative h-full w-full">
-      <Canvas
-        shadows={{ type: PCFShadowMap }}
-        dpr={[1, 2]}
-        gl={{ antialias: true, alpha: false }}
-        camera={{
-          fov: THIRD_PERSON_CAMERA_FOV,
-          near: 0.1,
-          far: CAMERA_FAR_DISTANCE,
-          position: [0, 2.2, 6],
-        }}
-        onCreated={({ gl }) => {
-          canvasElementRef.current = gl.domElement;
-        }}
-        className="h-full w-full touch-none"
-      >
-        <AnimatedSun
+      {/* Null-rendering: owns connection-level tables and diagnostics. */}
+      <ConnectionStateSync store={multiplayerStore} />
+      <div className="h-full w-full">
+        <GameCanvas
+          store={multiplayerStore}
           worldEntityManager={worldEntityManager}
-          dayCycleAnchorMs={multiplayerState.dayCycleAnchorMs}
-          dayCycleDurationSeconds={multiplayerState.dayCycleDurationSeconds}
-          estimatedServerTimeOffsetMs={multiplayerState.serverTimeOffsetMs}
+          cameraMode={cameraMode}
+          onToggleCameraMode={handleToggleCameraMode}
+          isWalkDefault={isWalkDefault}
+          onToggleDefaultGait={handleToggleDefaultGait}
+          onPointerLockChange={handlePointerLockChange}
+          isInputSuspendedRef={isInputSuspendedRef}
+          onPlayerPositionUpdate={handlePlayerPositionUpdate}
+          mobileMoveInputRef={mobileMoveInputRef}
+          mobileJumpPressedRef={mobileJumpPressedRef}
+          mobileFireballTriggerRef={mobileFireballTriggerRef}
+          damageEventCounterRef={damageEventCounterRef}
+          onLocalShootSound={playShoot}
+          onLocalJump={playJump}
+          onLocalFootstepsActiveChange={setFootstepsActive}
+          authoritativeLocalPlayerStateRef={authoritativeLocalPlayerStateRef}
+          networkFireballSpawnQueueRef={networkFireballSpawnQueueRef}
+          fireballLoopController={fireballLoops}
+          localDisplayNameRef={localDisplayNameRef}
+          onGoombaDefeatedRef={onGoombaDefeatedRef}
+          onMysteryBoxActivatedRef={onMysteryBoxActivatedRef}
+          onCollect={playCoin}
+          onCanvasCreated={handleCanvasCreated}
         />
-        {isFpsVisible ? <FrameRateProbe onUpdate={handleFpsUpdate} /> : null}
-        <fog attach="fog" args={[HORIZON_COLOR, SKY_FOG_NEAR, SKY_FOG_FAR]} />
-        <Physics gravity={[0, WORLD_GRAVITY_Y, 0]}>
-          <Suspense fallback={null}>
-            <WorldGeometry worldEntityManager={worldEntityManager} />
-            <RingField
-              worldEntityManager={worldEntityManager}
-              onCollectRing={
-                hasAuthoritativeMultiplayer ? sendRingCollect : undefined
-              }
-              onCollect={playCoin}
-            />
-            <GoombaLayer goombas={goombas} />
-            <MysteryBoxLayer mysteryBoxes={mysteryBoxes} />
-            <RemotePlayersLayer
-              players={remotePlayers}
-              activeChatByIdentity={activeChatByIdentity}
-            />
-            <CharacterRigController
-              cameraMode={cameraMode}
-              onToggleCameraMode={handleToggleCameraMode}
-              isWalkDefault={isWalkDefault}
-              onToggleDefaultGait={handleToggleDefaultGait}
-              onPointerLockChange={handlePointerLockChange}
-              isInputSuspended={isChatOpen || isResumingFromChat}
-              onPlayerPositionUpdate={handlePlayerPositionUpdate}
-              mobileMoveInputRef={mobileMoveInputRef}
-              mobileJumpPressedRef={mobileJumpPressedRef}
-              mobileFireballTriggerRef={mobileFireballTriggerRef}
-              damageEventCounterRef={damageEventCounterRef}
-              fireballManager={worldEntityManager.fireballManager}
-              onLocalPlayerSnapshot={sendLocalPlayerSnapshot}
-              onLocalFireballCast={sendLocalFireballCast}
-              onLocalShootSound={playShoot}
-              onLocalJump={playJump}
-              onLocalFootstepsActiveChange={setFootstepsActive}
-              goombas={goombas}
-              onLocalGoombaHit={sendGoombaHit}
-              mysteryBoxes={mysteryBoxes}
-              onLocalMysteryBoxHit={sendMysteryBoxHit}
-              authoritativeLocalPlayerState={
-                multiplayerState.authoritativeLocalPlayerState
-              }
-              networkFireballSpawnQueueRef={networkFireballSpawnQueueRef}
-              fireballLoopController={fireballLoops}
-            />
-          </Suspense>
-        </Physics>
-      </Canvas>
-      <GameHUD
+      </div>
+      <GameHUD2
+        store={multiplayerStore}
         worldEntityManager={worldEntityManager}
-        localDisplayName={multiplayerState.localDisplayName}
-        connectionStatus={multiplayerState.connectionStatus}
-        remotePlayerCount={remotePlayers.length}
-      />
-      <GlobalChatFeed
-        messages={activeChatMessages}
-        localIdentity={multiplayerState.localIdentity}
-      />
-      <LeaderboardOverlay
-        isVisible={isLeaderboardVisible}
-        onlineEntries={onlineLeaderboardEntries}
-        allTimeEntries={allTimeLeaderboardEntries}
-        onClose={() => {
-          setIsLeaderboardVisible(false);
-        }}
-      />
-      <ChatOverlay
-        isOpen={isChatOpen}
-        messages={chatSessionHistory}
-        draftMessage={chatDraft}
-        localIdentity={multiplayerState.localIdentity}
-        onDraftMessageChange={setChatDraft}
-        onSendMessage={handleSendChatMessage}
-        onResumeGameplay={handleResumeGameplayFromChat}
-      />
-      {isFpsVisible ? (
-        <div className="ui-nonselectable pointer-events-none absolute right-4 top-4 z-20 rounded-lg border border-white/35 bg-black/40 px-3 py-2 text-[11px] leading-4 text-white/95 backdrop-blur-sm">
-          <p className="font-semibold tracking-wide text-white">FPS</p>
-          <p>{fps ?? "--"}</p>
-        </div>
-      ) : null}
-      <DesktopSplashOverlay
-        isPointerLocked={isPointerLocked}
-        isSplashDismissedByTouch={isSplashDismissedByTouch}
-        isChatOpen={isChatOpen || isResumingFromChat}
-        localDisplayName={multiplayerState.localDisplayName}
+        canvasElementRef={canvasElementRef}
+        mobileMoveInputRef={mobileMoveInputRef}
+        mobileJumpPressedRef={mobileJumpPressedRef}
+        mobileFireballTriggerRef={mobileFireballTriggerRef}
         onSetLocalDisplayName={handleSetLocalDisplayName}
-      />
-      <MobileControlsOverlay
-        moveInputRef={mobileMoveInputRef}
-        jumpPressedRef={mobileJumpPressedRef}
-        fireballTriggerRef={mobileFireballTriggerRef}
         onToggleCameraMode={handleToggleCameraMode}
-        isChatOpen={isChatOpen || isResumingFromChat}
-      />
-      <MobileOrientationOverlay
-        localDisplayName={multiplayerState.localDisplayName}
-        onSetLocalDisplayName={handleSetLocalDisplayName}
+        onPointerLockChange={handlePointerLockChange}
+        onCameraModeChange={setCameraMode}
+        isChatOpenRef={isChatOpenRef}
+        isResumingFromChatRef={isResumingFromChatRef}
       />
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Public export
+// ---------------------------------------------------------------------------
+
 export function CharacterRigScene() {
   const preloadState = useGameStartupPreload();
   const connectionBuilder = useMemo(() => createSpacetimeConnectionBuilder(), []);
-  const multiplayerStore = useMemo(
-    () => createMultiplayerStore(DEFAULT_GUEST_DISPLAY_NAME),
-    [],
-  );
+  const multiplayerStore = useMemo(() => createMultiplayerStore(DEFAULT_GUEST_DISPLAY_NAME), []);
 
   if (!preloadState.isReady) {
     return (
@@ -838,7 +323,7 @@ export function CharacterRigScene() {
 
   return (
     <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
-      <CharacterRigSceneContent multiplayerStore={multiplayerStore} />
+      <GameSceneContent multiplayerStore={multiplayerStore} />
     </SpacetimeDBProvider>
   );
 }

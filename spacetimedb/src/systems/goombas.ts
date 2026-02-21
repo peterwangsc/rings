@@ -14,10 +14,10 @@ import {
   GOOMBA_STATE_DEFEATED,
   GOOMBA_STATE_ENRAGED,
   GOOMBA_STATE_IDLE,
-  MAX_WORLD_ABS,
   MAX_SPILL_RING_COUNT,
   RING_DROP_SOURCE_SPILL,
 } from '../shared/constants';
+import { hashStringToUint32, clampWorldAxis } from '../shared/mathUtils';
 import { getChunkCoordFromWorld, getChunkKey } from '../shared/chunks';
 import type {
   GoombaChunkSpawnStateRow,
@@ -125,15 +125,6 @@ function spillPlayerRings(
   });
 }
 
-function hashStringToUint32(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
 function toRandomSeed(seed: number, goombaId: string) {
   if (Number.isFinite(seed)) {
     const normalized = Math.floor(seed) >>> 0;
@@ -172,10 +163,6 @@ function findNearestPlayerWithinRadius(
   }
 
   return nearest ? { player: nearest, distanceSquared: nearestDistanceSquared } : null;
-}
-
-function clampWorldAxis(value: number) {
-  return Math.max(-MAX_WORLD_ABS, Math.min(MAX_WORLD_ABS, value));
 }
 
 function normalizeYaw(yaw: number) {

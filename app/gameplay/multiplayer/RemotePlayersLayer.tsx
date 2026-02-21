@@ -2,7 +2,7 @@
 
 import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CharacterActor } from "../../lib/CharacterActor";
 import {
@@ -10,20 +10,20 @@ import {
   PLAYER_VISUAL_Y_OFFSET,
   WORLD_UP,
 } from "../../utils/constants";
-import type { AuthoritativePlayerState } from "../../multiplayer/state/multiplayerTypes";
+import type { AuthoritativePlayerState, ChatMessageEvent } from "../../multiplayer/state/multiplayerTypes";
 
 function RemotePlayerActor({
   player,
-  activeChatMessage,
+  chatMessage,
 }: {
   player: AuthoritativePlayerState;
-  activeChatMessage: string | null;
+  /** Latest chat message event (with expiry), or null if none. */
+  chatMessage: ChatMessageEvent | null;
 }) {
   const rootRef = useRef<THREE.Group>(null);
   const planarSpeedRef = useRef(player.planarSpeed);
   const targetPositionRef = useRef(new THREE.Vector3(player.x, player.y, player.z));
   const targetYawRef = useRef(player.yaw);
-
   const currentTargetQuaternion = useMemo(() => new THREE.Quaternion(), []);
 
   useEffect(() => {
@@ -31,6 +31,25 @@ function RemotePlayerActor({
     targetYawRef.current = player.yaw;
     planarSpeedRef.current = player.planarSpeed;
   }, [player.planarSpeed, player.x, player.y, player.yaw, player.z]);
+
+  // Manages active chat text with expiry. Uses setTimeout for all setState calls
+  // to comply with react-hooks/set-state-in-effect (no direct setState in effect body).
+  const [activeChatText, setActiveChatText] = useState<string | null>(null);
+  useEffect(() => {
+    if (!chatMessage) {
+      const id = window.setTimeout(() => setActiveChatText(null), 0);
+      return () => window.clearTimeout(id);
+    }
+    const remaining = chatMessage.expiresAtMs - Date.now();
+    const text = chatMessage.messageText;
+    const showId = window.setTimeout(() => setActiveChatText(text), 0);
+    if (remaining <= 0) return () => window.clearTimeout(showId);
+    const expireId = window.setTimeout(() => setActiveChatText(null), remaining);
+    return () => {
+      window.clearTimeout(showId);
+      window.clearTimeout(expireId);
+    };
+  }, [chatMessage]);
 
   useFrame((_, deltaSeconds) => {
     const root = rootRef.current;
@@ -48,6 +67,8 @@ function RemotePlayerActor({
     const rotationBlend = 1 - Math.exp(-16 * deltaSeconds);
     root.quaternion.slerp(currentTargetQuaternion, rotationBlend);
   });
+
+  const activeChatMessage = activeChatText;
 
   return (
     <group ref={rootRef} position={[player.x, player.y, player.z]}>
@@ -80,18 +101,27 @@ function RemotePlayerActor({
 
 export function RemotePlayersLayer({
   players,
-  activeChatByIdentity,
+  chatMessages,
 }: {
   players: readonly AuthoritativePlayerState[];
-  activeChatByIdentity: ReadonlyMap<string, string>;
+  chatMessages: readonly ChatMessageEvent[];
 }) {
+  // Build a map from identity → latest ChatMessageEvent (pure — no Date.now())
+  const chatByIdentity = useMemo(() => {
+    const next = new Map<string, ChatMessageEvent>();
+    for (const message of chatMessages) {
+      next.set(message.ownerIdentity, message);
+    }
+    return next;
+  }, [chatMessages]);
+
   return (
     <>
       {players.map((player) => (
         <RemotePlayerActor
           key={player.identity}
           player={player}
-          activeChatMessage={activeChatByIdentity.get(player.identity) ?? null}
+          chatMessage={chatByIdentity.get(player.identity) ?? null}
         />
       ))}
     </>

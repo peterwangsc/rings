@@ -1,6 +1,10 @@
 "use client";
 
-import { CuboidCollider, RigidBody, type RapierRigidBody } from "@react-three/rapier";
+import {
+  CuboidCollider,
+  RigidBody,
+  type RapierRigidBody,
+} from "@react-three/rapier";
 import { Cloud } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
@@ -53,7 +57,10 @@ function collectMaterials(root: THREE.Object3D) {
   return materials;
 }
 
-function setMaterialsOpacity(materials: readonly THREE.Material[], opacity: number) {
+function setMaterialsOpacity(
+  materials: readonly THREE.Material[],
+  opacity: number,
+) {
   const clampedOpacity = THREE.MathUtils.clamp(opacity, 0, 1);
 
   for (let index = 0; index < materials.length; index += 1) {
@@ -93,9 +100,11 @@ function createQuestionMarkTextures() {
     const questionMark = "?";
     const metrics = colorCtx.measureText(questionMark);
     const centeredY =
-      metrics.actualBoundingBoxAscent > 0 || metrics.actualBoundingBoxDescent > 0
+      metrics.actualBoundingBoxAscent > 0 ||
+      metrics.actualBoundingBoxDescent > 0
         ? H / 2 +
-          (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2
+          (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) /
+            2
         : H / 2;
     colorCtx.strokeText(questionMark, W / 2, centeredY);
     colorCtx.fillText(questionMark, W / 2, centeredY);
@@ -123,9 +132,11 @@ function createQuestionMarkTextures() {
     const questionMark = "?";
     const metrics = emissiveCtx.measureText(questionMark);
     const centeredY =
-      metrics.actualBoundingBoxAscent > 0 || metrics.actualBoundingBoxDescent > 0
+      metrics.actualBoundingBoxAscent > 0 ||
+      metrics.actualBoundingBoxDescent > 0
         ? H / 2 +
-          (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2
+          (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) /
+            2
         : H / 2;
     emissiveCtx.strokeText(questionMark, W / 2, centeredY);
     emissiveCtx.fillText(questionMark, W / 2, centeredY);
@@ -142,7 +153,10 @@ function createQuestionMarkTextures() {
     return tex;
   }
 
-  return { color: makeTexture(colorCanvas), emissive: makeTexture(emissiveCanvas) };
+  return {
+    color: makeTexture(colorCanvas),
+    emissive: makeTexture(emissiveCanvas),
+  };
 }
 
 // Reusable translation vector to avoid per-frame allocation
@@ -205,7 +219,11 @@ function MysteryBoxActor({
       // Drive kinematic body to match float animation — physics and visual stay in sync
       const floatY =
         Math.sin(nowSeconds * FLOAT_SPEED + phaseRef.current) * FLOAT_AMPLITUDE;
-      _kinematicTranslation.set(mysteryBox.x, mysteryBox.y + floatY, mysteryBox.z);
+      _kinematicTranslation.set(
+        mysteryBox.x,
+        mysteryBox.y + floatY,
+        mysteryBox.z,
+      );
       rigidBody.setNextKinematicTranslation(_kinematicTranslation);
 
       mesh.visible = true;
@@ -344,6 +362,7 @@ export function MysteryBoxLayer({
 }: {
   mysteryBoxes: readonly MysteryBoxState[];
 }) {
+  console.log("MysteryBoxLayer", mysteryBoxes);
   const geometry = useMemo(
     () => new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE),
     [],

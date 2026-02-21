@@ -312,6 +312,7 @@ export function CharacterRigController({
   onToggleDefaultGait,
   onPointerLockChange,
   isInputSuspended,
+  isInputSuspendedRef: isInputSuspendedRefProp,
   onPlayerPositionUpdate,
   mobileMoveInputRef,
   mobileJumpPressedRef,
@@ -328,11 +329,24 @@ export function CharacterRigController({
   mysteryBoxes,
   onLocalMysteryBoxHit,
   authoritativeLocalPlayerState,
+  authoritativeLocalPlayerStateRef: authoritativeLocalPlayerStateRefProp,
   networkFireballSpawnQueueRef,
   fireballLoopController,
 }: CharacterRigControllerProps) {
   const { camera, gl } = useThree();
   const { rapier, world } = useRapier();
+
+  // Unified input-suspended ref — callers may pass a ref (preferred) or a boolean value.
+  // Using a ref avoids re-registration of all event listeners on every chat open/close.
+  const internalIsInputSuspendedRef = useRef(isInputSuspended ?? false);
+  const isInputSuspendedRef = isInputSuspendedRefProp ?? internalIsInputSuspendedRef;
+  // Keep the internal ref in sync when the boolean prop variant is used.
+  // Event handlers read the ref so a post-render update is fine.
+  useEffect(() => {
+    if (!isInputSuspendedRefProp) {
+      internalIsInputSuspendedRef.current = isInputSuspended ?? false;
+    }
+  });
 
   const bodyRef = useRef<RapierRigidBody | null>(null);
   const visualRootRef = useRef<THREE.Group>(null);
@@ -529,7 +543,7 @@ export function CharacterRigController({
     camera,
     gl,
     onPointerLockChange,
-    isInputSuspended,
+    isInputSuspendedRef,
     onToggleCameraMode,
     onToggleDefaultGait,
     inputStateRef,
@@ -559,6 +573,10 @@ export function CharacterRigController({
     if (!body || !visualRoot) {
       return;
     }
+
+    // Resolve authoritative state from ref (preferred, avoids render-time .current) or prop
+    const resolvedAuthoritativeState =
+      authoritativeLocalPlayerStateRefProp?.current ?? authoritativeLocalPlayerState;
 
     const dt = Math.min(deltaSeconds, MAX_FRAME_DELTA_SECONDS);
     jumpIntentTimerRef.current = Math.max(0, jumpIntentTimerRef.current - dt);
@@ -946,21 +964,21 @@ export function CharacterRigController({
       snapshotAccumulatorSecondsRef.current -= SNAPSHOT_INTERVAL_SECONDS;
     }
 
-    if (authoritativeLocalPlayerState) {
-      const dx = authoritativeLocalPlayerState.x - translation.x;
-      const dy = authoritativeLocalPlayerState.y - translation.y;
-      const dz = authoritativeLocalPlayerState.z - translation.z;
+    if (resolvedAuthoritativeState) {
+      const dx = resolvedAuthoritativeState.x - translation.x;
+      const dy = resolvedAuthoritativeState.y - translation.y;
+      const dz = resolvedAuthoritativeState.z - translation.z;
       const distanceSquared = dx * dx + dy * dy + dz * dz;
 
       if (distanceSquared > RECONCILIATION_HARD_DISTANCE_SQUARED) {
         const nextTranslation = reconciliationTranslationRef.current;
-        nextTranslation.x = authoritativeLocalPlayerState.x;
-        nextTranslation.y = authoritativeLocalPlayerState.y;
-        nextTranslation.z = authoritativeLocalPlayerState.z;
+        nextTranslation.x = resolvedAuthoritativeState.x;
+        nextTranslation.y = resolvedAuthoritativeState.y;
+        nextTranslation.z = resolvedAuthoritativeState.z;
         body.setTranslation(nextTranslation, true);
-        nextLinvel.x = authoritativeLocalPlayerState.vx;
-        nextLinvel.y = authoritativeLocalPlayerState.vy;
-        nextLinvel.z = authoritativeLocalPlayerState.vz;
+        nextLinvel.x = resolvedAuthoritativeState.vx;
+        nextLinvel.y = resolvedAuthoritativeState.vy;
+        nextLinvel.z = resolvedAuthoritativeState.vz;
         body.setLinvel(nextLinvel, true);
       } else if (distanceSquared > RECONCILIATION_SOFT_DISTANCE_SQUARED) {
         const correctionBlend = 1 - Math.exp(-10 * dt);

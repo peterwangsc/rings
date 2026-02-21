@@ -32,6 +32,8 @@ export interface CharacterRigControllerProps {
   readonly onToggleDefaultGait: () => void;
   readonly onPointerLockChange?: (isLocked: boolean) => void;
   readonly isInputSuspended?: boolean;
+  /** Alternative to isInputSuspended — read in event handlers via ref so callers avoid render-time .current access */
+  readonly isInputSuspendedRef?: MutableRefObject<boolean>;
   readonly onPlayerPositionUpdate?: (x: number, y: number, z: number) => void;
   readonly mobileMoveInputRef?: MutableRefObject<MobileMoveInput>;
   readonly mobileJumpPressedRef?: MutableRefObject<boolean>;
@@ -48,6 +50,8 @@ export interface CharacterRigControllerProps {
   readonly mysteryBoxes?: readonly MysteryBoxState[];
   readonly onLocalMysteryBoxHit?: (mysteryBoxId: string) => void;
   readonly authoritativeLocalPlayerState?: AuthoritativePlayerState | null;
+  /** Alternative to authoritativeLocalPlayerState — read in useFrame via ref so callers avoid render-time .current access */
+  readonly authoritativeLocalPlayerStateRef?: MutableRefObject<AuthoritativePlayerState | null>;
   readonly networkFireballSpawnQueueRef?: MutableRefObject<FireballSpawnEvent[]>;
   readonly fireballLoopController?: FireballLoopController;
 }

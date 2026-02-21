@@ -29,6 +29,7 @@ import {
   TERRAIN_CHUNK_SIZE,
 } from "./world/terrainChunks";
 import type { WorldEntityManager } from "./world/worldEntityManager";
+import type { MultiplayerStore } from "../multiplayer/state/multiplayerStore";
 
 const DEFAULT_SUN_CYCLE_DURATION_SECONDS = 300;
 const SUN_CYCLE_PHASE_OFFSET_RADIANS = Math.PI * 0.25;
@@ -98,15 +99,31 @@ function getCycleAngleRadians({
 
 export function AnimatedSun({
   worldEntityManager,
+  multiplayerStore,
   dayCycleAnchorMs,
   dayCycleDurationSeconds = DEFAULT_SUN_CYCLE_DURATION_SECONDS,
   estimatedServerTimeOffsetMs = 0,
 }: {
   worldEntityManager: WorldEntityManager;
+  /** When provided, day-cycle config is read from the store via ref in useFrame
+   *  so changes to dayCycleAnchorMs never re-render AnimatedSun's parent. */
+  multiplayerStore?: MultiplayerStore;
   dayCycleAnchorMs?: number | null;
   dayCycleDurationSeconds?: number;
   estimatedServerTimeOffsetMs?: number | null;
 }) {
+  // When a store is provided, keep a ref to its state so useFrame can read
+  // the latest values without subscribing (no React re-renders from store ticks).
+  const multiplayerStateRef = useRef(multiplayerStore?.state ?? null);
+  useEffect(() => {
+    if (!multiplayerStore) return;
+    multiplayerStateRef.current = multiplayerStore.state;
+    const listener = () => {
+      multiplayerStateRef.current = multiplayerStore.state;
+    };
+    multiplayerStore.listeners.add(listener);
+    return () => multiplayerStore.listeners.delete(listener);
+  }, [multiplayerStore]);
   const skyRef = useRef<ThreeSkyObject>(null);
   const lightRef = useRef<DirectionalLight>(null);
   const sunTargetRef = useRef<Object3D>(null);
@@ -206,12 +223,20 @@ export function AnimatedSun({
     if (fallbackDayCycleAnchorMsRef.current === null) {
       fallbackDayCycleAnchorMsRef.current = Date.now();
     }
-    const cycleAnchorMs =
-      dayCycleAnchorMs ?? fallbackDayCycleAnchorMsRef.current;
+    // Prefer reading live values from the store ref (no re-render cost).
+    // Fall back to props for backwards-compat when no store is provided.
+    const storeState = multiplayerStateRef.current;
+    const resolvedAnchorMs =
+      storeState?.dayCycleAnchorMs ?? dayCycleAnchorMs ?? fallbackDayCycleAnchorMsRef.current;
+    const resolvedDurationSeconds =
+      storeState?.dayCycleDurationSeconds ?? dayCycleDurationSeconds;
+    const resolvedServerTimeOffsetMs =
+      storeState?.serverTimeOffsetMs ?? estimatedServerTimeOffsetMs ?? 0;
+    const cycleAnchorMs = resolvedAnchorMs ?? fallbackDayCycleAnchorMsRef.current;
     const angle = getCycleAngleRadians({
       dayCycleAnchorMs: cycleAnchorMs,
-      dayCycleDurationSeconds,
-      estimatedServerTimeOffsetMs: estimatedServerTimeOffsetMs ?? 0,
+      dayCycleDurationSeconds: resolvedDurationSeconds,
+      estimatedServerTimeOffsetMs: resolvedServerTimeOffsetMs,
     });
     const playerPosition = worldEntityManager.playerPosition;
     const cameraPosition = state.camera.position;

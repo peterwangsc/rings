@@ -132,6 +132,92 @@ export function useMultiplayerStoreSnapshot(store: MultiplayerStore) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Granular slice selectors — each re-renders only when its slice changes.
+// Use these in leaf components instead of useMultiplayerStoreSnapshot so that
+// network ticks that don't affect a given slice don't cause re-renders.
+// ---------------------------------------------------------------------------
+
+export function useConnectionStatus(store: MultiplayerStore) {
+  return useSyncExternalStore(
+    (listener) => subscribeMultiplayerStore(store, listener),
+    () => store.state.connectionStatus,
+    () => store.state.connectionStatus,
+  );
+}
+
+export function useLocalIdentity(store: MultiplayerStore) {
+  return useSyncExternalStore(
+    (listener) => subscribeMultiplayerStore(store, listener),
+    () => store.state.localIdentity,
+    () => store.state.localIdentity,
+  );
+}
+
+export function useLocalDisplayName(store: MultiplayerStore) {
+  return useSyncExternalStore(
+    (listener) => subscribeMultiplayerStore(store, listener),
+    () => store.state.localDisplayName,
+    () => store.state.localDisplayName,
+  );
+}
+
+export function useDayCycleConfig(store: MultiplayerStore) {
+  return useSyncExternalStore(
+    (listener) => subscribeMultiplayerStore(store, listener),
+    () => store.state.dayCycleAnchorMs,
+    () => store.state.dayCycleAnchorMs,
+  );
+}
+
+export function useRemotePlayers(store: MultiplayerStore) {
+  return useSyncExternalStore(
+    (listener) => subscribeMultiplayerStore(store, listener),
+    () => store.state.remotePlayers,
+    () => store.state.remotePlayers,
+  );
+}
+
+export function useGoombas(store: MultiplayerStore) {
+  return useSyncExternalStore(
+    (listener) => subscribeMultiplayerStore(store, listener),
+    () => store.state.goombas,
+    () => store.state.goombas,
+  );
+}
+
+export function useMysteryBoxes(store: MultiplayerStore) {
+  return useSyncExternalStore(
+    (listener) => subscribeMultiplayerStore(store, listener),
+    () => store.state.mysteryBoxes,
+    () => store.state.mysteryBoxes,
+  );
+}
+
+export function useChatMessages(store: MultiplayerStore) {
+  return useSyncExternalStore(
+    (listener) => subscribeMultiplayerStore(store, listener),
+    () => store.state.chatMessages,
+    () => store.state.chatMessages,
+  );
+}
+
+export function useAuthoritativeLocalPlayer(store: MultiplayerStore) {
+  return useSyncExternalStore(
+    (listener) => subscribeMultiplayerStore(store, listener),
+    () => store.state.authoritativeLocalPlayerState,
+    () => store.state.authoritativeLocalPlayerState,
+  );
+}
+
+export function useRemotePlayerCount(store: MultiplayerStore) {
+  return useSyncExternalStore(
+    (listener) => subscribeMultiplayerStore(store, listener),
+    () => store.state.remotePlayers.size,
+    () => store.state.remotePlayers.size,
+  );
+}
+
 export function setMultiplayerConnectionStatus(
   store: MultiplayerStore,
   connectionStatus: ConnectionStatus,
@@ -262,10 +348,18 @@ export function setGoombas(
   store: MultiplayerStore,
   goombas: Map<string, GoombaState>,
 ) {
-  if (!syncMapInPlace(store.state.goombas, goombas)) {
+  const prev = store.state.goombas;
+  if (prev === goombas) {
     return;
   }
-
+  if (prev.size === goombas.size) {
+    let same = true;
+    for (const [key, val] of goombas) {
+      if (prev.get(key) !== val) { same = false; break; }
+    }
+    if (same) return;
+  }
+  store.state.goombas = new Map(goombas);
   emitChanged(store);
 }
 
@@ -273,10 +367,18 @@ export function setMysteryBoxes(
   store: MultiplayerStore,
   mysteryBoxes: Map<string, MysteryBoxState>,
 ) {
-  if (!syncMapInPlace(store.state.mysteryBoxes, mysteryBoxes)) {
+  const prev = store.state.mysteryBoxes;
+  if (prev === mysteryBoxes) {
     return;
   }
-
+  if (prev.size === mysteryBoxes.size) {
+    let same = true;
+    for (const [key, val] of mysteryBoxes) {
+      if (prev.get(key) !== val) { same = false; break; }
+    }
+    if (same) return;
+  }
+  store.state.mysteryBoxes = new Map(mysteryBoxes);
   emitChanged(store);
 }
 
