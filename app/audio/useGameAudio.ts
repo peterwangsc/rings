@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
+  FIREBALL_LOOP_SOUND_PATHS,
   MUSIC_PATH_BY_ID,
   SOUND_PATH_BY_ID,
   type MusicTrackId,
@@ -13,11 +14,14 @@ type OneShotSoundId = Exclude<SoundId, "footsteps">;
 const ONE_SHOT_GAIN: Record<OneShotSoundId, number> = {
   coin: 0.58,
   goomba: 0.6,
-  jump: 0.62,
+  jump: 0.42,
   shoot: 0.5,
 };
 
 const FOOTSTEPS_GAIN = 0.26;
+const FIREBALL_LOOP_BASE_GAIN = 0.95;
+const FIREBALL_LOOP_MIN_PLAYBACK_RATE = 0.93;
+const FIREBALL_LOOP_PLAYBACK_RATE_RANGE = 0.14;
 const MASTER_GAIN = 0.92;
 const MUSIC_GAIN = 0.4;
 const MUSIC_FADE_OUT_MS = 450;
@@ -29,6 +33,11 @@ type AudioWindow = Window & {
   webkitAudioContext?: typeof AudioContext;
 };
 
+export interface FireballLoopController {
+  setFireballLoopGain: (fireballId: string, gain: number) => void;
+  stopFireballLoop: (fireballId: string) => void;
+}
+
 export interface GameAudioController {
   playCoin: () => void;
   playShoot: () => void;
@@ -36,6 +45,7 @@ export interface GameAudioController {
   playGoombaDefeated: () => void;
   setFootstepsActive: (isActive: boolean) => void;
   setDayNightMusicBlend: (nightFactor: number) => void;
+  fireballLoops: FireballLoopController;
 }
 
 export function useGameAudio(): GameAudioController {
@@ -56,6 +66,16 @@ export function useGameAudio(): GameAudioController {
   const musicTransitioningRef = useRef(false);
   const musicUnlockedRef = useRef(false);
   const runMusicTransitionRef = useRef<() => void>(() => {});
+
+  type FireballLoopEntry = {
+    source: AudioBufferSourceNode;
+    gain: GainNode;
+  };
+  const fireballLoopBuffersRef = useRef<AudioBuffer[] | null>(null);
+  const fireballLoopBufferLoadRef = useRef<Promise<void> | null>(null);
+  const fireballLoopEntriesRef = useRef<Map<string, FireballLoopEntry>>(
+    new Map(),
+  );
 
   const ensureAudioGraph = useCallback(() => {
     if (audioContextRef.current && masterGainRef.current) {
@@ -188,7 +208,11 @@ export function useGameAudio(): GameAudioController {
 
     void unlockAudio();
     void loadBuffer("footsteps").then((buffer) => {
-      if (!buffer || !footstepsActiveRef.current || footstepsSourceRef.current) {
+      if (
+        !buffer ||
+        !footstepsActiveRef.current ||
+        footstepsSourceRef.current
+      ) {
         return;
       }
 
@@ -236,6 +260,108 @@ export function useGameAudio(): GameAudioController {
     },
     [startFootsteps, stopFootsteps],
   );
+
+  const loadFireballLoopBuffers = useCallback((): Promise<void> => {
+    if (fireballLoopBuffersRef.current) {
+      return Promise.resolve();
+    }
+    if (fireballLoopBufferLoadRef.current) {
+      return fireballLoopBufferLoadRef.current;
+    }
+    const load = (async () => {
+      const context = ensureAudioGraph();
+      if (!context) {
+        return;
+      }
+      try {
+        const buffers = await Promise.all(
+          FIREBALL_LOOP_SOUND_PATHS.map(async (path) => {
+            const response = await fetch(path);
+            if (!response.ok) {
+              return null;
+            }
+            const bytes = await response.arrayBuffer();
+            return context.decodeAudioData(bytes);
+          }),
+        );
+        const valid = buffers.filter((b): b is AudioBuffer => b !== null);
+        if (valid.length > 0) {
+          fireballLoopBuffersRef.current = valid;
+        }
+      } catch {
+        // Silently ignore — loops are non-critical
+      }
+    })();
+    fireballLoopBufferLoadRef.current = load;
+    return load;
+  }, [ensureAudioGraph]);
+
+  const hashFireballId = (id: string): number => {
+    let hash = 2166136261;
+    for (let i = 0; i < id.length; i += 1) {
+      hash ^= id.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  };
+
+  const setFireballLoopGain = useCallback(
+    (fireballId: string, gain: number) => {
+      const context = audioContextRef.current;
+      const masterGain = masterGainRef.current;
+      if (!context || !masterGain || context.state !== "running") {
+        return;
+      }
+
+      let entry = fireballLoopEntriesRef.current.get(fireballId);
+      if (!entry) {
+        const buffers = fireballLoopBuffersRef.current;
+        if (!buffers || buffers.length === 0) {
+          void loadFireballLoopBuffers();
+          return;
+        }
+        const hash = hashFireballId(fireballId);
+        const clipIndex = hash % buffers.length;
+        const normalizedHash = hash / 0xffffffff;
+        const playbackRate =
+          FIREBALL_LOOP_MIN_PLAYBACK_RATE +
+          normalizedHash * FIREBALL_LOOP_PLAYBACK_RATE_RANGE;
+
+        const source = context.createBufferSource();
+        source.buffer = buffers[clipIndex];
+        source.loop = true;
+        source.playbackRate.value = playbackRate;
+
+        const gainNode = context.createGain();
+        gainNode.gain.value = gain * FIREBALL_LOOP_BASE_GAIN;
+
+        source.connect(gainNode);
+        gainNode.connect(masterGain);
+        source.start();
+
+        entry = { source, gain: gainNode };
+        fireballLoopEntriesRef.current.set(fireballId, entry);
+      } else {
+        entry.gain.gain.value = gain * FIREBALL_LOOP_BASE_GAIN;
+      }
+    },
+    [loadFireballLoopBuffers],
+  );
+
+  const stopFireballLoop = useCallback((fireballId: string) => {
+    const entry = fireballLoopEntriesRef.current.get(fireballId);
+    if (!entry) {
+      return;
+    }
+    fireballLoopEntriesRef.current.delete(fireballId);
+    try {
+      entry.source.stop();
+    } catch {
+      // Ignore stop race when source already ended.
+    }
+    entry.source.disconnect();
+    entry.gain.disconnect();
+  }, []);
 
   const cancelMusicFade = useCallback(() => {
     if (musicFadeFrameRef.current === null) {
@@ -368,28 +494,25 @@ export function useGameAudio(): GameAudioController {
     void activeTrack.play().catch(() => {});
   }, [cancelMusicFade, ensureMusicTracks, getOppositeMode, getTrackForMode]);
 
-  const setDayNightMusicBlend = useCallback(
-    (nightFactor: number) => {
-      const clampedNightFactor = Math.max(0, Math.min(1, nightFactor));
-      const desiredMode = desiredMusicModeRef.current;
-      const nextMode =
-        desiredMode === "day"
-          ? clampedNightFactor >= MUSIC_NIGHT_ENTER_THRESHOLD
-            ? "night"
-            : "day"
-          : clampedNightFactor <= MUSIC_DAY_ENTER_THRESHOLD
-            ? "day"
-            : "night";
+  const setDayNightMusicBlend = useCallback((nightFactor: number) => {
+    const clampedNightFactor = Math.max(0, Math.min(1, nightFactor));
+    const desiredMode = desiredMusicModeRef.current;
+    const nextMode =
+      desiredMode === "day"
+        ? clampedNightFactor >= MUSIC_NIGHT_ENTER_THRESHOLD
+          ? "night"
+          : "day"
+        : clampedNightFactor <= MUSIC_DAY_ENTER_THRESHOLD
+          ? "day"
+          : "night";
 
-      desiredMusicModeRef.current = nextMode;
-      if (!musicUnlockedRef.current) {
-        currentMusicModeRef.current = nextMode;
-        return;
-      }
-      runMusicTransitionRef.current();
-    },
-    [],
-  );
+    desiredMusicModeRef.current = nextMode;
+    if (!musicUnlockedRef.current) {
+      currentMusicModeRef.current = nextMode;
+      return;
+    }
+    runMusicTransitionRef.current();
+  }, []);
 
   useEffect(() => {
     const warmAudio = () => {
@@ -399,6 +522,7 @@ export function useGameAudio(): GameAudioController {
       void loadBuffer("goomba");
       void loadBuffer("jump");
       void loadBuffer("shoot");
+      void loadFireballLoopBuffers();
       resumeMusicPlayback();
     };
 
@@ -408,10 +532,17 @@ export function useGameAudio(): GameAudioController {
       window.removeEventListener("pointerdown", warmAudio);
       window.removeEventListener("keydown", warmAudio);
     };
-  }, [loadBuffer, resumeMusicPlayback, unlockAudio]);
+  }, [loadBuffer, loadFireballLoopBuffers, resumeMusicPlayback, unlockAudio]);
 
   useEffect(() => {
+    const fireballEntries = fireballLoopEntriesRef.current;
     return () => {
+      for (const [id] of fireballEntries) {
+        stopFireballLoop(id);
+      }
+      fireballEntries.clear();
+      fireballLoopBuffersRef.current = null;
+      fireballLoopBufferLoadRef.current = null;
       footstepsActiveRef.current = false;
       stopFootsteps();
       cancelMusicFade();
@@ -437,7 +568,12 @@ export function useGameAudio(): GameAudioController {
         void context.close();
       }
     };
-  }, [cancelMusicFade, stopFootsteps]);
+  }, [cancelMusicFade, stopFireballLoop, stopFootsteps]);
+
+  const fireballLoops = useMemo(
+    () => ({ setFireballLoopGain, stopFireballLoop }),
+    [setFireballLoopGain, stopFireballLoop],
+  );
 
   return useMemo(
     () => ({
@@ -447,7 +583,8 @@ export function useGameAudio(): GameAudioController {
       playGoombaDefeated: () => playOneShot("goomba"),
       setFootstepsActive,
       setDayNightMusicBlend,
+      fireballLoops,
     }),
-    [playOneShot, setDayNightMusicBlend, setFootstepsActive],
+    [playOneShot, setDayNightMusicBlend, setFootstepsActive, fireballLoops],
   );
 }

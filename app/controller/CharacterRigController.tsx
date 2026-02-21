@@ -21,11 +21,17 @@ import {
   stepFireballSimulation,
 } from "../gameplay/abilities/fireballManager";
 import type { FireballSpawnRequest } from "../gameplay/abilities/fireballTypes";
+import type { FireballLoopController } from "../audio/useGameAudio";
 import { CharacterActor, type MotionState } from "../lib/CharacterActor";
 import type {
   CharacterInputState,
   CharacterRigControllerProps,
 } from "./controllerTypes";
+
+const NOOP_FIREBALL_LOOPS: FireballLoopController = {
+  setFireballLoopGain: () => {},
+  stopFireballLoop: () => {},
+};
 import {
   CHARACTER_CAMERA_YAW_SIGN,
   CHARACTER_MODEL_YAW_OFFSET,
@@ -296,6 +302,7 @@ export function CharacterRigController({
   onLocalGoombaHit,
   authoritativeLocalPlayerState,
   networkFireballSpawnQueueRef,
+  fireballLoopController,
 }: CharacterRigControllerProps) {
   const { camera, gl } = useThree();
   const { rapier, world } = useRapier();
@@ -1104,7 +1111,10 @@ export function CharacterRigController({
           />
         </group>
       </RigidBody>
-      <FireballRenderLayer renderFrame={activeFireballManager.renderFrame} />
+      <FireballRenderLayer
+        renderFrame={activeFireballManager.renderFrame}
+        fireballLoops={fireballLoopController ?? NOOP_FIREBALL_LOOPS}
+      />
     </>
   );
 }

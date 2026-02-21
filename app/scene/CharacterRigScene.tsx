@@ -204,6 +204,7 @@ function CharacterRigSceneContent({
     playGoombaDefeated,
     setFootstepsActive,
     setDayNightMusicBlend,
+    fireballLoops,
   } = useGameAudio();
 
   const multiplayerVersion = useMultiplayerStoreSnapshot(multiplayerStore);
@@ -843,6 +844,7 @@ function CharacterRigSceneContent({
                 multiplayerState.authoritativeLocalPlayerState
               }
               networkFireballSpawnQueueRef={networkFireballSpawnQueueRef}
+              fireballLoopController={fireballLoops}
             />
           </Suspense>
         </Physics>

@@ -1,4 +1,5 @@
 import type { CameraMode } from "../camera/cameraTypes";
+import type { FireballLoopController } from "../audio/useGameAudio";
 import type { FireballManager } from "../gameplay/abilities/fireballManager";
 import type { MutableRefObject } from "react";
 import type { CastFireballCommand, HitGoombaCommand } from "../multiplayer/protocol";
@@ -45,4 +46,5 @@ export interface CharacterRigControllerProps {
   readonly onLocalGoombaHit?: (goombaId: HitGoombaCommand["goombaId"]) => void;
   readonly authoritativeLocalPlayerState?: AuthoritativePlayerState | null;
   readonly networkFireballSpawnQueueRef?: MutableRefObject<FireballSpawnEvent[]>;
+  readonly fireballLoopController?: FireballLoopController;
 }
