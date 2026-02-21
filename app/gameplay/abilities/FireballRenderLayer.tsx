@@ -3,25 +3,20 @@
 import { useFrame, useLoader, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import {
-  AudioListener,
-  AudioLoader,
   ClampToEdgeWrapping,
   Color,
   Group,
   LinearFilter,
   Matrix4,
   PointLight,
-  PositionalAudio,
   ShaderMaterial,
   Texture,
   TextureLoader,
   Vector3,
   Vector4,
 } from "three";
-import {
-  FIRE_TEXTURE_PATH,
-  FIREBALL_LOOP_SOUND_PATHS,
-} from "../../assets/gameAssets";
+import { FIRE_TEXTURE_PATH } from "../../assets/gameAssets";
+import type { FireballLoopController } from "../../audio/useGameAudio";
 import {
   FIREBALL_MAX_ACTIVE_POINT_LIGHTS,
   FIREBALL_LIGHT_INTENSITY,
@@ -31,12 +26,8 @@ import {
 import type { FireballRenderFrame } from "./fireballTypes";
 
 const BASE_FIRE_COLOR = new Color(0xeeeeee);
-const FIREBALL_LOOP_GAIN = 0.95;
 const FIREBALL_LOOP_REF_DISTANCE = 4.8;
 const FIREBALL_LOOP_MAX_DISTANCE = 32;
-const FIREBALL_LOOP_ROLLOFF_FACTOR = 0.9;
-const FIREBALL_LOOP_MIN_PLAYBACK_RATE = 0.93;
-const FIREBALL_LOOP_PLAYBACK_RATE_RANGE = 0.14;
 
 const FIREBALL_VERTEX_SHADER = /* glsl */ `
 varying vec3 vWorldPos;
@@ -219,27 +210,6 @@ function getDeterministicSeed(index: number) {
   return (index * 11.173 + 3.97) % 19.19;
 }
 
-function hashString(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function getLoopClipIndex(fireballId: string, clipCount: number) {
-  return hashString(fireballId) % Math.max(1, clipCount);
-}
-
-function getLoopPlaybackRate(fireballId: string) {
-  const normalizedHash = hashString(fireballId) / 0xffffffff;
-  return (
-    FIREBALL_LOOP_MIN_PLAYBACK_RATE +
-    normalizedHash * FIREBALL_LOOP_PLAYBACK_RATE_RANGE
-  );
-}
-
 function createShaderUniforms(
   fireTexture: Texture,
   seed: number,
@@ -260,16 +230,13 @@ function createShaderUniforms(
 
 export function FireballRenderLayer({
   renderFrame,
+  fireballLoops,
 }: {
   renderFrame: FireballRenderFrame;
+  fireballLoops: FireballLoopController;
 }) {
   const { camera } = useThree();
   const loadedFireTexture = useLoader(TextureLoader, FIRE_TEXTURE_PATH);
-  const loadedLoopBuffers = useLoader(AudioLoader, FIREBALL_LOOP_SOUND_PATHS);
-  const loopBuffers = useMemo(
-    () => (Array.isArray(loadedLoopBuffers) ? loadedLoopBuffers : [loadedLoopBuffers]),
-    [loadedLoopBuffers],
-  );
   const fireTexture = useMemo(() => {
     const texture = loadedFireTexture.clone();
     texture.magFilter = LinearFilter;
@@ -290,10 +257,7 @@ export function FireballRenderLayer({
   const groupRefs = useRef<(Group | null)[]>([]);
   const shaderMaterialRefs = useRef<(ShaderMaterial | null)[]>([]);
   const lightRefs = useRef<(PointLight | null)[]>([]);
-  const audioRootRef = useRef<Group>(null);
-  const fireballLoopByIdRef = useRef<Map<string, PositionalAudio>>(new Map());
   const activeLoopIdsRef = useRef<Set<string>>(new Set());
-  const listenerRef = useRef<AudioListener | null>(null);
   const fireColorRef = useRef(BASE_FIRE_COLOR.clone());
 
   useEffect(() => {
@@ -302,63 +266,13 @@ export function FireballRenderLayer({
     };
   }, [fireTexture]);
 
-  useEffect(() => {
-    const listener = new AudioListener();
-    listenerRef.current = listener;
-    camera.add(listener);
-    return () => {
-      camera.remove(listener);
-      listenerRef.current = null;
-    };
-  }, [camera]);
-
-  useEffect(() => {
-    const resumeLoopContext = () => {
-      const listener = listenerRef.current;
-      if (!listener) {
-        return;
-      }
-      if (listener.context.state === "suspended") {
-        void listener.context.resume().catch(() => {});
-      }
-    };
-
-    window.addEventListener("pointerdown", resumeLoopContext, { passive: true });
-    window.addEventListener("keydown", resumeLoopContext);
-    return () => {
-      window.removeEventListener("pointerdown", resumeLoopContext);
-      window.removeEventListener("keydown", resumeLoopContext);
-    };
-  }, []);
-
-  useEffect(() => {
-    const fireballLoops = fireballLoopByIdRef.current;
-    const activeLoopIds = activeLoopIdsRef.current;
-    return () => {
-      for (const loopEmitter of fireballLoops.values()) {
-        if (loopEmitter.isPlaying) {
-          try {
-            loopEmitter.stop();
-          } catch {
-            // Ignore stop race when source already ended.
-          }
-        }
-        loopEmitter.disconnect();
-        loopEmitter.removeFromParent();
-      }
-      fireballLoops.clear();
-      activeLoopIds.clear();
-    };
-  }, []);
-
   useFrame((state) => {
     const elapsedTime = state.clock.getElapsedTime();
     let activeLightCount = 0;
     const activeLoopIds = activeLoopIdsRef.current;
+    const prevActiveIds = new Set(activeLoopIds);
     activeLoopIds.clear();
-    const listener = listenerRef.current;
-    const audioRoot = audioRootRef.current;
-    const fireballLoops = fireballLoopByIdRef.current;
+    const camPos = camera.position;
 
     for (let index = 0; index < FIREBALL_MAX_ACTIVE_COUNT; index += 1) {
       const group = groupRefs.current[index];
@@ -382,33 +296,21 @@ export function FireballRenderLayer({
       group.scale.setScalar(slot.scale);
       group.updateMatrixWorld();
 
-      if (slot.id && listener && audioRoot && loopBuffers.length > 0) {
+      if (slot.id) {
         activeLoopIds.add(slot.id);
-        let loopEmitter = fireballLoops.get(slot.id);
-        if (!loopEmitter) {
-          loopEmitter = new PositionalAudio(listener);
-          const clipIndex = getLoopClipIndex(slot.id, loopBuffers.length);
-          loopEmitter.setBuffer(loopBuffers[clipIndex]);
-          loopEmitter.setLoop(true);
-          loopEmitter.setRefDistance(FIREBALL_LOOP_REF_DISTANCE);
-          loopEmitter.setMaxDistance(FIREBALL_LOOP_MAX_DISTANCE);
-          loopEmitter.setRolloffFactor(FIREBALL_LOOP_ROLLOFF_FACTOR);
-          loopEmitter.setDistanceModel("exponential");
-          loopEmitter.setPlaybackRate(getLoopPlaybackRate(slot.id));
-          loopEmitter.setVolume(FIREBALL_LOOP_GAIN);
-          loopEmitter.position.set(slot.x, slot.y, slot.z);
-          audioRoot.add(loopEmitter);
-          fireballLoops.set(slot.id, loopEmitter);
-        } else {
-          loopEmitter.position.set(slot.x, slot.y, slot.z);
-        }
-        if (!loopEmitter.isPlaying && listener.context.state === "running") {
-          try {
-            loopEmitter.play();
-          } catch {
-            // Ignore play race if buffer cannot start this frame.
-          }
-        }
+        const dx = slot.x - camPos.x;
+        const dy = slot.y - camPos.y;
+        const dz = slot.z - camPos.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const t = Math.max(
+          0,
+          Math.min(
+            1,
+            (FIREBALL_LOOP_MAX_DISTANCE - dist) /
+              (FIREBALL_LOOP_MAX_DISTANCE - FIREBALL_LOOP_REF_DISTANCE),
+          ),
+        );
+        fireballLoops.setFireballLoopGain(slot.id, t * t);
       }
 
       const shaderMaterial = shaderMaterialRefs.current[index];
@@ -434,26 +336,15 @@ export function FireballRenderLayer({
       }
     }
 
-    for (const [fireballId, loopEmitter] of fireballLoops) {
-      if (activeLoopIds.has(fireballId)) {
-        continue;
+    for (const fireballId of prevActiveIds) {
+      if (!activeLoopIds.has(fireballId)) {
+        fireballLoops.stopFireballLoop(fireballId);
       }
-      if (loopEmitter.isPlaying) {
-        try {
-          loopEmitter.stop();
-        } catch {
-          // Ignore stop race when source already ended.
-        }
-      }
-      loopEmitter.disconnect();
-      loopEmitter.removeFromParent();
-      fireballLoops.delete(fireballId);
     }
   });
 
   return (
     <>
-      <group ref={audioRootRef} />
       {Array.from({ length: FIREBALL_MAX_ACTIVE_COUNT }, (_, index) => (
         <group
           // Slot index is stable for the renderer pool.
