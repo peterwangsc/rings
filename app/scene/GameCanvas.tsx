@@ -86,6 +86,7 @@ import {
 } from "../utils/constants";
 import type { WorldEntityManager } from "./world/worldEntityManager";
 import { AnimatedSun } from "./AnimatedSun";
+import { BirdFlock } from "./BirdFlock";
 import { FrameRateProbe } from "./FrameRateProbe";
 import { WorldGeometry } from "./WorldGeometry";
 import {
@@ -781,6 +782,9 @@ export const GameCanvas = memo(function GameCanvas({
         worldEntityManager={worldEntityManager}
         multiplayerStore={store}
       />
+      <group position={[0, 24, 0]}>
+        <BirdFlock count={192} bounds={48} />
+      </group>
       {isFpsVisible && onFpsUpdate ? (
         <FrameRateProbe onUpdate={onFpsUpdate} />
       ) : null}
