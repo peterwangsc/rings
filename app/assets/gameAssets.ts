@@ -10,6 +10,8 @@ export type MusicTrackId = "day" | "night";
 
 export const FIRE_TEXTURE_PATH = "/fire.png";
 export const SIMPLEX_NOISE_TEXTURE_PATH = "/simplex-noise.png";
+export const GRASS_LEAF_TEXTURE_PATH = "/grass-leaf.png";
+export const GRASS_ACCENT_TEXTURE_PATH = "/grass-accent.png";
 
 export const FIREBALL_LOOP_SOUND_PATHS = [
   "/sounds/fire/2.mp3",
