@@ -73,50 +73,86 @@ function setMaterialsOpacity(materials: readonly THREE.Material[], opacity: numb
   }
 }
 
-function createQuestionMarkTexture() {
+function createQuestionMarkTextures() {
   if (typeof document === "undefined") {
     return null;
   }
-  const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 128;
 
-  const context = canvas.getContext("2d");
-  if (!context) {
-    return null;
+  const W = 128;
+  const H = 128;
+
+  // Color texture: orange box with white border and white ?
+  const colorCanvas = document.createElement("canvas");
+  colorCanvas.width = W;
+  colorCanvas.height = H;
+  const colorCtx = colorCanvas.getContext("2d");
+  if (!colorCtx) return null;
+  colorCtx.fillStyle = "#F6A41F";
+  colorCtx.fillRect(0, 0, W, H);
+  colorCtx.strokeStyle = "#8E4A00";
+  colorCtx.lineWidth = 8;
+  colorCtx.strokeRect(4, 4, W - 8, H - 8);
+  // Draw the white ? on top of the orange background (no background fill)
+  colorCtx.fillStyle = "#FFFFFF";
+  colorCtx.strokeStyle = "#FFFFFF";
+  colorCtx.font = "bold 82px 'Trebuchet MS', 'Arial Black', sans-serif";
+  colorCtx.textAlign = "center";
+  colorCtx.textBaseline = "middle";
+  colorCtx.lineWidth = 4;
+  {
+    const questionMark = "?";
+    const metrics = colorCtx.measureText(questionMark);
+    const centeredY =
+      metrics.actualBoundingBoxAscent > 0 || metrics.actualBoundingBoxDescent > 0
+        ? H / 2 +
+          (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2
+        : H / 2;
+    colorCtx.strokeText(questionMark, W / 2, centeredY);
+    colorCtx.fillText(questionMark, W / 2, centeredY);
   }
 
-  context.fillStyle = "#F6A41F";
-  context.fillRect(0, 0, canvas.width, canvas.height);
+  // Emissive map: golden-orange background (matching box glow), white ? for glow boost
+  // Three.js multiplies emissive color * emissiveMap, so we set emissive=#FFFFFF
+  // and encode all color in the map: orange for the body, white for the ?
+  const emissiveCanvas = document.createElement("canvas");
+  emissiveCanvas.width = W;
+  emissiveCanvas.height = H;
+  const emissiveCtx = emissiveCanvas.getContext("2d");
+  if (!emissiveCtx) return null;
+  // Fill with the golden-orange glow color of the box body
+  emissiveCtx.fillStyle = "#B26000";
+  emissiveCtx.fillRect(0, 0, W, H);
+  // Draw white ? on top so it glows bright white
+  emissiveCtx.fillStyle = "#FFFFFF";
+  emissiveCtx.strokeStyle = "#FFFFFF";
+  emissiveCtx.font = "bold 82px 'Trebuchet MS', 'Arial Black', sans-serif";
+  emissiveCtx.textAlign = "center";
+  emissiveCtx.textBaseline = "middle";
+  emissiveCtx.lineWidth = 4;
+  {
+    const questionMark = "?";
+    const metrics = emissiveCtx.measureText(questionMark);
+    const centeredY =
+      metrics.actualBoundingBoxAscent > 0 || metrics.actualBoundingBoxDescent > 0
+        ? H / 2 +
+          (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2
+        : H / 2;
+    emissiveCtx.strokeText(questionMark, W / 2, centeredY);
+    emissiveCtx.fillText(questionMark, W / 2, centeredY);
+  }
 
-  context.strokeStyle = "#8E4A00";
-  context.lineWidth = 8;
-  context.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
+  function makeTexture(canvas: HTMLCanvasElement) {
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
+    return tex;
+  }
 
-  context.fillStyle = "#FFF2A6";
-  context.font = "bold 82px 'Trebuchet MS', 'Arial Black', sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.strokeStyle = "#7A3A00";
-  context.lineWidth = 9;
-  const questionMark = "?";
-  const metrics = context.measureText(questionMark);
-  const centeredY =
-    metrics.actualBoundingBoxAscent > 0 || metrics.actualBoundingBoxDescent > 0
-      ? canvas.height / 2 +
-        (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2
-      : canvas.height / 2;
-  context.strokeText(questionMark, canvas.width / 2, centeredY);
-  context.fillText(questionMark, canvas.width / 2, centeredY);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.needsUpdate = true;
-  return texture;
+  return { color: makeTexture(colorCanvas), emissive: makeTexture(emissiveCanvas) };
 }
 
 function MysteryBoxActor({
@@ -359,27 +395,29 @@ export function MysteryBoxLayer({
     () => new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE),
     [],
   );
-  const questionMarkTexture = useMemo(() => createQuestionMarkTexture(), []);
+  const questionMarkTextures = useMemo(() => createQuestionMarkTextures(), []);
   const material = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
         color: "#F6A41F",
-        emissive: "#B26000",
+        emissive: "#FFFFFF",
         emissiveIntensity: 0.58,
+        emissiveMap: questionMarkTextures?.emissive ?? undefined,
         metalness: 0.2,
         roughness: 0.42,
-        map: questionMarkTexture ?? undefined,
+        map: questionMarkTextures?.color ?? undefined,
       }),
-    [questionMarkTexture],
+    [questionMarkTextures],
   );
 
   useEffect(() => {
     return () => {
       geometry.dispose();
       material.dispose();
-      questionMarkTexture?.dispose();
+      questionMarkTextures?.color.dispose();
+      questionMarkTextures?.emissive.dispose();
     };
-  }, [geometry, material, questionMarkTexture]);
+  }, [geometry, material, questionMarkTextures]);
 
   return (
     <group>
