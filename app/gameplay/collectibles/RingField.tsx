@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import {
   RING_COLLECT_RADIUS,
@@ -24,31 +24,52 @@ export function RingField({
   worldEntityManager: WorldEntityManager;
   onCollectRing?: (ringId: string) => void;
 }) {
-  const worldVersion = useWorldEntityVersion(worldEntityManager);
+  useWorldEntityVersion(worldEntityManager);
   const lastCollectAttemptByRingRef = useRef<Map<string, number>>(new Map());
-  const ringsWithPointLight = new Set<string>();
-  const droppedCandidates: { id: string; spawnedAtMs: number }[] = [];
-  for (const ring of worldEntityManager.visibleRingEntities) {
-    if (ring.source === "starter") {
-      ringsWithPointLight.add(ring.id);
-      continue;
+  const prevVisibleRingEntitiesRef = useRef(worldEntityManager.visibleRingEntities);
+
+  const { visibleRingEntities } = worldEntityManager;
+
+  // Prune stale attempt entries whenever the visible ring list changes.
+  if (prevVisibleRingEntitiesRef.current !== visibleRingEntities) {
+    prevVisibleRingEntitiesRef.current = visibleRingEntities;
+    const attempts = lastCollectAttemptByRingRef.current;
+    if (attempts.size > 0) {
+      const visibleIds = new Set(visibleRingEntities.map((r) => r.id));
+      for (const ringId of attempts.keys()) {
+        if (!visibleIds.has(ringId)) {
+          attempts.delete(ringId);
+        }
+      }
     }
-    if (!RING_DROP_POINT_LIGHT_ENABLED) {
-      continue;
+  }
+
+  const ringsWithPointLight = useMemo(() => {
+    const result = new Set<string>();
+    const droppedCandidates: { id: string; spawnedAtMs: number }[] = [];
+    for (const ring of visibleRingEntities) {
+      if (ring.source === "starter") {
+        result.add(ring.id);
+        continue;
+      }
+      if (!RING_DROP_POINT_LIGHT_ENABLED) {
+        continue;
+      }
+      droppedCandidates.push({
+        id: ring.id,
+        spawnedAtMs: ring.spawnedAtMs ?? 0,
+      });
     }
-    droppedCandidates.push({
-      id: ring.id,
-      spawnedAtMs: ring.spawnedAtMs ?? 0,
-    });
-  }
-  droppedCandidates.sort((a, b) => b.spawnedAtMs - a.spawnedAtMs);
-  const dropLights = Math.min(
-    RING_DROP_MAX_ACTIVE_POINT_LIGHTS,
-    droppedCandidates.length,
-  );
-  for (let index = 0; index < dropLights; index += 1) {
-    ringsWithPointLight.add(droppedCandidates[index].id);
-  }
+    droppedCandidates.sort((a, b) => b.spawnedAtMs - a.spawnedAtMs);
+    const dropLights = Math.min(
+      RING_DROP_MAX_ACTIVE_POINT_LIGHTS,
+      droppedCandidates.length,
+    );
+    for (let index = 0; index < dropLights; index += 1) {
+      result.add(droppedCandidates[index].id);
+    }
+    return result;
+  }, [visibleRingEntities]);
 
   const handleCollect = useCallback(
     (ringId: string) => {
@@ -61,29 +82,13 @@ export function RingField({
     [onCollectRing, worldEntityManager],
   );
 
-  useEffect(() => {
-    const attempts = lastCollectAttemptByRingRef.current;
-    if (attempts.size <= 0) {
-      return;
-    }
-
-    const visibleRingIds = new Set(
-      worldEntityManager.visibleRingEntities.map((ring) => ring.id),
-    );
-    for (const ringId of attempts.keys()) {
-      if (!visibleRingIds.has(ringId)) {
-        attempts.delete(ringId);
-      }
-    }
-  }, [worldEntityManager, worldVersion]);
-
   useFrame(() => {
     const nowMs = Date.now();
     const playerPosition = worldEntityManager.playerPosition;
     const collectRadiusSquared = RING_COLLECT_RADIUS * RING_COLLECT_RADIUS;
     const attempts = lastCollectAttemptByRingRef.current;
 
-    for (const ring of worldEntityManager.visibleRingEntities) {
+    for (const ring of visibleRingEntities) {
       if (ring.source === "drop") {
         if (
           ring.spawnedAtMs === undefined ||
@@ -115,7 +120,7 @@ export function RingField({
 
   return (
     <>
-      {worldEntityManager.visibleRingEntities.map((ring) => (
+      {visibleRingEntities.map((ring) => (
         <Ring
           key={ring.id}
           position={ring.position}
