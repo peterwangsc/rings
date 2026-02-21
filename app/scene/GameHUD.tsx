@@ -16,18 +16,9 @@
  *    but those writes to the store are cheap and idempotent.)
  */
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
-import {
-  useReducer as useSpacetimeReducer,
-  useTable,
-} from "spacetimedb/react";
+import { useReducer as useSpacetimeReducer, useTable } from "spacetimedb/react";
 import { ChatOverlay } from "../hud/ChatOverlay";
 import { FpsWidget } from "../hud/FpsWidget";
 import { GlobalChatFeed } from "../hud/GlobalChatFeed";
@@ -60,7 +51,10 @@ import type {
 } from "../multiplayer/state/multiplayerTypes";
 import { toSendChatMessageCommand } from "../multiplayer/protocol";
 import type { WorldEntityManager } from "./world/worldEntityManager";
-import { DesktopSplashOverlay, MobileOrientationOverlay } from "./SceneOverlays";
+import {
+  DesktopSplashOverlay,
+  MobileOrientationOverlay,
+} from "./SceneOverlays";
 import { MobileControlsOverlay } from "./MobileControlsOverlay";
 import type { MobileMoveInput } from "../controller/controllerTypes";
 
@@ -85,9 +79,14 @@ function toFallbackLeaderboardName(identity: string) {
   return identity.length <= 8 ? identity : `${identity.slice(0, 8)}...`;
 }
 
-function normalizeLeaderboardName(preferredName: string | undefined, identity: string) {
+function normalizeLeaderboardName(
+  preferredName: string | undefined,
+  identity: string,
+) {
   const normalized = preferredName?.trim() ?? "";
-  return normalized.length > 0 ? normalized : toFallbackLeaderboardName(identity);
+  return normalized.length > 0
+    ? normalized
+    : toFallbackLeaderboardName(identity);
 }
 
 // Row converters (same logic as was in useMultiplayerSync)
@@ -113,7 +112,8 @@ function toPlayerStatsSnapshot(
   previous?: PlayerStatsSnapshot,
 ): PlayerStatsSnapshot {
   const normalizedDisplayName = row.displayName.trim();
-  const displayName = normalizedDisplayName.length > 0 ? normalizedDisplayName : "Guest";
+  const displayName =
+    normalizedDisplayName.length > 0 ? normalizedDisplayName : "Guest";
   const highestRingCount = Math.max(0, Math.floor(row.highestRingCount));
   if (
     previous &&
@@ -124,7 +124,12 @@ function toPlayerStatsSnapshot(
   ) {
     return previous;
   }
-  return { identity: row.identity, displayName, highestRingCount, updatedAtMs: row.updatedAtMs };
+  return {
+    identity: row.identity,
+    displayName,
+    highestRingCount,
+    updatedAtMs: row.updatedAtMs,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -165,7 +170,9 @@ function ChatFeedSlice({
   // Expose the send function to the parent (GameHUD) via callback on mount.
   // We use a ref to keep the exposed function stable even if the reducer identity changes.
   const sendChatMessageReducerRef = useRef(sendChatMessageReducer);
-  useEffect(() => { sendChatMessageReducerRef.current = sendChatMessageReducer; }, [sendChatMessageReducer]);
+  useEffect(() => {
+    sendChatMessageReducerRef.current = sendChatMessageReducer;
+  }, [sendChatMessageReducer]);
 
   useEffect(() => {
     onSendChatMessageReady((text: string) => {
@@ -173,7 +180,7 @@ function ChatFeedSlice({
       if (!command) return;
       sendChatMessageReducerRef.current(command);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const chatMessages = useChatMessages(store);
@@ -186,7 +193,10 @@ function ChatFeedSlice({
   }, [chatMessages, chatNowMs]);
 
   return (
-    <GlobalChatFeed messages={activeChatMessages} localIdentity={localIdentity} />
+    <GlobalChatFeed
+      messages={activeChatMessages}
+      localIdentity={localIdentity}
+    />
   );
 }
 
@@ -203,8 +213,12 @@ function LeaderboardSlice({
   const [playerInventoryRows] = useTable(tables.playerInventory);
   const [playerStatsRows] = useTable(tables.playerStats);
 
-  const playerInventoriesBufferRef = useRef<Map<string, PlayerInventorySnapshot>>(new Map());
-  const playerStatsBufferRef = useRef<Map<string, PlayerStatsSnapshot>>(new Map());
+  const playerInventoriesBufferRef = useRef<
+    Map<string, PlayerInventorySnapshot>
+  >(new Map());
+  const playerStatsBufferRef = useRef<Map<string, PlayerStatsSnapshot>>(
+    new Map(),
+  );
 
   // Sync inventory rows → store
   useEffect(() => {
@@ -277,13 +291,21 @@ function LeaderboardSlice({
     const ranked = entries.filter((e) => e.highestRingCount > 0);
     ranked.sort((a, b) => {
       if (a.ringCount !== b.ringCount) return b.ringCount - a.ringCount;
-      if (a.highestRingCount !== b.highestRingCount) return b.highestRingCount - a.highestRingCount;
+      if (a.highestRingCount !== b.highestRingCount)
+        return b.highestRingCount - a.highestRingCount;
       const n = a.displayName.localeCompare(b.displayName);
       if (n !== 0) return n;
       return a.identity.localeCompare(b.identity);
     });
     return ranked.slice(0, LEADERBOARD_ROW_LIMIT);
-  }, [isVisible, localPlayer, localDisplayName, playerInventories, playerStats, remotePlayers]);
+  }, [
+    isVisible,
+    localPlayer,
+    localDisplayName,
+    playerInventories,
+    playerStats,
+    remotePlayers,
+  ]);
 
   const allTimeLeaderboardEntries = useMemo<AllTimeLeaderboardEntry[]>(() => {
     if (!isVisible) return [];
@@ -295,7 +317,8 @@ function LeaderboardSlice({
         highestRingCount: s.highestRingCount,
       }));
     entries.sort((a, b) => {
-      if (a.highestRingCount !== b.highestRingCount) return b.highestRingCount - a.highestRingCount;
+      if (a.highestRingCount !== b.highestRingCount)
+        return b.highestRingCount - a.highestRingCount;
       const n = a.displayName.localeCompare(b.displayName);
       if (n !== 0) return n;
       return a.identity.localeCompare(b.identity);
@@ -389,7 +412,9 @@ export interface GameHUDProps {
   onSetLocalDisplayName: (name: string) => void;
   onToggleCameraMode: () => void;
   onPointerLockChange: (isLocked: boolean) => void;
-  onCameraModeChange: (mode: import("../camera/cameraTypes").CameraMode) => void;
+  onCameraModeChange: (
+    mode: import("../camera/cameraTypes").CameraMode,
+  ) => void;
   isChatOpenRef: MutableRefObject<boolean>;
   isResumingFromChatRef: MutableRefObject<boolean>;
   isFpsVisible: boolean;
@@ -414,29 +439,40 @@ export function GameHUD({
   fps,
 }: GameHUDProps) {
   const [isPointerLocked, setIsPointerLocked] = useState(false);
-  const [isSplashDismissedByTouch, setIsSplashDismissedByTouch] = useState(false);
+  const [isSplashDismissedByTouch, setIsSplashDismissedByTouch] =
+    useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isResumingFromChat, setIsResumingFromChat] = useState(false);
   const [isLeaderboardVisible, setIsLeaderboardVisible] = useState(false);
   const [chatDraft, setChatDraft] = useState("");
   const [chatNowMs, setChatNowMs] = useState(() => Date.now());
-  const [chatSessionHistory, setChatSessionHistory] = useState<ChatMessageEvent[]>([]);
+  const [chatSessionHistory, setChatSessionHistory] = useState<
+    ChatMessageEvent[]
+  >([]);
 
   // sendChatMessage is populated by ChatFeedSlice via the callback below
   const sendChatMessageRef = useRef<((text: string) => void) | null>(null);
-  const handleSendChatMessageReady = useCallback((fn: (text: string) => void) => {
-    sendChatMessageRef.current = fn;
-  }, []);
+  const handleSendChatMessageReady = useCallback(
+    (fn: (text: string) => void) => {
+      sendChatMessageRef.current = fn;
+    },
+    [],
+  );
 
   const resumeFromChatTimeoutRef = useRef<number | null>(null);
 
-  useEffect(() => { isChatOpenRef.current = isChatOpen; }, [isChatOpen, isChatOpenRef]);
-  useEffect(() => { isResumingFromChatRef.current = isResumingFromChat; }, [isResumingFromChat, isResumingFromChatRef]);
+  useEffect(() => {
+    isChatOpenRef.current = isChatOpen;
+  }, [isChatOpen, isChatOpenRef]);
+  useEffect(() => {
+    isResumingFromChatRef.current = isResumingFromChat;
+  }, [isResumingFromChat, isResumingFromChatRef]);
 
   const requestGameplayPointerLock = useCallback(() => {
     const canvas = canvasElementRef.current;
     if (!canvas || document.pointerLockElement === canvas) return;
-    if (typeof canvas.requestPointerLock === "function") canvas.requestPointerLock();
+    if (typeof canvas.requestPointerLock === "function")
+      canvas.requestPointerLock();
   }, [canvasElementRef]);
 
   const handlePointerLockChange = useCallback(
@@ -458,7 +494,8 @@ export function GameHUD({
     setIsResumingFromChat(true);
     setIsLeaderboardVisible(false);
     requestGameplayPointerLock();
-    if (resumeFromChatTimeoutRef.current !== null) window.clearTimeout(resumeFromChatTimeoutRef.current);
+    if (resumeFromChatTimeoutRef.current !== null)
+      window.clearTimeout(resumeFromChatTimeoutRef.current);
     resumeFromChatTimeoutRef.current = window.setTimeout(() => {
       setIsChatOpen(false);
       setIsResumingFromChat(false);
@@ -486,7 +523,10 @@ export function GameHUD({
   const chatMessages = useChatMessages(store);
   useEffect(() => {
     if (chatMessages.length === 0) return;
-    const intervalId = window.setInterval(() => setChatNowMs(Date.now()), CHAT_CLOCK_TICK_MS);
+    const intervalId = window.setInterval(
+      () => setChatNowMs(Date.now()),
+      CHAT_CLOCK_TICK_MS,
+    );
     return () => window.clearInterval(intervalId);
   }, [chatMessages.length]);
 
@@ -538,7 +578,13 @@ export function GameHUD({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleOpenChatOverlay, handleResumeGameplayFromChat, isChatOpen, isResumingFromChat, onToggleFpsVisible]);
+  }, [
+    handleOpenChatOverlay,
+    handleResumeGameplayFromChat,
+    isChatOpen,
+    isResumingFromChat,
+    onToggleFpsVisible,
+  ]);
 
   useEffect(() => {
     const handleKeyUp = (event: KeyboardEvent) => {
@@ -555,7 +601,9 @@ export function GameHUD({
     const handlePointerDown = (event: PointerEvent) => {
       if (event.pointerType === "touch") setIsSplashDismissedByTouch(true);
     };
-    window.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    window.addEventListener("pointerdown", handlePointerDown, {
+      passive: true,
+    });
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, []);
 
@@ -573,10 +621,13 @@ export function GameHUD({
   useEffect(() => {
     const onLockChange = () => {
       const canvas = canvasElementRef.current;
-      handlePointerLockChange(!!canvas && document.pointerLockElement === canvas);
+      handlePointerLockChange(
+        !!canvas && document.pointerLockElement === canvas,
+      );
     };
     document.addEventListener("pointerlockchange", onLockChange);
-    return () => document.removeEventListener("pointerlockchange", onLockChange);
+    return () =>
+      document.removeEventListener("pointerlockchange", onLockChange);
   }, [canvasElementRef, handlePointerLockChange]);
 
   useEffect(() => {

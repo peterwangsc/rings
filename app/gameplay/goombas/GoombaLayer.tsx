@@ -12,10 +12,7 @@ import {
   GOOMBA_MODEL_PATH,
   GOOMBA_MODEL_SCALE,
 } from "../../utils/constants";
-import {
-  writePredictedGoombaPose,
-  type GoombaPose,
-} from "./goombaPrediction";
+import { writePredictedGoombaPose, type GoombaPose } from "./goombaPrediction";
 
 const POSITION_SMOOTHNESS = 14;
 const YAW_SMOOTHNESS = 16;
@@ -436,7 +433,11 @@ function GoombaActorBase({ goomba }: GoombaActorProps) {
       Date.now(),
       predictedPoseRef.current,
     );
-    targetPositionRef.current.set(predictedPose.x, predictedPose.y, predictedPose.z);
+    targetPositionRef.current.set(
+      predictedPose.x,
+      predictedPose.y,
+      predictedPose.z,
+    );
     fallbackYawRef.current = predictedPose.yaw;
 
     const nowSeconds = state.clock.getElapsedTime();
@@ -667,11 +668,7 @@ function areGoombaActorPropsEqual(
 
 const GoombaActor = memo(GoombaActorBase, areGoombaActorPropsEqual);
 
-export function GoombaLayer({
-  goombas,
-}: {
-  goombas: readonly GoombaState[];
-}) {
+export function GoombaLayer({ goombas }: { goombas: readonly GoombaState[] }) {
   return (
     <group>
       {goombas.map((goomba) => (

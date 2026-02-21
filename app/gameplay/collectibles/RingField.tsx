@@ -142,7 +142,6 @@ export function RingField({
       break;
     }
   });
-
   return (
     <>
       {visibleRingEntities.map((ring) => (
