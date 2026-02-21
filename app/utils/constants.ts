@@ -144,6 +144,12 @@ export const GRASS_ROOT_DARKEN = 0.52;
 export const GRASS_TIP_LIGHTEN = 1.28;
 export const GRASS_TINT_VARIATION = 0.22;
 export const CAMPFIRE_POSITION = [2.8, 0, 2.4] as const;
+// Yaw (radians) that faces from PLAYER_START_POSITION toward CAMPFIRE_POSITION.
+// forward = (sin(yaw), 0, -cos(yaw)), so yaw = atan2(dx, -dz).
+export const PLAYER_START_YAW = Math.atan2(
+  CAMPFIRE_POSITION[0] - PLAYER_START_POSITION.x,
+  -(CAMPFIRE_POSITION[2] - PLAYER_START_POSITION.z),
+);
 export const ROCK_MATERIAL_COLOR = "#8D9188";
 export const SKY_BACKGROUND_COLOR = "#0088ff";
 export const HORIZON_COLOR = "#CFE9FF";

@@ -64,6 +64,7 @@ import {
   PLAYER_LINEAR_DAMPING,
   PLAYER_RUN_SPEED,
   PLAYER_START_POSITION,
+  PLAYER_START_YAW,
   PLAYER_VISUAL_Y_OFFSET,
   PLAYER_WALK_SPEED,
   PLANAR_SPEED_SMOOTHING,
@@ -344,9 +345,9 @@ export function CharacterRigController({
   const isPointerLockedRef = useRef(false);
   const activeTouchPointerIdRef = useRef<number | null>(null);
   const activeTouchPositionRef = useRef<{ x: number; y: number } | null>(null);
-  const cameraYawRef = useRef(0);
+  const cameraYawRef = useRef(PLAYER_START_YAW);
   const cameraPitchRef = useRef(0);
-  const characterYawRef = useRef(0);
+  const characterYawRef = useRef(PLAYER_START_YAW);
   const smoothedPlanarSpeedRef = useRef(0);
   const mobileJumpWasPressedRef = useRef(false);
   const fireballRequestCountRef = useRef(0);
