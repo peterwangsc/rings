@@ -287,6 +287,22 @@ export function useGameAudio(): GameAudioController {
         const valid = buffers.filter((b): b is AudioBuffer => b !== null);
         if (valid.length > 0) {
           fireballLoopBuffersRef.current = valid;
+          // Play each buffer silently for one sample to warm up the audio
+          // pipeline. Without this, the first real playback causes a frame drop
+          // as the browser sets up its internal audio processing for these buffers.
+          const masterGain = masterGainRef.current;
+          if (masterGain) {
+            for (const buffer of valid) {
+              const warmSource = context.createBufferSource();
+              warmSource.buffer = buffer;
+              const silentGain = context.createGain();
+              silentGain.gain.value = 0;
+              warmSource.connect(silentGain);
+              silentGain.connect(masterGain);
+              warmSource.start();
+              warmSource.stop(context.currentTime + 1 / context.sampleRate);
+            }
+          }
         }
       } catch {
         // Silently ignore — loops are non-critical
