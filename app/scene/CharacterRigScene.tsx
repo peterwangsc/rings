@@ -812,10 +812,7 @@ function CharacterRigSceneContent({
               }
             />
             <GoombaLayer goombas={goombas} />
-            <MysteryBoxLayer
-              mysteryBoxes={mysteryBoxes}
-              onLocalMysteryBoxHit={sendMysteryBoxHit}
-            />
+            <MysteryBoxLayer mysteryBoxes={mysteryBoxes} />
             <RemotePlayersLayer
               players={remotePlayers}
               activeChatByIdentity={activeChatByIdentity}
@@ -840,6 +837,8 @@ function CharacterRigSceneContent({
               onLocalFootstepsActiveChange={setFootstepsActive}
               goombas={goombas}
               onLocalGoombaHit={sendGoombaHit}
+              mysteryBoxes={mysteryBoxes}
+              onLocalMysteryBoxHit={sendMysteryBoxHit}
               authoritativeLocalPlayerState={
                 multiplayerState.authoritativeLocalPlayerState
               }

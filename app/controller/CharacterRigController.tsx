@@ -46,6 +46,12 @@ import {
   GOOMBA_INTERACT_DISABLED_STATE,
   GOOMBA_STOMP_MIN_FALL_SPEED,
   GOOMBA_STOMP_RADIUS,
+  MYSTERY_BOX_HALF_EXTENT,
+  MYSTERY_BOX_HEAD_RAY_LENGTH,
+  MYSTERY_BOX_HIT_CLIENT_COOLDOWN_MS,
+  MYSTERY_BOX_HIT_CLIENT_RADIUS,
+  MYSTERY_BOX_HIT_DOWNWARD_CLEAR_SPEED,
+  MYSTERY_BOX_INTERACT_DISABLED_STATE,
   GROUNDED_GRACE_SECONDS,
   JUMP_INPUT_BUFFER_SECONDS,
   MAX_FRAME_DELTA_SECONDS,
@@ -98,6 +104,8 @@ const DAMAGE_KNOCKBACK_HORIZONTAL_SPEED = 36.25;
 const DAMAGE_KNOCKBACK_VERTICAL_VELOCITY = 23.2;
 const DAMAGE_DIRECTION_EPSILON_SQUARED = 1e-6;
 const GOOMBA_STOMP_RADIUS_SQUARED = GOOMBA_STOMP_RADIUS * GOOMBA_STOMP_RADIUS;
+const MYSTERY_BOX_HIT_CLIENT_RADIUS_SQUARED =
+  MYSTERY_BOX_HIT_CLIENT_RADIUS * MYSTERY_BOX_HIT_CLIENT_RADIUS;
 const FIREBALL_GOOMBA_HIT_RADIUS_SQUARED =
   (GOOMBA_FIREBALL_HITBOX_RADIUS + FIREBALL_RADIUS) *
   (GOOMBA_FIREBALL_HITBOX_RADIUS + FIREBALL_RADIUS);
@@ -280,6 +288,22 @@ function isGoombaHitOnCooldown(
   return false;
 }
 
+function isMysteryBoxHitOnCooldown(
+  mysteryBoxHitTimestamps: Map<string, number>,
+  mysteryBoxId: string,
+  nowMs: number,
+) {
+  const lastHitAtMs = mysteryBoxHitTimestamps.get(mysteryBoxId);
+  if (lastHitAtMs === undefined) {
+    return false;
+  }
+  if (nowMs - lastHitAtMs <= MYSTERY_BOX_HIT_CLIENT_COOLDOWN_MS) {
+    return true;
+  }
+  mysteryBoxHitTimestamps.delete(mysteryBoxId);
+  return false;
+}
+
 export function CharacterRigController({
   cameraMode,
   onToggleCameraMode,
@@ -300,6 +324,8 @@ export function CharacterRigController({
   onLocalFootstepsActiveChange,
   goombas,
   onLocalGoombaHit,
+  mysteryBoxes,
+  onLocalMysteryBoxHit,
   authoritativeLocalPlayerState,
   networkFireballSpawnQueueRef,
   fireballLoopController,
@@ -331,6 +357,9 @@ export function CharacterRigController({
   const localInputSequenceRef = useRef(0);
   const lastProcessedDamageEventCounterRef = useRef(0);
   const goombaHitTimestampsRef = useRef(new Map<string, number>());
+  const mysteryBoxHitTimestampsRef = useRef(new Map<string, number>());
+  // True while the player has upward momentum (set on positive vy, cleared on hard downward)
+  const wasMovingUpRef = useRef(false);
   const footstepsAudioActiveRef = useRef(false);
   const motionStateRef = useRef<MotionState>("idle");
   const fallbackFireballManager = useMemo(
@@ -562,6 +591,7 @@ export function CharacterRigController({
     bodyTranslationRef.current.y = translation.y;
     bodyTranslationRef.current.z = translation.z;
     const goombaHitTimestamps = goombaHitTimestampsRef.current;
+    const mysteryBoxHitTimestamps = mysteryBoxHitTimestampsRef.current;
     let nowMs = -1;
     const getNowMs = () => {
       if (nowMs < 0) {
@@ -571,6 +601,12 @@ export function CharacterRigController({
     };
     const currentVelocity = body.linvel();
     const verticalSpeedAbs = Math.abs(currentVelocity.y);
+    // Track upward-momentum latch for mystery box bonk detection
+    if (currentVelocity.y > 0) {
+      wasMovingUpRef.current = true;
+    } else if (currentVelocity.y < -MYSTERY_BOX_HIT_DOWNWARD_CLEAR_SPEED) {
+      wasMovingUpRef.current = false;
+    }
     setRayOrigin(groundingRay, translation.x, translation.y, translation.z);
     const groundingHit = world.castRay(
       groundingRay,
@@ -790,6 +826,45 @@ export function CharacterRigController({
         nextLinvel.y = Math.max(6, PLAYER_JUMP_VELOCITY * 0.48);
         nextLinvel.z = nextVelocityZ;
         body.setLinvel(nextLinvel, true);
+        break;
+      }
+    }
+
+    // Mystery box bonk detection: upward ray from player head, per-frame poll
+    if (mysteryBoxes && onLocalMysteryBoxHit && wasMovingUpRef.current) {
+      const playerHeadY =
+        translation.y + PLAYER_CAPSULE_HALF_HEIGHT + PLAYER_CAPSULE_RADIUS;
+      for (let index = 0; index < mysteryBoxes.length; index += 1) {
+        const mysteryBox = mysteryBoxes[index];
+        if (mysteryBox.state === MYSTERY_BOX_INTERACT_DISABLED_STATE) {
+          continue;
+        }
+        // XZ proximity pre-filter
+        const dx = translation.x - mysteryBox.x;
+        const dz = translation.z - mysteryBox.z;
+        if (dx * dx + dz * dz > MYSTERY_BOX_HIT_CLIENT_RADIUS_SQUARED) {
+          continue;
+        }
+        if (isMysteryBoxHitOnCooldown(mysteryBoxHitTimestamps, mysteryBox.mysteryBoxId, getNowMs())) {
+          continue;
+        }
+        // Check if player head is within the ray-length window below the box bottom
+        const boxBottomY = mysteryBox.y - MYSTERY_BOX_HALF_EXTENT;
+        if (playerHeadY < boxBottomY - MYSTERY_BOX_HEAD_RAY_LENGTH) {
+          continue;
+        }
+        if (playerHeadY > boxBottomY + MYSTERY_BOX_HALF_EXTENT) {
+          // Head is above the box bottom — player is inside or above, not bonking
+          continue;
+        }
+        mysteryBoxHitTimestamps.set(mysteryBox.mysteryBoxId, getNowMs());
+        onLocalMysteryBoxHit(mysteryBox.mysteryBoxId);
+        // Bonk: cancel upward velocity so head doesn't clip through
+        nextLinvel.x = nextVelocityX;
+        nextLinvel.y = 0;
+        nextLinvel.z = nextVelocityZ;
+        body.setLinvel(nextLinvel, true);
+        wasMovingUpRef.current = false;
         break;
       }
     }

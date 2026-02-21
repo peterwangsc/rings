@@ -255,3 +255,11 @@ export const GOOMBA_HIT_RETRY_COOLDOWN_MS = 500;
 // Keep in sync with spacetimedb/src/shared/constants.ts.
 export const MYSTERY_BOX_INTERACT_DISABLED_STATE = "depleted";
 export const MYSTERY_BOX_HALF_EXTENT = 0.45;
+// Ray length above player head to detect box bottom contact
+export const MYSTERY_BOX_HEAD_RAY_LENGTH = 0.3;
+// Horizontal XZ radius for client-side box proximity pre-filter
+export const MYSTERY_BOX_HIT_CLIENT_RADIUS = 1.8;
+// "Was moving up" latch: clear if player falls faster than this (m/s downward)
+export const MYSTERY_BOX_HIT_DOWNWARD_CLEAR_SPEED = 1.0;
+// Per-box cooldown on the client (ms) — allows server depletion to arrive
+export const MYSTERY_BOX_HIT_CLIENT_COOLDOWN_MS = 300;

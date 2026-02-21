@@ -1,13 +1,9 @@
 "use client";
 
-import {
-  CuboidCollider,
-  RigidBody,
-  type IntersectionEnterPayload,
-} from "@react-three/rapier";
+import { CuboidCollider, RigidBody, type RapierRigidBody } from "@react-three/rapier";
 import { Cloud } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { MysteryBoxState } from "../../multiplayer/state/multiplayerTypes";
 import {
@@ -31,12 +27,6 @@ const BOX_GLOW_COLOR = "#FFBE6B";
 const BOX_GLOW_INTENSITY = 4.58;
 const BOX_GLOW_DISTANCE = 4.2;
 const BOX_GLOW_DECAY = 2;
-const UNDERSIDE_SENSOR_HALF_HEIGHT = 0.07;
-const UNDERSIDE_SENSOR_INSET = 0.03;
-const UNDERSIDE_SENSOR_HALF_EXTENT =
-  MYSTERY_BOX_HALF_EXTENT - UNDERSIDE_SENSOR_INSET;
-const LOCAL_HIT_RETRY_COOLDOWN_MS = 120;
-const LOCAL_SENSOR_MIN_UPWARD_VELOCITY = 0.1;
 
 function hashStringToUint32(value: string) {
   let hash = 2166136261;
@@ -155,18 +145,20 @@ function createQuestionMarkTextures() {
   return { color: makeTexture(colorCanvas), emissive: makeTexture(emissiveCanvas) };
 }
 
+// Reusable translation vector to avoid per-frame allocation
+const _kinematicTranslation = new THREE.Vector3();
+
 function MysteryBoxActor({
   mysteryBox,
   geometry,
   material,
-  onLocalMysteryBoxHit,
 }: {
   mysteryBox: MysteryBoxState;
   geometry: THREE.BoxGeometry;
   material: THREE.MeshStandardMaterial;
-  onLocalMysteryBoxHit?: (mysteryBoxId: string) => void;
 }) {
-  const boxRef = useRef<THREE.Mesh>(null);
+  const rigidBodyRef = useRef<RapierRigidBody | null>(null);
+  const meshRef = useRef<THREE.Mesh>(null);
   const poofRef = useRef<THREE.Group>(null);
   const poofMaterialsRef = useRef<THREE.Material[]>([]);
   const poofOpacityRef = useRef(DEPLETION_POOF_BASE_OPACITY);
@@ -177,7 +169,6 @@ function MysteryBoxActor({
   const phaseRef = useRef(
     ((hashStringToUint32(mysteryBox.mysteryBoxId) % 360) * Math.PI) / 180,
   );
-  const lastLocalHitAtMsRef = useRef(-Infinity);
 
   useEffect(() => {
     const poof = poofRef.current;
@@ -196,12 +187,12 @@ function MysteryBoxActor({
   }, []);
 
   useFrame((state) => {
-    const box = boxRef.current;
-    if (!box) {
+    const rigidBody = rigidBodyRef.current;
+    const mesh = meshRef.current;
+    if (!rigidBody || !mesh) {
       return;
     }
     const poof = poofRef.current;
-
     const nowSeconds = state.clock.getElapsedTime();
     const isDepleted = mysteryBox.state === MYSTERY_BOX_INTERACT_DISABLED_STATE;
 
@@ -211,14 +202,17 @@ function MysteryBoxActor({
         depletedAtSecondsRef.current = null;
       }
 
-      box.visible = true;
-      box.scale.set(1, 1, 1);
-      box.position.set(
-        0,
-        Math.sin(nowSeconds * FLOAT_SPEED + phaseRef.current) * FLOAT_AMPLITUDE,
-        0,
-      );
-      box.rotation.set(0, nowSeconds * SPIN_SPEED + phaseRef.current, 0);
+      // Drive kinematic body to match float animation — physics and visual stay in sync
+      const floatY =
+        Math.sin(nowSeconds * FLOAT_SPEED + phaseRef.current) * FLOAT_AMPLITUDE;
+      _kinematicTranslation.set(mysteryBox.x, mysteryBox.y + floatY, mysteryBox.z);
+      rigidBody.setNextKinematicTranslation(_kinematicTranslation);
+
+      mesh.visible = true;
+      mesh.scale.set(1, 1, 1);
+      mesh.position.set(0, 0, 0);
+      mesh.rotation.set(0, nowSeconds * SPIN_SPEED + phaseRef.current, 0);
+
       if (poof) {
         poof.visible = false;
       }
@@ -244,11 +238,15 @@ function MysteryBoxActor({
       1,
     );
 
-    box.visible = elapsed < DEPLETION_BUMP_DURATION_SECONDS;
-    if (box.visible) {
-      box.position.set(0, easedBump * DEPLETION_BUMP_HEIGHT, 0);
-      box.rotation.set(0, phaseRef.current, 0);
-      box.scale.set(
+    // Move kinematic body to depleted spawn Y (no float) so collider is still accurate
+    _kinematicTranslation.set(mysteryBox.x, mysteryBox.y, mysteryBox.z);
+    rigidBody.setNextKinematicTranslation(_kinematicTranslation);
+
+    mesh.visible = elapsed < DEPLETION_BUMP_DURATION_SECONDS;
+    if (mesh.visible) {
+      mesh.position.set(0, easedBump * DEPLETION_BUMP_HEIGHT, 0);
+      mesh.rotation.set(0, phaseRef.current, 0);
+      mesh.scale.set(
         THREE.MathUtils.lerp(1, 1.08, easedBump),
         THREE.MathUtils.lerp(1, 0.64, easedBump),
         THREE.MathUtils.lerp(1, 1.08, easedBump),
@@ -288,69 +286,26 @@ function MysteryBoxActor({
   const hasSolidCollider =
     mysteryBox.state !== MYSTERY_BOX_INTERACT_DISABLED_STATE;
 
-  const handleUndersideIntersection = useCallback(
-    (payload: IntersectionEnterPayload) => {
-      if (!hasSolidCollider || !onLocalMysteryBoxHit) {
-        return;
-      }
-      const nowMs = performance.now();
-      if (nowMs - lastLocalHitAtMsRef.current < LOCAL_HIT_RETRY_COOLDOWN_MS) {
-        return;
-      }
-
-      const otherUserData = payload.other.rigidBodyObject?.userData as
-        | { kind?: string }
-        | undefined;
-      if (otherUserData?.kind !== "player") {
-        return;
-      }
-
-      const upwardVelocity = payload.other.rigidBody?.linvel().y ?? 0;
-      if (upwardVelocity < LOCAL_SENSOR_MIN_UPWARD_VELOCITY) {
-        return;
-      }
-
-      lastLocalHitAtMsRef.current = nowMs;
-      onLocalMysteryBoxHit(mysteryBox.mysteryBoxId);
-    },
-    [hasSolidCollider, mysteryBox.mysteryBoxId, onLocalMysteryBoxHit],
-  );
-
   return (
     <RigidBody
-      type="fixed"
+      ref={rigidBodyRef}
+      type="kinematicPosition"
       colliders={false}
       position={[mysteryBox.x, mysteryBox.y, mysteryBox.z]}
       userData={{ kind: "mystery_box" }}
     >
       {hasSolidCollider ? (
-        <>
-          <CuboidCollider
-            args={[
-              MYSTERY_BOX_HALF_EXTENT,
-              MYSTERY_BOX_HALF_EXTENT,
-              MYSTERY_BOX_HALF_EXTENT,
-            ]}
-          />
-          <CuboidCollider
-            sensor
-            position={[
-              0,
-              -(MYSTERY_BOX_HALF_EXTENT + UNDERSIDE_SENSOR_HALF_HEIGHT),
-              0,
-            ]}
-            args={[
-              UNDERSIDE_SENSOR_HALF_EXTENT,
-              UNDERSIDE_SENSOR_HALF_HEIGHT,
-              UNDERSIDE_SENSOR_HALF_EXTENT,
-            ]}
-            onIntersectionEnter={handleUndersideIntersection}
-          />
-        </>
+        <CuboidCollider
+          args={[
+            MYSTERY_BOX_HALF_EXTENT,
+            MYSTERY_BOX_HALF_EXTENT,
+            MYSTERY_BOX_HALF_EXTENT,
+          ]}
+        />
       ) : null}
       <group>
         <mesh
-          ref={boxRef}
+          ref={meshRef}
           castShadow
           receiveShadow
           geometry={geometry}
@@ -386,10 +341,8 @@ function MysteryBoxActor({
 
 export function MysteryBoxLayer({
   mysteryBoxes,
-  onLocalMysteryBoxHit,
 }: {
   mysteryBoxes: readonly MysteryBoxState[];
-  onLocalMysteryBoxHit?: (mysteryBoxId: string) => void;
 }) {
   const geometry = useMemo(
     () => new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE),
@@ -427,7 +380,6 @@ export function MysteryBoxLayer({
           mysteryBox={mysteryBox}
           geometry={geometry}
           material={material}
-          onLocalMysteryBoxHit={onLocalMysteryBoxHit}
         />
       ))}
     </group>

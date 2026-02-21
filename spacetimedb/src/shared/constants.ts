@@ -45,9 +45,8 @@ export const GOOMBA_DISABLE_ORIGIN_CHUNK_SPAWN = false;
 // Keep in sync with app/utils/constants.ts (MYSTERY_BOX_HALF_EXTENT).
 export const MYSTERY_BOX_HALF_EXTENT = 0.45;
 export const MYSTERY_BOX_HOVER_HEIGHT = 2.4;
-export const MYSTERY_BOX_PLAYER_HEAD_OFFSET = 0.8;
-export const MYSTERY_BOX_HIT_VALIDATION_RADIUS = 1.35;
-export const MYSTERY_BOX_HIT_VERTICAL_TOLERANCE = 0.85;
+// Horizontal-only XZ check; vertical accuracy is handled client-side by raycast.
+export const MYSTERY_BOX_HIT_VALIDATION_RADIUS = 1.8;
 export const MYSTERY_BOX_DEPLETED_DESPAWN_MS = 900;
 export const MYSTERY_BOX_RING_BURST_COUNT = 5;
 export const MYSTERY_BOX_CHUNK_ACTIVE_RADIUS = 1;

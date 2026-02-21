@@ -7,6 +7,7 @@ import type {
   AuthoritativePlayerState,
   FireballSpawnEvent,
   GoombaState,
+  MysteryBoxState,
   NetPlayerSnapshot,
 } from "../multiplayer/state/multiplayerTypes";
 
@@ -44,6 +45,8 @@ export interface CharacterRigControllerProps {
   readonly damageEventCounterRef?: MutableRefObject<number>;
   readonly goombas?: readonly GoombaState[];
   readonly onLocalGoombaHit?: (goombaId: HitGoombaCommand["goombaId"]) => void;
+  readonly mysteryBoxes?: readonly MysteryBoxState[];
+  readonly onLocalMysteryBoxHit?: (mysteryBoxId: string) => void;
   readonly authoritativeLocalPlayerState?: AuthoritativePlayerState | null;
   readonly networkFireballSpawnQueueRef?: MutableRefObject<FireballSpawnEvent[]>;
   readonly fireballLoopController?: FireballLoopController;

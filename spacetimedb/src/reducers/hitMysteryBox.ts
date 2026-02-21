@@ -2,10 +2,7 @@ import { t } from 'spacetimedb/server';
 import {
   MYSTERY_BOX_CHUNK_SPAWN_COOLDOWN_MS,
   MYSTERY_BOX_DEPLETED_DESPAWN_MS,
-  MYSTERY_BOX_HALF_EXTENT,
   MYSTERY_BOX_HIT_VALIDATION_RADIUS,
-  MYSTERY_BOX_HIT_VERTICAL_TOLERANCE,
-  MYSTERY_BOX_PLAYER_HEAD_OFFSET,
   MYSTERY_BOX_RING_BURST_COUNT,
   MYSTERY_BOX_STATE_DEPLETED,
   RING_DROP_SOURCE_MYSTERY_BOX,
@@ -39,6 +36,8 @@ spacetimedb.reducer(
       return { tag: 'ok' };
     }
 
+    // Horizontal-only proximity check — snapshot lag doesn't affect XZ significantly
+    // during a jump, so this reliably rejects out-of-range spoofed requests.
     const dx = player.x - mysteryBox.x;
     const dz = player.z - mysteryBox.z;
     if (
@@ -46,18 +45,6 @@ spacetimedb.reducer(
       MYSTERY_BOX_HIT_VALIDATION_RADIUS * MYSTERY_BOX_HIT_VALIDATION_RADIUS
     ) {
       return { tag: 'err', value: 'mystery_box_out_of_range' };
-    }
-
-    const playerHeadY = player.y + MYSTERY_BOX_PLAYER_HEAD_OFFSET;
-    const boxBottomY = mysteryBox.y - MYSTERY_BOX_HALF_EXTENT;
-    if (playerHeadY > boxBottomY + MYSTERY_BOX_HIT_VERTICAL_TOLERANCE) {
-      return { tag: 'err', value: 'mystery_box_not_underneath' };
-    }
-    if (
-      boxBottomY - playerHeadY >
-      MYSTERY_BOX_HALF_EXTENT + MYSTERY_BOX_HIT_VERTICAL_TOLERANCE
-    ) {
-      return { tag: 'err', value: 'mystery_box_not_underneath' };
     }
 
     ctx.db.mysteryBoxState.mysteryBoxId.update({
