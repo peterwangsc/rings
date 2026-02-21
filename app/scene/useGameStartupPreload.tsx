@@ -9,13 +9,18 @@ import {
   PRELOAD_AUDIO_PATHS,
   PRELOAD_TEXTURE_PATHS,
 } from "../assets/gameAssets";
-import { CHARACTER_PATH, GOOMBA_MODEL_PATH } from "../utils/constants";
+import {
+  CHARACTER_OLD_PATH,
+  CHARACTER_PATH,
+  GOOMBA_MODEL_PATH,
+} from "../utils/constants";
 
 const PRELOAD_IDLE_GRACE_MS = 1600;
 
 function startGameAssetPreload() {
   Cache.enabled = true;
   useGLTF.preload(CHARACTER_PATH);
+  useGLTF.preload(CHARACTER_OLD_PATH);
   useLoader.preload(ColladaLoader, GOOMBA_MODEL_PATH);
   useLoader.preload(TextureLoader, PRELOAD_TEXTURE_PATHS as unknown as string[]);
   useLoader.preload(AudioLoader, PRELOAD_AUDIO_PATHS as unknown as string[]);

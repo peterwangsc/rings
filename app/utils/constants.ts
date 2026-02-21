@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { CharacterInputState } from "../controller/controllerTypes";
 
 export const CHARACTER_PATH = "/models/character/character_new.gltf";
+export const CHARACTER_OLD_PATH = "/models/character/character_old.gltf";
 
 export const DEFAULT_CHARACTER_TARGET_HEIGHT = 1.85;
 export const MIN_DELTA_SECONDS = 1e-6;

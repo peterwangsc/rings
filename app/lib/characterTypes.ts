@@ -14,6 +14,7 @@ export type MotionState =
 export type MotionActionMap = Record<MotionState, AnimationAction | null>;
 
 export interface CharacterActorProps {
+  readonly characterPath?: string;
   readonly motionState?: MotionState;
   readonly motionStateRef?: MutableRefObject<MotionState>;
   readonly planarSpeedRef?: MutableRefObject<number>;

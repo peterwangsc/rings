@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import {
+  CHARACTER_OLD_PATH,
   CHARACTER_PATH,
   DEFAULT_CHARACTER_TARGET_HEIGHT,
   DEFAULT_FADE_IN_SECONDS,
@@ -235,6 +236,7 @@ function createFireballThrowClip({
 }
 
 export function CharacterActor({
+  characterPath = CHARACTER_PATH,
   motionState = "idle",
   motionStateRef,
   planarSpeedRef,
@@ -243,7 +245,7 @@ export function CharacterActor({
   hidden = false,
   onEmoteFinished,
 }: CharacterActorProps) {
-  const gltf = useGLTF(CHARACTER_PATH);
+  const gltf = useGLTF(characterPath);
 
   const character = useMemo(
     () => prepareCharacter(gltf.scene, gltf.animations, targetHeight),
@@ -645,3 +647,4 @@ export function CharacterActor({
 }
 
 useGLTF.preload(CHARACTER_PATH);
+useGLTF.preload(CHARACTER_OLD_PATH);

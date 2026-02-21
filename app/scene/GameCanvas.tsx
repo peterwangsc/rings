@@ -504,6 +504,7 @@ const RemotePlayersSlice = memo(function RemotePlayersSlice({
 
 const ControllerSlice = memo(function ControllerSlice({
   store,
+  characterPath,
   cameraMode,
   onToggleCameraMode,
   isWalkDefault,
@@ -525,6 +526,7 @@ const ControllerSlice = memo(function ControllerSlice({
   localDisplayNameRef,
 }: {
   store: MultiplayerStore;
+  characterPath?: string;
   cameraMode: CameraMode;
   onToggleCameraMode: () => void;
   isWalkDefault: boolean;
@@ -665,6 +667,7 @@ const ControllerSlice = memo(function ControllerSlice({
 
   return (
     <CharacterRigController
+      characterPath={characterPath}
       cameraMode={cameraMode}
       onToggleCameraMode={onToggleCameraMode}
       isWalkDefault={isWalkDefault}
@@ -704,6 +707,7 @@ const ControllerSlice = memo(function ControllerSlice({
 export interface GameCanvasProps {
   store: MultiplayerStore;
   worldEntityManager: WorldEntityManager;
+  characterPath?: string;
   cameraMode: CameraMode;
   onToggleCameraMode: () => void;
   isWalkDefault: boolean;
@@ -735,6 +739,7 @@ export interface GameCanvasProps {
 export const GameCanvas = memo(function GameCanvas({
   store,
   worldEntityManager,
+  characterPath,
   cameraMode,
   onToggleCameraMode,
   isWalkDefault,
@@ -812,6 +817,7 @@ export const GameCanvas = memo(function GameCanvas({
           />
           <ControllerSlice
             store={store}
+            characterPath={characterPath}
             cameraMode={cameraMode}
             onToggleCameraMode={onToggleCameraMode}
             isWalkDefault={isWalkDefault}

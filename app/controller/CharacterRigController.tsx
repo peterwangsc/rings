@@ -311,6 +311,7 @@ function isMysteryBoxHitOnCooldown(
 }
 
 export function CharacterRigController({
+  characterPath,
   cameraMode,
   onToggleCameraMode,
   isWalkDefault,
@@ -1225,6 +1226,7 @@ export function CharacterRigController({
         />
         <group ref={visualRootRef} position={[0, PLAYER_VISUAL_Y_OFFSET, 0]}>
           <CharacterActor
+            characterPath={characterPath}
             motionStateRef={motionStateRef}
             planarSpeedRef={smoothedPlanarSpeedRef}
             fireballCastCountRef={fireballCastAnimationCountRef}

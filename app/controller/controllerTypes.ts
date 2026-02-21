@@ -26,6 +26,7 @@ export interface MobileMoveInput {
 }
 
 export interface CharacterRigControllerProps {
+  readonly characterPath?: string;
   readonly cameraMode: CameraMode;
   readonly onToggleCameraMode: () => void;
   readonly isWalkDefault: boolean;

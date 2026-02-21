@@ -43,7 +43,15 @@ import {
 } from "../multiplayer/spacetime/client";
 import { DEFAULT_GUEST_DISPLAY_NAME } from "../multiplayer/spacetime/guestDisplayNames";
 import { tables } from "../multiplayer/spacetime/bindings";
-import type { NetWorldStateRow } from "../multiplayer/state/multiplayerTypes";
+import type {
+  AuthoritativePlayerState,
+  NetWorldStateRow,
+} from "../multiplayer/state/multiplayerTypes";
+import { CHARACTER_PATH, CHARACTER_OLD_PATH } from "../utils/constants";
+import {
+  CharacterSelectScreen,
+  type CharacterModelId,
+} from "./CharacterSelectScreen";
 import { GameCanvas } from "./GameCanvas";
 import { GameHUD } from "./GameHUD";
 import { useGameScene } from "./useGameScene";
@@ -51,13 +59,37 @@ import {
   GameStartupLoadingScreen,
   useGameStartupPreload,
 } from "./useGameStartupPreload";
-import type { AuthoritativePlayerState } from "../multiplayer/state/multiplayerTypes";
 
 const DEFAULT_DAY_CYCLE_DURATION_SECONDS = 300;
+const CHARACTER_MODEL_SESSION_STORAGE_KEY = "rings.character.model";
 
 function pickWorldStateRow(rows: readonly NetWorldStateRow[]): NetWorldStateRow | null {
   if (rows.length <= 0) return null;
   return rows.find((row) => row.id === "global") ?? rows[0];
+}
+
+function toCharacterPath(modelId: CharacterModelId) {
+  return modelId === "old" ? CHARACTER_OLD_PATH : CHARACTER_PATH;
+}
+
+function readSessionCharacterModelId() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const rawValue = window.sessionStorage.getItem(
+    CHARACTER_MODEL_SESSION_STORAGE_KEY,
+  );
+  if (rawValue === "old" || rawValue === "new") {
+    return rawValue;
+  }
+  return null;
+}
+
+function writeSessionCharacterModelId(modelId: CharacterModelId) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.sessionStorage.setItem(CHARACTER_MODEL_SESSION_STORAGE_KEY, modelId);
 }
 
 function getConnectionErrorMessage(error: unknown) {
@@ -163,7 +195,13 @@ function ConnectionStateSync({ store }: { store: MultiplayerStore }) {
 // GameSceneContent — holds UI state and stable refs. No useTable here.
 // ---------------------------------------------------------------------------
 
-function GameSceneContent({ multiplayerStore }: { multiplayerStore: MultiplayerStore }) {
+function GameSceneContent({
+  multiplayerStore,
+  characterPath,
+}: {
+  multiplayerStore: MultiplayerStore;
+  characterPath: string;
+}) {
   const {
     worldEntityManager,
     networkFireballSpawnQueueRef,
@@ -239,12 +277,6 @@ function GameSceneContent({ multiplayerStore }: { multiplayerStore: MultiplayerS
     return () => window.clearInterval(id);
   }, []);
 
-  // Display name
-  useEffect(() => {
-    const persisted = getOrCreateGuestDisplayName();
-    setLocalDisplayName(multiplayerStore, persisted);
-  }, [multiplayerStore]);
-
   const handleSetLocalDisplayName = useCallback(
     (nextDisplayName: string) => {
       const stored = setStoredGuestDisplayName(nextDisplayName);
@@ -265,6 +297,7 @@ function GameSceneContent({ multiplayerStore }: { multiplayerStore: MultiplayerS
         <GameCanvas
           store={multiplayerStore}
           worldEntityManager={worldEntityManager}
+          characterPath={characterPath}
           cameraMode={cameraMode}
           onToggleCameraMode={handleToggleCameraMode}
           isWalkDefault={isWalkDefault}
@@ -320,6 +353,30 @@ export function CharacterRigScene() {
   const preloadState = useGameStartupPreload();
   const connectionBuilder = useMemo(() => createSpacetimeConnectionBuilder(), []);
   const multiplayerStore = useMemo(() => createMultiplayerStore(DEFAULT_GUEST_DISPLAY_NAME), []);
+  const [selectedCharacterModelId, setSelectedCharacterModelId] = useState<
+    CharacterModelId | null
+  >(() => readSessionCharacterModelId());
+  const [draftDisplayName, setDraftDisplayName] = useState(() =>
+    getOrCreateGuestDisplayName(),
+  );
+  const [isCharacterConfirmed, setIsCharacterConfirmed] = useState(false);
+
+  const handleSelectCharacterModelId = useCallback((nextModelId: CharacterModelId) => {
+    setSelectedCharacterModelId(nextModelId);
+    writeSessionCharacterModelId(nextModelId);
+  }, []);
+
+  const handleConfirmSelection = useCallback(() => {
+    if (!selectedCharacterModelId) {
+      return;
+    }
+    writeSessionCharacterModelId(selectedCharacterModelId);
+    const storedDisplayName =
+      setStoredGuestDisplayName(draftDisplayName) ?? getOrCreateGuestDisplayName();
+    setDraftDisplayName(storedDisplayName);
+    setLocalDisplayName(multiplayerStore, storedDisplayName);
+    setIsCharacterConfirmed(true);
+  }, [draftDisplayName, multiplayerStore, selectedCharacterModelId]);
 
   if (!preloadState.isReady) {
     return (
@@ -332,9 +389,26 @@ export function CharacterRigScene() {
     );
   }
 
+  if (!isCharacterConfirmed) {
+    return (
+      <CharacterSelectScreen
+        selectedCharacterModelId={selectedCharacterModelId}
+        onSelectCharacterModelId={handleSelectCharacterModelId}
+        draftDisplayName={draftDisplayName}
+        onDisplayNameChange={setDraftDisplayName}
+        onConfirm={handleConfirmSelection}
+      />
+    );
+  }
+
+  const characterPath = toCharacterPath(selectedCharacterModelId ?? "new");
+
   return (
     <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
-      <GameSceneContent multiplayerStore={multiplayerStore} />
+      <GameSceneContent
+        multiplayerStore={multiplayerStore}
+        characterPath={characterPath}
+      />
     </SpacetimeDBProvider>
   );
 }
