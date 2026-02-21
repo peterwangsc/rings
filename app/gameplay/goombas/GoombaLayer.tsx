@@ -628,7 +628,6 @@ function GoombaActor({ goomba }: { goomba: GoombaState }) {
 }
 
 export function GoombaLayer({ goombas }: { goombas: readonly GoombaState[] }) {
-  console.log("GoombaLayer", goombas);
   return (
     <group>
       {goombas.map((goomba) => (

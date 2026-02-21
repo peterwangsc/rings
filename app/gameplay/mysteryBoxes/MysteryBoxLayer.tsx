@@ -362,7 +362,6 @@ export function MysteryBoxLayer({
 }: {
   mysteryBoxes: readonly MysteryBoxState[];
 }) {
-  console.log("MysteryBoxLayer", mysteryBoxes);
   const geometry = useMemo(
     () => new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE),
     [],

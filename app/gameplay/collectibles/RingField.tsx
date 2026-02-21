@@ -41,7 +41,6 @@ export function RingField({
   onCollectRing?: (ringId: string) => void;
   onCollect?: () => void;
 }) {
-  console.log("RingField", onCollect, onCollectRing);
   void store; // store arg kept for API compat; ring data flows via worldEntityManager
   const connectionState = useSpacetimeDB();
   const [ringDropRows] = useTable(tables.ringDropState);
