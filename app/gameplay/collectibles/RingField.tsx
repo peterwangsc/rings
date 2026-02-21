@@ -16,24 +16,31 @@ const RING_COLLECT_RETRY_INTERVAL_MS = 160;
 export function RingField({
   worldEntityManager,
   onCollectRing,
+  onCollect,
 }: {
   worldEntityManager: WorldEntityManager;
   onCollectRing?: (ringId: string) => void;
+  onCollect?: () => void;
 }) {
   useWorldEntityVersion(worldEntityManager);
   const lastCollectAttemptByRingRef = useRef<Map<string, number>>(new Map());
+  const soundPlayedByRingRef = useRef<Set<string>>(new Set());
 
   const { visibleRingEntities } = worldEntityManager;
 
   const handleCollect = useCallback(
     (ringId: string) => {
+      if (!soundPlayedByRingRef.current.has(ringId)) {
+        soundPlayedByRingRef.current.add(ringId);
+        onCollect?.();
+      }
       if (onCollectRing) {
         onCollectRing(ringId);
         return;
       }
       collectWorldRing(worldEntityManager, ringId);
     },
-    [onCollectRing, worldEntityManager],
+    [onCollect, onCollectRing, worldEntityManager],
   );
 
   useFrame(() => {
@@ -41,6 +48,13 @@ export function RingField({
     const playerPosition = worldEntityManager.playerPosition;
     const collectRadiusSquared = RING_COLLECT_RADIUS * RING_COLLECT_RADIUS;
     const attempts = lastCollectAttemptByRingRef.current;
+    const soundPlayed = soundPlayedByRingRef.current;
+
+    for (const id of soundPlayed) {
+      if (!visibleRingEntities.some((r) => r.id === id)) {
+        soundPlayed.delete(id);
+      }
+    }
 
     for (const ring of visibleRingEntities) {
       if (!isDropRingCollectible(ring.spawnedAtMs, nowMs)) {

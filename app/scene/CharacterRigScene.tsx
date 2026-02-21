@@ -178,7 +178,7 @@ function CharacterRigSceneContent({
     [],
   );
   const worldEntityManager = useMemo(() => createWorldEntityManager(), []);
-  const worldVersion = useWorldEntityVersion(worldEntityManager);
+  useWorldEntityVersion(worldEntityManager);
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const resumeFromChatTimeoutRef = useRef<number | null>(null);
   const mobileMoveInputRef = useRef<MobileMoveInput>({ x: 0, y: 0 });
@@ -186,8 +186,6 @@ function CharacterRigSceneContent({
   const mobileFireballTriggerRef = useRef(0);
   const damageEventCounterRef = useRef(0);
   const networkFireballSpawnQueueRef = useRef<FireballSpawnEvent[]>([]);
-  const previousLocalRingCountRef = useRef(worldEntityManager.hud.ringCount);
-  const hasRingCountSnapshotRef = useRef(false);
   const previousGoombaStateByIdRef = useRef<Map<string, string>>(new Map());
   const hasGoombaSnapshotRef = useRef(false);
   const previousMysteryBoxStateByIdRef = useRef<Map<string, string>>(new Map());
@@ -444,34 +442,6 @@ function CharacterRigSceneContent({
     };
   }, [worldEntityManager]);
 
-  useEffect(() => {
-    const ringCount = worldEntityManager.hud.ringCount;
-    if (!hasRingCountSnapshotRef.current) {
-      hasRingCountSnapshotRef.current = true;
-      previousLocalRingCountRef.current = ringCount;
-      return;
-    }
-
-    const ringCountDelta = ringCount - previousLocalRingCountRef.current;
-    previousLocalRingCountRef.current = ringCount;
-    if (ringCountDelta > 0) {
-      const playbackCount = Math.min(ringCountDelta, 4);
-      for (let index = 0; index < playbackCount; index += 1) {
-        playCoin();
-      }
-      return;
-    }
-
-    if (ringCountDelta < 0) {
-      damageEventCounterRef.current += 1;
-      playGoombaDefeated();
-    }
-  }, [
-    playCoin,
-    playGoombaDefeated,
-    worldEntityManager,
-    worldVersion,
-  ]);
 
   useEffect(() => {
     if (fallbackMusicCycleAnchorMsRef.current === null) {
@@ -753,6 +723,7 @@ function CharacterRigSceneContent({
               onCollectRing={
                 hasAuthoritativeMultiplayer ? sendRingCollect : undefined
               }
+              onCollect={playCoin}
             />
             <GoombaLayer goombas={goombas} />
             <MysteryBoxLayer mysteryBoxes={mysteryBoxes} />
