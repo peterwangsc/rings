@@ -4,6 +4,7 @@ import { useFrame, useLoader } from "@react-three/fiber";
 import {
   useEffect,
   useMemo,
+  useRef,
 } from "react";
 import * as THREE from "three";
 import {
@@ -18,12 +19,17 @@ import {
   updateGrassMaterialTime,
 } from "./world/grassField";
 import { ChunkContent } from "./world/ChunkContent";
+import { TERRAIN_CHUNK_SIZE } from "./world/terrainChunks";
 import {
   type WorldEntityManager,
   useWorldEntityVersion,
 } from "./world/worldEntityManager";
 
 const SIMPLEX_NOISE_TEXTURE_ANISOTROPY = 8;
+
+// Conservative Y bounds for chunk frustum culling (terrain + trees + clouds)
+const CHUNK_CULL_MIN_Y = -10;
+const CHUNK_CULL_MAX_Y = 80;
 
 export function WorldGeometry({
   worldEntityManager,
@@ -110,8 +116,34 @@ export function WorldGeometry({
   );
   const cloudMaterial = THREE.MeshBasicMaterial;
 
+  // Per-frame frustum culling — imperative to avoid React re-renders
+  const chunkGroupsRef = useRef(new Map<string, THREE.Group>());
+  const frustumRef = useRef(new THREE.Frustum());
+  const projScreenMatrixRef = useRef(new THREE.Matrix4());
+  const chunkBoxRef = useRef(new THREE.Box3());
+
   useFrame((state) => {
     updateGrassMaterialTime(grassMaterial, state.clock.getElapsedTime());
+
+    projScreenMatrixRef.current.multiplyMatrices(
+      state.camera.projectionMatrix,
+      state.camera.matrixWorldInverse,
+    );
+    frustumRef.current.setFromProjectionMatrix(projScreenMatrixRef.current);
+
+    const frustum = frustumRef.current;
+    const box = chunkBoxRef.current;
+    const half = TERRAIN_CHUNK_SIZE / 2;
+
+    for (const slot of worldEntityManager.activeChunkSlots) {
+      const group = chunkGroupsRef.current.get(`${slot.chunkX},${slot.chunkZ}`);
+      if (!group) continue;
+      const cx = slot.chunkX * TERRAIN_CHUNK_SIZE;
+      const cz = slot.chunkZ * TERRAIN_CHUNK_SIZE;
+      box.min.set(cx - half, CHUNK_CULL_MIN_Y, cz - half);
+      box.max.set(cx + half, CHUNK_CULL_MAX_Y, cz + half);
+      group.visible = frustum.intersectsBox(box);
+    }
   });
 
   useEffect(() => {
@@ -136,17 +168,27 @@ export function WorldGeometry({
 
   return (
     <>
-      {worldEntityManager.activeChunkSlots.map((chunkSlot) => (
-        <ChunkContent
-          key={`chunk-${chunkSlot.chunkX}-${chunkSlot.chunkZ}`}
-          chunkX={chunkSlot.chunkX}
-          chunkZ={chunkSlot.chunkZ}
-          terrainMaterial={terrainMaterial}
-          rockMaterial={rockMaterial}
-          grassMaterial={grassMaterial}
-          cloudMaterial={cloudMaterial}
-        />
-      ))}
+      {worldEntityManager.activeChunkSlots.map((chunkSlot) => {
+        const chunkKey = `${chunkSlot.chunkX},${chunkSlot.chunkZ}`;
+        return (
+          <group
+            key={`chunk-${chunkSlot.chunkX}-${chunkSlot.chunkZ}`}
+            ref={(g) => {
+              if (g) chunkGroupsRef.current.set(chunkKey, g);
+              else chunkGroupsRef.current.delete(chunkKey);
+            }}
+          >
+            <ChunkContent
+              chunkX={chunkSlot.chunkX}
+              chunkZ={chunkSlot.chunkZ}
+              terrainMaterial={terrainMaterial}
+              rockMaterial={rockMaterial}
+              grassMaterial={grassMaterial}
+              cloudMaterial={cloudMaterial}
+            />
+          </group>
+        );
+      })}
     </>
   );
 }
