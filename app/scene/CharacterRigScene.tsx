@@ -691,6 +691,7 @@ function CharacterRigSceneContent({
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- accumulates a grow-only history log; functional updater avoids stale closure
     setChatSessionHistory((currentHistory) => {
       const nextHistory = [...currentHistory];
       const knownIds = new Set(nextHistory.map((message) => message.messageId));
