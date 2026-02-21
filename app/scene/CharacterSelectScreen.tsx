@@ -53,9 +53,9 @@ function CharacterPreviewCard({
     >
       <Canvas
         dpr={[1, 1.5]}
-        camera={{ position: [0, 1.74, 1.24], fov: 33, near: 0.01, far: 12 }}
+        camera={{ position: [0, 1.74, 1.34], fov: 34, near: 0.01, far: 12 }}
         onCreated={({ camera }) => {
-          camera.lookAt(0, 1.44, 0);
+          camera.lookAt(0, 1.3, 0);
         }}
         className="h-full w-full"
       >

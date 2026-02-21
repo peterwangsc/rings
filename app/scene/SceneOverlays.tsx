@@ -75,7 +75,7 @@ export function DesktopSplashOverlay({
                 </h1>
               </div>
               <p className="text-xs pt-6 pb-4 font-medium uppercase tracking-[0.28em] text-cyan-100/90 sm:text-sm">
-                stomp goons to collect rings collect rings to shoot fire
+                stomp goons to collect rings click anywhere to jump in
               </p>
               <div className="mt-7 pointer-events-auto mb-5 ml-auto w-full rounded-2xl border border-cyan-100/35 bg-black/20 p-3">
                 <label
