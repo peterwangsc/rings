@@ -22,7 +22,6 @@ import {
 } from "../gameplay/abilities/fireballManager";
 import type { FireballSpawnRequest } from "../gameplay/abilities/fireballTypes";
 import {
-  resolveEstimatedServerNowMs,
   writePredictedGoombaPose,
   type GoombaPose,
 } from "../gameplay/goombas/goombaPrediction";
@@ -115,6 +114,7 @@ const MYSTERY_BOX_HIT_CLIENT_RADIUS_SQUARED =
 const FIREBALL_GOOMBA_HIT_RADIUS_SQUARED =
   (GOOMBA_FIREBALL_HITBOX_RADIUS + FIREBALL_RADIUS) *
   (GOOMBA_FIREBALL_HITBOX_RADIUS + FIREBALL_RADIUS);
+const GOOMBA_PREDICTION_LAG_MS = 50;
 const PLAYER_START_POSITION_ARRAY = [
   PLAYER_START_POSITION.x,
   PLAYER_START_POSITION.y,
@@ -330,7 +330,6 @@ export function CharacterRigController({
   onLocalJump,
   onLocalFootstepsActiveChange,
   goombas,
-  serverTimeOffsetMs,
   onLocalGoombaHit,
   mysteryBoxes,
   onLocalMysteryBoxHit,
@@ -623,9 +622,7 @@ export function CharacterRigController({
     bodyTranslationRef.current.z = translation.z;
     const goombaHitTimestamps = goombaHitTimestampsRef.current;
     const mysteryBoxHitTimestamps = mysteryBoxHitTimestampsRef.current;
-    const estimatedServerNowMs = resolveEstimatedServerNowMs(
-      serverTimeOffsetMs ?? null,
-    );
+    const estimatedServerNowMs = Date.now() - GOOMBA_PREDICTION_LAG_MS;
     const getPredictedGoombaPose = (
       goomba: NonNullable<typeof goombas>[number],
     ) =>

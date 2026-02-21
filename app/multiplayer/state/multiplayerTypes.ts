@@ -67,6 +67,9 @@ export interface ChatMessageEvent {
 
 export interface GoombaState {
   goombaId: string;
+  spawnX: number;
+  spawnY: number;
+  spawnZ: number;
   x: number;
   y: number;
   z: number;

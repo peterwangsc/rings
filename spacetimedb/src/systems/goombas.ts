@@ -2,10 +2,6 @@ import {
   GOOMBA_CHARGE_DURATION_MS,
   GOOMBA_COOLDOWN_DURATION_MS,
   GOOMBA_ENRAGE_RADIUS,
-  GOOMBA_IDLE_LEASH_RADIUS,
-  GOOMBA_IDLE_WALK_SPEED,
-  GOOMBA_IDLE_WANDER_MAX_DURATION_MS,
-  GOOMBA_IDLE_WANDER_MIN_DURATION_MS,
   GOOMBA_PLAYER_HIT_RADIUS,
   GOOMBA_RUN_DURATION_MS,
   GOOMBA_RUN_SPEED,
@@ -72,20 +68,22 @@ type GoombaTickContext = {
   };
 };
 
-const RANDOM_UINT32_MAX = 4_294_967_295;
-const IDLE_RETURN_HOME_JITTER_RADIANS = 0.35;
-const IDLE_LEASH_RADIUS_SQUARED = GOOMBA_IDLE_LEASH_RADIUS * GOOMBA_IDLE_LEASH_RADIUS;
 const GOOMBA_HIT_RADIUS_SQUARED = GOOMBA_PLAYER_HIT_RADIUS * GOOMBA_PLAYER_HIT_RADIUS;
 const GOOMBA_TICK_MIN_INTERVAL_MS = 50;
+const MAX_IDLE_ELAPSED_SECONDS = 30 * 60;
+const IDLE_PATH_RADIUS_X_MIN = 1.8;
+const IDLE_PATH_RADIUS_X_MAX = 3.0;
+const IDLE_PATH_RADIUS_Z_MIN = 1.6;
+const IDLE_PATH_RADIUS_Z_MAX = 2.8;
+const IDLE_PATH_FREQUENCY_X_MIN = 0.4;
+const IDLE_PATH_FREQUENCY_X_MAX = 0.65;
+const IDLE_PATH_FREQUENCY_Z_MIN = 0.45;
+const IDLE_PATH_FREQUENCY_Z_MAX = 0.7;
 let lastGoombaTickAtMs = -Infinity;
 
 type NearestPlayer = {
   player: PlayerStateRow;
   distanceSquared: number;
-};
-
-type RandomCursor = {
-  state: number;
 };
 
 function spillPlayerRings(
@@ -123,22 +121,6 @@ function spillPlayerRings(
     ringCount: ringCount - spillCount,
     updatedAtMs: timestampMs,
   });
-}
-
-function toRandomSeed(seed: number, goombaId: string) {
-  if (Number.isFinite(seed)) {
-    const normalized = Math.floor(seed) >>> 0;
-    if (normalized !== 0) {
-      return normalized;
-    }
-  }
-  return hashStringToUint32(goombaId) || 1;
-}
-
-function sampleRandom(cursor: RandomCursor) {
-  const next = (Math.imul(cursor.state, 1664525) + 1013904223) >>> 0;
-  cursor.state = next || 1;
-  return cursor.state / RANDOM_UINT32_MAX;
 }
 
 function findNearestPlayerWithinRadius(
@@ -184,31 +166,26 @@ function yawToTarget(
   return Math.atan2(dx, -dz);
 }
 
-function randomDurationMs(cursor: RandomCursor) {
-  return Math.round(
-    GOOMBA_IDLE_WANDER_MIN_DURATION_MS +
-      (GOOMBA_IDLE_WANDER_MAX_DURATION_MS - GOOMBA_IDLE_WANDER_MIN_DURATION_MS) *
-        sampleRandom(cursor),
-  );
-}
-
-function startIdleWanderSegment(
-  goomba: GoombaStateRow,
-  timestampMs: number,
-  cursor: RandomCursor,
-) {
-  const toSpawnX = goomba.spawnX - goomba.x;
-  const toSpawnZ = goomba.spawnZ - goomba.z;
-  if (toSpawnX * toSpawnX + toSpawnZ * toSpawnZ > IDLE_LEASH_RADIUS_SQUARED) {
-    const towardSpawnYaw = Math.atan2(toSpawnX, -toSpawnZ);
-    const jitter =
-      (sampleRandom(cursor) * 2 - 1) * IDLE_RETURN_HOME_JITTER_RADIANS;
-    goomba.yaw = normalizeYaw(towardSpawnYaw + jitter);
-  } else {
-    goomba.yaw = normalizeYaw(sampleRandom(cursor) * Math.PI * 2);
-  }
-
-  goomba.stateEndsAtMs = timestampMs + randomDurationMs(cursor);
+function toIdlePathParams(goombaId: string) {
+  const seed = hashStringToUint32(goombaId) || 1;
+  const n0 = (seed & 0xff) / 255;
+  const n1 = ((seed >>> 8) & 0xff) / 255;
+  const n2 = ((seed >>> 16) & 0xff) / 255;
+  const n3 = ((seed >>> 24) & 0xff) / 255;
+  return {
+    amplitudeX:
+      IDLE_PATH_RADIUS_X_MIN +
+      (IDLE_PATH_RADIUS_X_MAX - IDLE_PATH_RADIUS_X_MIN) * n0,
+    amplitudeZ:
+      IDLE_PATH_RADIUS_Z_MIN +
+      (IDLE_PATH_RADIUS_Z_MAX - IDLE_PATH_RADIUS_Z_MIN) * n1,
+    frequencyX:
+      IDLE_PATH_FREQUENCY_X_MIN +
+      (IDLE_PATH_FREQUENCY_X_MAX - IDLE_PATH_FREQUENCY_X_MIN) * n2,
+    frequencyZ:
+      IDLE_PATH_FREQUENCY_Z_MIN +
+      (IDLE_PATH_FREQUENCY_Z_MAX - IDLE_PATH_FREQUENCY_Z_MIN) * n3,
+  };
 }
 
 function stepGoombaForward(
@@ -243,46 +220,30 @@ function stepGoombaForward(
   goomba.y = sampleTerrainHeight(goomba.x, goomba.z);
 }
 
-// Simulate idle wander position forward in time without advancing the
-// segment-transition RNG. Used to reconstruct authoritative position when
-// the goomba transitions out of idle (e.g. to CHARGE) after a period
-// during which we suppressed DB writes.
-function simulateIdlePosition(
+function predictIdlePose(
   goomba: GoombaStateRow,
   toTimestampMs: number,
 ) {
-  const effectiveEndMs =
-    goomba.stateEndsAtMs > goomba.updatedAtMs
-      ? Math.min(toTimestampMs, goomba.stateEndsAtMs)
-      : goomba.updatedAtMs;
-  let remainingSeconds = Math.max(
+  const elapsedSeconds = Math.max(
     0,
-    Math.min((effectiveEndMs - goomba.updatedAtMs) / 1000, 30),
+    Math.min((toTimestampMs - goomba.updatedAtMs) / 1000, MAX_IDLE_ELAPSED_SECONDS),
   );
-  if (remainingSeconds <= 0) {
-    return;
-  }
+  const { amplitudeX, amplitudeZ, frequencyX, frequencyZ } = toIdlePathParams(
+    goomba.goombaId,
+  );
+  const phaseX = elapsedSeconds * frequencyX;
+  const phaseZ = elapsedSeconds * frequencyZ;
 
-  while (remainingSeconds > 1e-6) {
-    const stepSeconds = Math.min(remainingSeconds, 0.2);
-    const nextPose = stepPlanarControllerMovement(
-      { x: goomba.x, z: goomba.z, yaw: goomba.yaw },
-      toPlanarControllerInput({
-        forward: true,
-        backward: false,
-        left: false,
-        right: false,
-        lookYaw: goomba.yaw,
-        moveSpeed: GOOMBA_IDLE_WALK_SPEED,
-      }),
-      stepSeconds,
-    );
-    goomba.x = clampWorldAxis(nextPose.x);
-    goomba.z = clampWorldAxis(nextPose.z);
-    goomba.yaw = nextPose.yaw;
-    remainingSeconds -= stepSeconds;
+  const x = clampWorldAxis(goomba.x + Math.sin(phaseX) * amplitudeX);
+  const z = clampWorldAxis(goomba.z + Math.sin(phaseZ) * amplitudeZ);
+  const y = sampleTerrainHeight(x, z);
+  const vx = Math.cos(phaseX) * amplitudeX * frequencyX;
+  const vz = Math.cos(phaseZ) * amplitudeZ * frequencyZ;
+  let yaw = goomba.yaw;
+  if (vx * vx + vz * vz > 1e-9) {
+    yaw = Math.atan2(vx, -vz);
   }
-  goomba.y = sampleTerrainHeight(goomba.x, goomba.z);
+  return { x, y, z, yaw: normalizeYaw(yaw) };
 }
 
 function setIdleState(goomba: GoombaStateRow) {
@@ -415,48 +376,43 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
       continue;
     }
 
-    const randomCursor: RandomCursor = {
-      // Reuse legacy cooldown storage as deterministic RNG state.
-      state: toRandomSeed(next.nextChargeAllowedAtMs, next.goombaId),
-    };
     const dtSeconds = Math.max(
       0,
       Math.min((timestampMs - goomba.updatedAtMs) / 1000, 0.2),
     );
 
+    let idlePose: ReturnType<typeof predictIdlePose> | null = null;
+    let proximityX = next.x;
+    let proximityZ = next.z;
     if (next.state === GOOMBA_STATE_IDLE) {
-      // Idle motion is reconstructed deterministically from the last
-      // authoritative segment snapshot instead of writing every tick.
-      simulateIdlePosition(next, timestampMs);
+      idlePose = predictIdlePose(next, timestampMs);
+      proximityX = idlePose.x;
+      proximityZ = idlePose.z;
     }
 
     const nearbyTarget = findNearestPlayerWithinRadius(
       getPlayers(),
-      next.x,
-      next.z,
+      proximityX,
+      proximityZ,
       GOOMBA_ENRAGE_RADIUS,
     );
 
     if (!nearbyTarget) {
-      const wasIdle = next.state === GOOMBA_STATE_IDLE;
-      if (!wasIdle) {
+      if (next.state !== GOOMBA_STATE_IDLE) {
         setIdleState(next);
-      }
-      let startedIdleSegment = false;
-      if (timestampMs >= next.stateEndsAtMs) {
-        startIdleWanderSegment(next, timestampMs, randomCursor);
-        startedIdleSegment = true;
-      }
-      next.nextChargeAllowedAtMs = randomCursor.state;
-      if (!wasIdle || startedIdleSegment) {
         maybeUpdateGoomba(ctx, goomba, next, timestampMs);
       }
       continue;
     }
 
     if (next.state === GOOMBA_STATE_IDLE) {
+      if (idlePose) {
+        next.x = idlePose.x;
+        next.y = idlePose.y;
+        next.z = idlePose.z;
+        next.yaw = idlePose.yaw;
+      }
       setChargeState(next, timestampMs, nearbyTarget.player);
-      next.nextChargeAllowedAtMs = randomCursor.state;
       maybeUpdateGoomba(ctx, goomba, next, timestampMs);
       continue;
     }
@@ -464,12 +420,10 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
     if (next.state === GOOMBA_STATE_COOLDOWN) {
       next.targetIdentity = nearbyTarget.player.identity;
       if (timestampMs < next.stateEndsAtMs) {
-        next.nextChargeAllowedAtMs = randomCursor.state;
         maybeUpdateGoomba(ctx, goomba, next, timestampMs);
         continue;
       }
       setChargeState(next, timestampMs, nearbyTarget.player);
-      next.nextChargeAllowedAtMs = randomCursor.state;
       maybeUpdateGoomba(ctx, goomba, next, timestampMs);
       continue;
     }
@@ -477,7 +431,6 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
     if (next.state === GOOMBA_STATE_CHARGE) {
       next.targetIdentity = nearbyTarget.player.identity;
       if (timestampMs < next.stateEndsAtMs) {
-        next.nextChargeAllowedAtMs = randomCursor.state;
         maybeUpdateGoomba(ctx, goomba, next, timestampMs);
         continue;
       }
@@ -490,7 +443,6 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
 
     if (timestampMs >= next.stateEndsAtMs) {
       setCooldownState(next, timestampMs, nearbyTarget.player);
-      next.nextChargeAllowedAtMs = randomCursor.state;
       maybeUpdateGoomba(ctx, goomba, next, timestampMs);
       continue;
     }
@@ -508,7 +460,6 @@ export function tickGoombas(ctx: GoombaTickContext, timestampMs: number) {
       setCooldownState(next, timestampMs, nearbyTarget.player);
     }
 
-    next.nextChargeAllowedAtMs = randomCursor.state;
     maybeUpdateGoomba(ctx, goomba, next, timestampMs);
   }
 }

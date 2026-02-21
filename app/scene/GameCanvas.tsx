@@ -48,7 +48,6 @@ import {
   useRemotePlayers,
   useChatMessages,
   useConnectionStatus,
-  useServerTimeOffsetMs,
   setAuthoritativeLocalPlayerState,
   setRemotePlayers,
   setServerTimeOffsetMs,
@@ -234,6 +233,9 @@ function toGoombaState(row: NetGoombaRow, previous?: GoombaState): GoombaState {
   if (
     previous &&
     previous.goombaId === row.goombaId &&
+    previous.spawnX === row.spawnX &&
+    previous.spawnY === row.spawnY &&
+    previous.spawnZ === row.spawnZ &&
     previous.x === row.x &&
     previous.y === row.y &&
     previous.z === row.z &&
@@ -246,6 +248,9 @@ function toGoombaState(row: NetGoombaRow, previous?: GoombaState): GoombaState {
   }
   return {
     goombaId: row.goombaId,
+    spawnX: row.spawnX,
+    spawnY: row.spawnY,
+    spawnZ: row.spawnZ,
     x: row.x,
     y: row.y,
     z: row.z,
@@ -651,7 +656,6 @@ const ControllerSlice = memo(function ControllerSlice({
   const goombas = useGoombas(store);
   const mysteryBoxes = useMysteryBoxes(store);
   const connectionStatus = useConnectionStatus(store);
-  const serverTimeOffsetMs = useServerTimeOffsetMs(store);
   const goombaArray = useMemo(() => Array.from(goombas.values()), [goombas]);
   const mysteryBoxArray = useMemo(
     () => Array.from(mysteryBoxes.values()),
@@ -678,7 +682,6 @@ const ControllerSlice = memo(function ControllerSlice({
       onLocalJump={onLocalJump}
       onLocalFootstepsActiveChange={onLocalFootstepsActiveChange}
       goombas={goombaArray}
-      serverTimeOffsetMs={serverTimeOffsetMs}
       onLocalGoombaHit={
         connectionStatus === "connected" ? onLocalGoombaHit : undefined
       }

@@ -49,6 +49,7 @@ const FOOT_STRIDE_Z = 0.08;
 const PELVIS_BOB_Y = 0.04;
 const PELVIS_SHIFT_Z = 0.035;
 const BODY_LEAN_RADIANS = 0.12;
+const GOOMBA_PREDICTION_LAG_MS = 50;
 
 const UNIT_X = new THREE.Vector3(1, 0, 0);
 const UNIT_Z = new THREE.Vector3(0, 0, 1);
@@ -430,7 +431,7 @@ function GoombaActorBase({ goomba }: GoombaActorProps) {
 
     const predictedPose = writePredictedGoombaPose(
       goomba,
-      Date.now(),
+      Date.now() - GOOMBA_PREDICTION_LAG_MS,
       predictedPoseRef.current,
     );
     targetPositionRef.current.set(
@@ -656,6 +657,9 @@ function areGoombaActorPropsEqual(
 ) {
   return (
     previous.goomba.goombaId === next.goomba.goombaId &&
+    previous.goomba.spawnX === next.goomba.spawnX &&
+    previous.goomba.spawnY === next.goomba.spawnY &&
+    previous.goomba.spawnZ === next.goomba.spawnZ &&
     previous.goomba.x === next.goomba.x &&
     previous.goomba.y === next.goomba.y &&
     previous.goomba.z === next.goomba.z &&
